@@ -58,9 +58,9 @@ ALTER TABLE public.drawcoins ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can read drawcoins" ON public.drawcoins
     FOR SELECT USING (true);
 
--- Sadece authenticated kullanıcılar insert edebilir
-CREATE POLICY "Authenticated users can insert drawcoins" ON public.drawcoins
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- Herkes insert edebilir (token oluşturma için)
+CREATE POLICY "Anyone can insert drawcoins" ON public.drawcoins
+    FOR INSERT WITH CHECK (true);
 
 -- Sadece coin creator'ı update edebilir
 CREATE POLICY "Creator can update their drawcoins" ON public.drawcoins

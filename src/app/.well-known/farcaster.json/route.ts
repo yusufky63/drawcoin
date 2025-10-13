@@ -1,20 +1,26 @@
-function withValidProperties(properties: Record<string, undefined | string | string[]>) {
+function withValidProperties(
+  properties: Record<string, undefined | string | string[]>
+) {
   return Object.fromEntries(
-    Object.entries(properties).filter(([_, value]) => (Array.isArray(value) ? value.length > 0 : !!value))
+    Object.entries(properties).filter(([_, value]) =>
+      Array.isArray(value) ? value.length > 0 : !!value
+    )
   );
 }
 
 export async function GET() {
   const URL = process.env.NEXT_PUBLIC_URL as string;
-  
+
   const manifest = {
     accountAssociation: {
-      header: "eyJmaWQiOjg2NDc5MywidHlwZSI6ImF1dGgiLCJrZXkiOiIweDYwNzE4NGVkMTA3NDA5QjU5MTg0QTVEQUYzNDJmMDAzNDNCNWNjMDQifQ",
-      payload: "eyJkb21haW4iOiJkcmF3Y29pbi52ZXJjZWwuYXBwIn0",
-      signature: "aRsAAmVQo17SubvqWgnIHW0vlDze4eWuOCaVKSvA6rFmtQ/eMAfiVHdZmZMS5eWQCFwzN161b6FGM0HFWAFx4hw="
+      header:
+        "eyJmaWQiOjg2NDc5MywidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweENjZTJFMjI5NzNmMUY1MTA5MjQzQTZiNkREZTdBNDk4QzlENjYzNjYifQ",
+      payload: "eyJkb21haW4iOiJkcmF3Y29pbi1taW5pLnZlcmNlbC5hcHAifQ",
+      signature:
+        "MHg1MjY1ZjkyMmFkNTcxNWUwODc1MTdkM2VlNGEwMTE1YjMxNGNiYTZkNGVkOWFmZTM3ZDgyYWZlY2QxYjQ3YjdjNjljMDQ1NjFhOTg5ZmE3ZmE5Y2VhODU5NmJjMjU1YjA1YTVkMDM2ZjBkMTQ5NTcyMzNiNzE3ZjI3ODYwYmFiMzFi",
     },
     baseBuilder: {
-      allowedAddresses: ["0xc0F52851fCAac0cac016432E5e11954632cd2fcB"]
+      allowedAddresses: ["0xc0F52851fCAac0cac016432E5e11954632cd2fcB"],
     },
     miniapp: {
       version: "1",
@@ -23,7 +29,9 @@ export async function GET() {
       iconUrl: "https://drawcoin-mini.vercel.app/logo.png",
       homeUrl: "https://drawcoin-mini.vercel.app",
       imageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
-      screenshotUrls: ["https://drawcoin-mini.vercel.app/images/screenshot1.png"],
+      screenshotUrls: [
+        "https://drawcoin-mini.vercel.app/images/screenshot1.png",
+      ],
       tags: ["nft", "tokens", "draw", "web3", "art"],
       primaryCategory: "art-creativity",
       buttonTitle: "Create Token",
@@ -31,12 +39,12 @@ export async function GET() {
       splashBackgroundColor: "#3182ce",
       subtitle: "Hand-drawn art tokens on Base",
       heroImageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
-      tagline: "Create and trade art tokens instantly",
+      tagline: "Create & trade art tokens",
       ogTitle: "DrawCoin",
       ogDescription: "Create and trade hand-drawn art tokens on the Base",
       ogImageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
-      noindex: false
-    }
+      noindex: false,
+    },
   };
 
   return Response.json(manifest);

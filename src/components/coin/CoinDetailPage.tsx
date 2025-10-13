@@ -170,12 +170,11 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       if (tradeType === 'buy') {
         // Buying with different currencies
         if (selectedCurrency === 'ETH') {
-          // ETH to Token
-          const amountInWei = BigInt(Math.floor(parseFloat(amount) * 1e18));
+          // ETH to Token - pass amount as string, let executeTrade handle conversion
           await executeTrade({
             direction: 'buy',
             coinAddress: token.contract_address,
-            amountIn: amountInWei.toString(),
+            amountIn: amount, // Pass as string, not BigInt
             recipient: address,
             slippage: slippage,
             walletClient,
@@ -211,12 +210,11 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
           });
         }
       } else {
-        // Selling token for ETH
-        const amountInWei = BigInt(Math.floor(parseFloat(amount) * 1e18));
+        // Selling token for ETH - pass amount as string, let executeTrade handle conversion
         await executeTrade({
           direction: 'sell',
           coinAddress: token.contract_address,
-          amountIn: amountInWei.toString(),
+          amountIn: amount, // Pass as string, not BigInt
           recipient: address,
           slippage: 0.05,
           walletClient,
@@ -720,6 +718,18 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                         </span>
                       </div>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-art-gray-600">Created:</span>
+                      <span className="text-sm font-bold text-art-gray-900">
+                        {marketData?.createdAt ? new Date(marketData.createdAt).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        }) : 'N/A'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -746,6 +756,12 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                       </span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="text-sm text-art-gray-600">Total Volume:</span>
+                      <span className="text-sm font-bold text-art-gray-900">
+                        {marketData?.totalVolume ? `$${parseFloat(marketData.totalVolume).toLocaleString()}` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="text-sm text-art-gray-600">Holders:</span>
                       <span className="text-sm font-bold text-art-gray-900">
                         {marketData?.uniqueHolders ? marketData.uniqueHolders.toLocaleString() : 'N/A'}
@@ -757,7 +773,12 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                         (() => {
                           const marketCap = parseFloat(marketData?.marketCap);
                           const delta24h = parseFloat(marketData?.marketCapDelta24h);
-                          if (marketCap && delta24h && marketCap !== delta24h) {
+                          if (marketCap && delta24h) {
+                            // If delta24h equals marketCap, it means it's a new token (100% change)
+                            if (marketCap === delta24h) {
+                              return 'text-green-600'; // New token, positive
+                            }
+                            // Calculate percentage change
                             const previousMC = marketCap - delta24h;
                             if (previousMC > 0) {
                               const changePct = (delta24h / previousMC) * 100;
@@ -770,11 +791,16 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                         {(() => {
                           const marketCap = parseFloat(marketData?.marketCap);
                           const delta24h = parseFloat(marketData?.marketCapDelta24h);
-                          if (marketCap && delta24h && marketCap !== delta24h) {
+                          if (marketCap && delta24h) {
+                            // If delta24h equals marketCap, it's a new token
+                            if (marketCap === delta24h) {
+                              return '+100.00%'; // New token
+                            }
+                            // Calculate percentage change
                             const previousMC = marketCap - delta24h;
                             if (previousMC > 0) {
                               const changePct = (delta24h / previousMC) * 100;
-                              return `${changePct.toFixed(2)}%`;
+                              return `${changePct > 0 ? '+' : ''}${changePct.toFixed(2)}%`;
                             }
                           }
                           return 'N/A';

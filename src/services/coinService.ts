@@ -1,4 +1,4 @@
-import { supabase, type Coin } from '../lib/supabase'
+import { supabase, supabaseAdmin, type Coin } from '../lib/supabase'
 
 // Re-export the Coin type for use in other components
 export type { Coin }
@@ -24,7 +24,9 @@ export class CoinService {
    */
   static async saveCoin(coinData: CreateCoinData): Promise<Coin | null> {
     try {
-      const { data, error } = await supabase
+      // Use admin client to bypass RLS for server-side operations
+      const client = supabaseAdmin || supabase
+      const { data, error } = await client
         .from('drawcoins')
         .insert({
           name: coinData.name,
