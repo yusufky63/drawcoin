@@ -109,8 +109,8 @@ export default function App({ isMiniApp = false, userName = 'User', userFid }: A
 
   const handleCreateSuccess = (tokenAddress: string) => {
     console.log('Token created:', tokenAddress);
-    setActiveTab("explore");
-    // TODO: Show success message and redirect to market
+    // Navigate to the created token's detail page
+    router.push(`/coin/${tokenAddress}`);
   };
 
   const renderContent = () => {

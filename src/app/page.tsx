@@ -42,19 +42,12 @@ export default function Home() {
               contextData.client &&
               (contextData.client as any).added === false
             ) {
-              const actions: any = (miniAppSdk as any)?.actions;
-              const addFn =
-                actions?.addMiniApp || actions?.addMiniapp || actions?.add;
-              if (typeof addFn === "function") {
-                console.log("Attempting to trigger add-miniapp action...");
-                addFn().catch(() => {
-                  /* no-op */
-                });
-              }
+              console.log("Mini-app not added yet, prompting user to add...");
+              await miniAppSdk.actions.addMiniApp();
             }
           } catch (e) {
             // best effort only
-            console.debug("add-miniapp action not available", e);
+            console.debug("add-miniapp action not available or user rejected", e);
           }
 
           // Check manifest access to verify setup

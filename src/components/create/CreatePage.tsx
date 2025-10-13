@@ -5,6 +5,8 @@ import { createToken } from "../../lib/functions/createToken";
 import { toast } from "react-hot-toast";
 import DrawingCanvas from "../ui/DrawingCanvas";
 import HandDrawnIcon from "../ui/HandDrawnIcon";
+import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
+import SuccessModal from './SuccessModal';
 
 interface CreatePageProps {
   onSuccess?: (tokenAddress: string) => void;
@@ -50,6 +52,14 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const [drawingTools, setDrawingTools] = useState<React.ReactNode>(null);
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const totalSteps = 3;
+
+  // Success modal state
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdTokenAddress, setCreatedTokenAddress] = useState<string>("");
+  
+  // Retry state
+  const [retryCount, setRetryCount] = useState(0);
+  const [maxRetries] = useState(3);
 
   // AI Draw state
   const [drawMode, setDrawMode] = useState<"custom" | "ai">("custom");
@@ -308,7 +318,10 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       }
     } catch (error) {
       console.error("IPFS upload error:", error);
-      toast.error("Failed to upload image to IPFS", { id: "ipfs-toast" });
+      toast.error("Failed to upload image to IPFS. Please try again.", { 
+        id: "ipfs-toast", 
+        duration: 5000 
+      });
       throw error;
     }
   };
@@ -344,9 +357,25 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     }
   };
 
-  const handleCreateToken = async () => {
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
+    // Navigate to token detail page when modal is closed
+    if (createdTokenAddress && onSuccess) {
+      onSuccess(createdTokenAddress);
+    }
+  };
+
+  const handleViewToken = () => {
+    setShowSuccessModal(false);
+    // Navigate to token detail page
+    if (createdTokenAddress && onSuccess) {
+      onSuccess(createdTokenAddress);
+    }
+  };
+
+  const handleCreateToken = async (isRetry: boolean = false) => {
     if (!isConnected || !walletClient || !publicClient || !address) {
-      toast.error("Please connect your wallet first");
+      toast.error("Please connect your wallet first", { id: 'wallet-error' });
       return;
     }
 
@@ -356,11 +385,12 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       !formData.description ||
       !formData.imageUrl
     ) {
-      toast.error("Please complete all steps first");
+      toast.error("Please complete all steps first", { id: 'form-error' });
       return;
     }
 
     setLoading(true);
+    
     try {
       // First upload image to IPFS
       const ipfsUrl = await uploadToIPFS(
@@ -393,15 +423,42 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
       if (result.address) {
         toast.success(
-          "Your hand-drawn art token has been created successfully!"
+          "Your hand-drawn art token has been created successfully!",
+          { id: 'create-success', duration: 4000 }
         );
-        if (onSuccess) {
-          onSuccess(result.address);
-        }
+        
+        // Reset retry count on success
+        setRetryCount(0);
+        
+        // Set the created token address and show success modal
+        setCreatedTokenAddress(result.address);
+        setShowSuccessModal(true);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating token:", error);
-      toast.error("Failed to create token. Please try again.");
+      
+      // Check if we should retry
+      if (retryCount < maxRetries && !isRetry) {
+        const newRetryCount = retryCount + 1;
+        setRetryCount(newRetryCount);
+        
+        toast.error(
+          `Failed to create token. Retrying... (${newRetryCount}/${maxRetries})`,
+          { duration: 5000, id: 'create-retry' }
+        );
+        
+        // Wait 2 seconds before retry
+        setTimeout(() => {
+          handleCreateToken(true);
+        }, 2000);
+      } else {
+        // Final failure
+        setRetryCount(0);
+        toast.error(
+          `Failed to create token after ${maxRetries} attempts. Please check your network connection and try again.`,
+          { duration: 8000, id: 'create-final-error' }
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -870,7 +927,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                   </div>
 
                   <button
-                    onClick={handleCreateToken}
+                    onClick={() => handleCreateToken(false)}
                     disabled={
                       loading ||
                       !isConnected ||
@@ -883,7 +940,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                     {loading ? (
                       <div className="flex items-center justify-center">
                         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                        Creating Token...
+                        {retryCount > 0 ? `Retrying... (${retryCount}/${maxRetries})` : 'Creating Token...'}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center">
@@ -892,6 +949,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                       </div>
                     )}
                   </button>
+
 
                   {!isConnected && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-art p-4 mt-4">
@@ -941,6 +999,17 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
           </div>
         </div>
       </div>
+
+      {/* Success Modal */}
+      <SuccessModal
+        isOpen={showSuccessModal}
+        onClose={handleSuccessModalClose}
+        onViewToken={handleViewToken}
+        tokenName={formData.name}
+        tokenSymbol={formData.symbol}
+        tokenAddress={createdTokenAddress}
+        tokenImage={formData.imageUrl}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { getOnchainTokenDetails } from '../../services/sdk/getOnchainData';
 import { executeTrade } from '../../services/sdk/getTradeCoin';
 import { toast } from 'react-hot-toast';
 import { Coin } from '../../lib/supabase';
+import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
 
 interface TradeModalProps {
   token: Coin | null;
@@ -62,6 +63,24 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
     }
   };
 
+  const handleShareTrade = async () => {
+    if (!token) return;
+
+    try {
+      const shareText = tradeType === 'buy' 
+        ? `Just bought ${amount} ${token.symbol} tokens! 🎨💰 Check out this amazing hand-drawn art token on DrawCoin!`
+        : `Just sold ${amount} ${token.symbol} tokens! 🎨📈 Trading hand-drawn art tokens on DrawCoin!`;
+
+      await miniAppSdk.actions.composeCast({
+        text: shareText,
+        embeds: [`https://drawcoin-mini.vercel.app/coin/${token.contract_address}`]
+      });
+    } catch (error) {
+      console.error('Error sharing trade:', error);
+      toast.error('Failed to share trade');
+    }
+  };
+
   const handleTrade = async () => {
     if (!isConnected || !address || !walletClient || !publicClient || !token || !tokenDetails) {
       toast.error('Please connect your wallet');
@@ -91,6 +110,10 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
       });
       // If no error thrown, treat as success
       toast.success(`Successfully ${tradeType === 'buy' ? 'bought' : 'sold'} tokens!`, { id: 'trade-toast' });
+      
+      // Auto-share the trade
+      await handleShareTrade();
+      
       onClose();
       // Refresh token details
       await fetchTokenDetails();
@@ -336,6 +359,24 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
             ) : (
               `${tradeType === 'buy' ? 'Buy' : 'Sell'} ${token.symbol}`
             )}
+          </button>
+
+          {/* Share Button */}
+          <button
+            onClick={handleShareTrade}
+            className="hand-drawn-btn w-full text-sm font-bold secondary"
+            style={{ 
+              padding: '0.75rem 1.5rem',
+              transform: 'rotate(0.5deg)',
+              marginTop: '0.5rem'
+            }}
+          >
+            <div className="flex items-center justify-center">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+              </svg>
+              Share {tradeType === 'buy' ? 'Purchase' : 'Sale'}
+            </div>
           </button>
         </div>
       </div>

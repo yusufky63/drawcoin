@@ -120,12 +120,12 @@ export default function ArtHeader({
             {/* Brand */}
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-3 transform rotate-1">
-                <h1 className="text-2xl font-bold text-art-gray-900 transform -rotate-1" style={{ 
+                <Link href="/" className="text-2xl font-bold text-art-gray-900 transform -rotate-1" style={{ 
                   textShadow: '1px 1px 0 #2d3748',
                   color: '#1a202c'
                 }}>
                   DrawCoin
-                </h1>
+                </Link>
               </div>
               
               {/* Navigation */}
@@ -266,12 +266,12 @@ export default function ArtHeader({
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3 transform rotate-1">
-              <h1 className="text-lg font-bold text-art-gray-900 transform -rotate-1" style={{ 
+              <Link href="/" className="text-lg font-bold text-art-gray-900 transform -rotate-1" style={{ 
                 textShadow: '1px 1px 0 #2d3748',
                 color: '#1a202c'
               }}>
                 DrawCoin
-              </h1>
+              </Link>
             </div>
             
             <div className="flex items-center space-x-2">
