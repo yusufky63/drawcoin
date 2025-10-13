@@ -3,6 +3,7 @@ import { CoinService, type CreateCoinData } from '../../services/coinService';
 import { parseEther } from 'viem';
 import { base } from 'viem/chains';
 import { toast } from 'react-hot-toast';
+import { checkAndSwitchNetwork } from '../../services/networkUtils';
 
 export interface CreateTokenData {
   name: string;
@@ -28,7 +29,8 @@ export const createToken = async (
   tokenData: CreateTokenData,
   walletClient: any,
   publicClient: any,
-  walletAddress: string
+  walletAddress: string,
+  switchChain?: any
 ): Promise<CreateTokenResult> => {
   try {
     console.log("Creating token with data:", tokenData);
@@ -36,7 +38,18 @@ export const createToken = async (
     // Check if we're on the Base network and auto-switch if needed
     const chainId = await walletClient.getChainId();
     if (chainId !== base.id) {
-      throw new Error(`Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Please switch networks.`);
+      console.log(`Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Attempting to switch...`);
+      
+      if (switchChain) {
+        const switchSuccess = await checkAndSwitchNetwork({ chainId, switchChain });
+        if (!switchSuccess) {
+          throw new Error(`Please switch to Base network manually in your wallet.`);
+        }
+        // Wait a moment for the network switch to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        throw new Error(`Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Please switch networks.`);
+      }
     }
 
     // Get user's selected purchase amount

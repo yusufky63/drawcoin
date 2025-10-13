@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, createConfig } from "wagmi";
+import { WagmiProvider, createConfig, useAccount, useSwitchChain } from "wagmi";
 import { base } from "wagmi/chains";
 import { http } from "wagmi";
 import { farcasterMiniApp as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
 import { injected, walletConnect, coinbaseWallet } from 'wagmi/connectors';
 import { sdk } from "@farcaster/miniapp-sdk";
 import { FarcasterProvider } from '../lib/farcaster';
+import { checkAndSwitchNetwork } from '../services/networkUtils';
 
 // Create Wagmi configuration for both Farcaster mini-apps and BaseApp
 const config = createConfig({
@@ -29,6 +30,22 @@ const config = createConfig({
     }),
   ]
 });
+
+// Component to handle automatic network switching
+function NetworkSwitcher() {
+  const { chainId, isConnected } = useAccount();
+  const { switchChain } = useSwitchChain();
+
+  useEffect(() => {
+    // Only attempt to switch if wallet is connected and not on Base mainnet
+    if (isConnected && chainId && chainId !== base.id) {
+      console.log(`Current chain: ${chainId}, switching to Base (${base.id})`);
+      checkAndSwitchNetwork({ chainId, switchChain });
+    }
+  }, [isConnected, chainId, switchChain]);
+
+  return null; // This component doesn't render anything
+}
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   // React Query client
@@ -67,7 +84,12 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <FarcasterProvider>
-          {mounted ? children : null}
+          {mounted ? (
+            <>
+              <NetworkSwitcher />
+              {children}
+            </>
+          ) : null}
         </FarcasterProvider>
       </QueryClientProvider>
     </WagmiProvider>

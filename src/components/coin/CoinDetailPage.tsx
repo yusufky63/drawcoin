@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAccount, useWalletClient, usePublicClient } from "wagmi";
+import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from "wagmi";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { Coin } from "../../lib/supabase";
@@ -20,6 +20,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { switchChain } = useSwitchChain();
 
   // State
   const [loading, setLoading] = useState(false);
@@ -179,7 +180,8 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
             slippage: slippage,
             walletClient,
             publicClient,
-            account: address
+            account: address,
+            switchChain
           });
         } else {
           // USDC to Token
@@ -205,6 +207,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
             walletClient,
             publicClient,
             account: address,
+            switchChain
           });
         }
       } else {
@@ -218,7 +221,8 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
           slippage: 0.05,
           walletClient,
           publicClient,
-          account: address
+          account: address,
+          switchChain
         });
       }
 

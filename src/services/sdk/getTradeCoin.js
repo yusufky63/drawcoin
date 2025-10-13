@@ -5,6 +5,7 @@
 
 import { tradeCoin, createTradeCall, setApiKey, getCoin } from "@zoralabs/coins-sdk";
 import { parseEther, parseUnits } from "viem";
+import { checkAndSwitchNetwork } from '../networkUtils';
 
 // Initialize API key for production environments
 // Uses environment variable or allows manual override
@@ -100,6 +101,7 @@ export async function validateCoinForTrade(coinAddress) {
  * @param {Object} params.walletClient - Viem wallet client
  * @param {Object} params.publicClient - Viem public client
  * @param {Object} params.account - Account object
+ * @param {Function} [params.switchChain] - Network switch function
  * @returns {Promise<Object>} Transaction receipt
  */
 export async function executeTrade({
@@ -111,7 +113,8 @@ export async function executeTrade({
   slippage = 0.05,
   walletClient,
   publicClient,
-  account
+  account,
+  switchChain
 }) {
   try {
     console.log("=== ZORA TRADE EXECUTION START ===");
@@ -126,7 +129,18 @@ export async function executeTrade({
     console.log("Current chain ID:", chainId);
     
     if (chainId !== 8453) {
-      throw new Error("Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network.");
+      console.log(`Chain mismatch: Connected to chain ${chainId}, but Base (8453) is required. Attempting to switch...`);
+      
+      if (switchChain) {
+        const switchSuccess = await checkAndSwitchNetwork({ chainId, switchChain });
+        if (!switchSuccess) {
+          throw new Error("Please switch to Base network manually in your wallet.");
+        }
+        // Wait a moment for the network switch to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        throw new Error("Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network.");
+      }
     }
 
     // Determine sender and recipient addresses
@@ -222,6 +236,7 @@ export async function executeTrade({
  * @param {Object} params.walletClient - Wallet client
  * @param {Object} params.publicClient - Public client
  * @param {Object} params.account - Account object
+ * @param {Function} [params.switchChain] - Network switch function
  * @returns {Promise<Object>} Transaction receipt
  */
 export async function executeERC20Trade({
@@ -232,7 +247,8 @@ export async function executeERC20Trade({
   slippage = 0.05,
   walletClient,
   publicClient,
-  account
+  account,
+  switchChain
 }) {
   try {
     console.log("Starting ERC20 to ERC20 trade:", {
@@ -247,7 +263,18 @@ export async function executeERC20Trade({
     // Validate Base network requirement
     const chainId = await walletClient.getChainId();
     if (chainId !== 8453) {
-      throw new Error("Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network.");
+      console.log(`Chain mismatch: Connected to chain ${chainId}, but Base (8453) is required. Attempting to switch...`);
+      
+      if (switchChain) {
+        const switchSuccess = await checkAndSwitchNetwork({ chainId, switchChain });
+        if (!switchSuccess) {
+          throw new Error("Please switch to Base network manually in your wallet.");
+        }
+        // Wait a moment for the network switch to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        throw new Error("Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network.");
+      }
     }
 
     const senderAddress = (typeof account === 'string' ? account : account?.address) || recipient;

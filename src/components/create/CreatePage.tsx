@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount, useWalletClient, usePublicClient } from "wagmi";
+import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from "wagmi";
 import { createToken } from "../../lib/functions/createToken";
 import { toast } from "react-hot-toast";
 import DrawingCanvas from "../ui/DrawingCanvas";
@@ -15,6 +15,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { switchChain } = useSwitchChain();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -386,7 +387,8 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         tokenData,
         walletClient,
         publicClient,
-        address
+        address,
+        switchChain
       );
 
       if (result.address) {

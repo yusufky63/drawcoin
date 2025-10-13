@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Coin } from '../../lib/supabase';
 import { getOnchainTokenDetails } from '../../services/sdk/getOnchainData';
-import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
+import { useAccount, usePublicClient, useWalletClient, useSwitchChain } from 'wagmi';
 import { executeTrade, executeERC20Trade, getZORATokenAddress } from '../../services/sdk/getTradeCoin';
 import { getETHPrice } from '../../services/ethPrice.js';
 import { toast } from "react-hot-toast";
@@ -32,6 +32,7 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { switchChain } = useSwitchChain();
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
   const [slippage, setSlippage] = useState(0.05); // Dynamic slippage
@@ -268,6 +269,7 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
             walletClient,
             publicClient,
             account: address,
+            switchChain
           });
         } else {
           // USDC to Token
@@ -293,6 +295,7 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
             walletClient,
             publicClient,
             account: address,
+            switchChain
           });
         }
       } else {
@@ -306,6 +309,7 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
           walletClient,
           publicClient,
           account: address,
+          switchChain
         });
       }
       

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAccount, useWalletClient, usePublicClient } from 'wagmi';
+import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { getOnchainTokenDetails } from '../../services/sdk/getOnchainData';
 import { executeTrade } from '../../services/sdk/getTradeCoin';
@@ -27,6 +27,7 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { switchChain } = useSwitchChain();
 
   const [tokenDetails, setTokenDetails] = useState<TokenDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -85,7 +86,8 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
         slippage,
         walletClient,
         publicClient,
-        account: address
+        account: address,
+        switchChain
       });
       // If no error thrown, treat as success
       toast.success(`Successfully ${tradeType === 'buy' ? 'bought' : 'sold'} tokens!`, { id: 'trade-toast' });
