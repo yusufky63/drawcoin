@@ -272,7 +272,7 @@ export default function ArtHeader({
                 color: '#1a202c',
                 fontFamily: 'Kalam, cursive'
               }}>
-                Hand Drawn Art
+                DrawCoin
               </h1>
             </div>
             

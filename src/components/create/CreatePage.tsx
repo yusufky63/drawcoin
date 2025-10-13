@@ -374,7 +374,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         symbol: formData.symbol,
         description: formData.description,
         imageUrl: ipfsUrl, // Use IPFS URL instead of base64
-        category: "Hand Drawn Art",
+        category: "DrawCoin",
         selectedPurchaseAmount: selectedPurchaseAmount,
         isPurchaseEnabled: isPurchaseEnabled,
         ownersAddresses: ownersAddresses,
