@@ -71,12 +71,13 @@ export default {
   		},
       fontFamily: {
         // Art theme typography
-        'art-sans': ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        'art-sans': ['var(--font-poppins)', 'Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
         'art-display': ['var(--font-playfair)', 'serif'],
         'art-serif': ['var(--font-crimson)', 'serif'],
         'art-elegant': ['var(--font-playfair)', 'serif'],
+        'art-handwriting': ['var(--font-poppins)', 'cursive'],
         // Legacy
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['var(--font-poppins)', 'Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
         mono: ['VT323', 'Courier New', 'monospace'],
         pixel: ['"Press Start 2P"', 'Courier New', 'monospace'],
       },

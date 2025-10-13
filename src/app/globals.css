@@ -22,14 +22,14 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-poppins), "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* Art Theme Base Styles */
 .art-theme {
   background-color: #fafafa;
   color: #1e293b;
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: var(--font-poppins), "Inter", system-ui, sans-serif;
 }
 
 * {
@@ -147,10 +147,7 @@ body {
 /* Hand-Drawn UI Styles */
 @import url("https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&display=swap");
 
-/* Global Font Override */
-* {
-  font-family: "Kalam", cursive !important;
-}
+/* Global Font Override - Removed to prevent conflicts */
 
 .hand-drawn-card {
   border: 3px solid #2d3748;

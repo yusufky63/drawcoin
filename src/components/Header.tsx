@@ -122,8 +122,7 @@ export default function ArtHeader({
               <div className="flex items-center space-x-3 transform rotate-1">
                 <h1 className="text-2xl font-bold text-art-gray-900 transform -rotate-1" style={{ 
                   textShadow: '1px 1px 0 #2d3748',
-                  color: '#1a202c',
-                  fontFamily: 'Kalam, cursive'
+                  color: '#1a202c'
                 }}>
                   DrawCoin
                 </h1>
@@ -269,8 +268,7 @@ export default function ArtHeader({
             <div className="flex items-center space-x-3 transform rotate-1">
               <h1 className="text-lg font-bold text-art-gray-900 transform -rotate-1" style={{ 
                 textShadow: '1px 1px 0 #2d3748',
-                color: '#1a202c',
-                fontFamily: 'Kalam, cursive'
+                color: '#1a202c'
               }}>
                 DrawCoin
               </h1>

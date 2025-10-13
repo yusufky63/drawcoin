@@ -39,7 +39,7 @@ export async function GET() {
       splashBackgroundColor: "#3182ce",
       subtitle: "Hand-drawn art tokens on Base",
       heroImageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
-      tagline: "Create & trade art tokens",
+      tagline: "Create and trade draw tokens",
       ogTitle: "DrawCoin",
       ogDescription: "Create and trade hand-drawn art tokens on the Base",
       ogImageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",

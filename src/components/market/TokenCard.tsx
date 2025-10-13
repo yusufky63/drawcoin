@@ -134,14 +134,14 @@ export default function TokenCard({ token, onTrade, onView }: TokenCardProps) {
                 {(token as any).symbol || token.symbol}
               </p>
             </div>
-            <div className={`text-[10px] font-bold ${(() => {
-              const priceChange = (token as any).priceChange24h;
+            <div className={`text-[12px] font-bold ${(() => {
+              const priceChange = (token as any).marketCapDelta24h;
               if (priceChange && parseFloat(priceChange) > 0) return 'text-green-600';
               if (priceChange && parseFloat(priceChange) < 0) return 'text-red-600';
               return 'text-art-gray-900';
             })()}`}>
               {(() => {
-                const priceChange = (token as any).priceChange24h;
+                const priceChange = (token as any).marketCapDelta24h;
                 return priceChange ? `${parseFloat(priceChange) >= 0 ? '+' : ''}${parseFloat(priceChange).toFixed(2)}%` : '0.00%';
               })()}
             </div>

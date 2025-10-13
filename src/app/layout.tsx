@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Playfair_Display, Crimson_Text } from 'next/font/google';
+import { Playfair_Display, Crimson_Text, Poppins } from 'next/font/google';
 import Providers from "./providers";
 import ArtHeader from "../components/Header";
 
@@ -14,6 +14,13 @@ const crimson = Crimson_Text({
   subsets: ['latin'],
   weight: ['400', '600', '700'],
   variable: '--font-crimson',
+  display: 'swap',
+});
+
+const poppins = Poppins({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-poppins',
   display: 'swap',
 });
 
@@ -80,7 +87,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${crimson.variable}`}>
+    <html lang="en" className={`${playfair.variable} ${crimson.variable} ${poppins.variable}`}>
       <head>
         {/* Farcaster manifest */}
         <link rel="farcaster-app-config" href="/.well-known/farcaster.json" />

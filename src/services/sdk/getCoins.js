@@ -251,14 +251,19 @@ export const getCoinsBatch = async (addresses = [], chain = 8453, concurrency = 
 };
 
 /**
- * Fetch multiple coins using Zora SDK's getCoins function (up to 20 coins at once)
+ * Fetch multiple coins using Zora SDK's getCoins function (batch of specific addresses)
  * @param {string[]} addresses - List of token addresses (max 20)
  * @param {number} chain - Chain ID (default: 8453)
  * @returns {Promise<Record<string, any>>} Map of address -> zora20Token (or null)
  */
 export const getCoinsBatchSDK = async (addresses = [], chain = 8453) => {
   try {
-    // Limit to 20 coins per request
+    if (addresses.length === 0) {
+      console.warn("No addresses provided to getCoinsBatchSDK");
+      return {};
+    }
+
+    // Limit to 20 coins per request (Zora API limit)
     const limitedAddresses = addresses.slice(0, 20);
     
     const coins = limitedAddresses.map(address => ({

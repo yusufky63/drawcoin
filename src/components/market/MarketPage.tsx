@@ -31,24 +31,72 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const sdkCache = useRef<Map<string, any>>(new Map());
 
-  // Load tokens and categories
+  // Load tokens from Supabase addresses + Zora batch
   useEffect(() => {
     const loadInitial = async () => {
       try {
         setLoading(true);
 
+        // Get contract addresses from Supabase
         const addrRows = await CoinService.getCoinAddresses({
-          limit: PAGE_SIZE,
+          limit: 1000, // Get all addresses
           offset: 0,
         });
-        const augmented = await augmentWithSdk(addrRows);
-        setTokens(augmented);
-        setFilteredTokens(augmented);
+        
+        const contractAddresses = addrRows.map(row => row.contract_address);
+        
+        // Get coin details in batches of 20
+        const allCoins = [];
+        const batchSize = 20;
+        
+        for (let i = 0; i < contractAddresses.length; i += batchSize) {
+          const batch = contractAddresses.slice(i, i + batchSize);
+          console.log(`📦 Market: Fetching batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(contractAddresses.length/batchSize)}: ${batch.length} coins`);
+          
+          const batchData = await getCoinsBatchSDK(batch, 8453);
+          
+          // Convert batch data to coin objects
+          batch.forEach(address => {
+            const zoraCoin = batchData[address.toLowerCase()];
+            if (zoraCoin) {
+              const coin = {
+                id: zoraCoin.address || address,
+                name: zoraCoin.name || 'Unknown Token',
+                symbol: zoraCoin.symbol || 'UNK',
+                description: zoraCoin.description || '',
+                contract_address: address,
+                image_url: zoraCoin.mediaContent?.previewImage?.medium || zoraCoin.mediaContent?.previewImage?.small || '',
+                category: 'Unknown',
+                creator_address: zoraCoin.creatorAddress || '',
+                creator_name: zoraCoin.creatorProfile?.handle || '',
+                tx_hash: '',
+                chain_id: 8453,
+                currency: zoraCoin.poolCurrencyToken?.name || 'ETH',
+                total_supply: zoraCoin.totalSupply || '0',
+                current_price: zoraCoin.tokenPrice?.priceInPoolToken || '0',
+                volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',
+                holders: zoraCoin.uniqueHolders || 0,
+                created_at: zoraCoin.createdAt || new Date().toISOString(),
+                updated_at: zoraCoin.createdAt || new Date().toISOString(),
+                // Additional Zora data
+                marketCap: zoraCoin.marketCap,
+                change24hPct: zoraCoin.marketCapDelta24h,
+                ...zoraCoin
+              };
+              allCoins.push(coin);
+            }
+          });
+        }
+        
+        console.log(`✅ Market: Fetched ${allCoins.length} coins from ${contractAddresses.length} addresses`);
+        
+        setTokens(allCoins);
+        setFilteredTokens(allCoins);
         setPage(1);
-        setHasMore(addrRows.length === PAGE_SIZE);
+        setHasMore(false); // We get all coins at once
 
-        // Basic stats from first page
-        const totalTokens = augmented.length;
+        // Basic stats
+        const totalTokens = allCoins.length;
         setMarketStats({ totalTokens });
       } catch (error) {
         console.error("Error loading market data:", error);
@@ -109,55 +157,11 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
     setFilteredTokens(filtered);
   }, [tokens, searchTerm, sortBy]);
 
-  // Load more handler (infinite scroll)
+  // Load more handler (disabled since we load all tokens at once)
   const loadMore = useCallback(async () => {
-    if (fetchingMore || !hasMore) return;
-    try {
-      setFetchingMore(true);
-      const addrRows = await CoinService.getCoinAddresses({
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-      });
-      const next = await augmentWithSdk(addrRows);
-      // Deduplicate by id (or contract_address)
-      let added = 0;
-      setTokens((prev) => {
-        const filtered = next.filter(
-          (n) =>
-            !prev.some((p) =>
-              p.id
-                ? p.id === (n as any).id
-                : p.contract_address === n.contract_address
-            )
-        );
-        added = filtered.length;
-        return filtered.length ? [...prev, ...filtered] : prev;
-      });
-      setFilteredTokens((prev) => {
-        // Keep same dedupe rule for filtered array
-        const filtered = next.filter(
-          (n) =>
-            !prev.some((p) =>
-              p.id
-                ? p.id === (n as any).id
-                : p.contract_address === n.contract_address
-            )
-        );
-        return filtered.length ? [...prev, ...filtered] : prev;
-      });
-      setPage((prev) => prev + 1);
-      // Stop if no new unique items were added
-      if (added === 0) {
-        setHasMore(false);
-      } else {
-        setHasMore(addrRows.length === PAGE_SIZE);
-      }
-    } catch (e) {
-      console.error("Error loading more tokens:", e);
-    } finally {
-      setFetchingMore(false);
-    }
-  }, [fetchingMore, hasMore, page, searchTerm]);
+    // No longer needed since we load all tokens at once
+    console.log("Load more disabled - all tokens loaded at once");
+  }, []);
 
   // Intersection observer for sentinel
   useEffect(() => {
@@ -174,152 +178,13 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
     return () => observer.disconnect();
   }, [loadMore, hasMore]);
 
-  // Refetch when filters change (reset pagination)
+  // Refetch when filters change (disabled since we load all tokens at once)
   useEffect(() => {
-    const refetch = async () => {
-      try {
-        setLoading(true);
-        setPage(0);
-        setHasMore(true);
-        const addrRows = await CoinService.getCoinAddresses({
-          limit: PAGE_SIZE,
-          offset: 0,
-        });
-        const augmented = await augmentWithSdk(addrRows);
-        setTokens(augmented);
-        setFilteredTokens(augmented);
-        setPage(1);
-        setHasMore(addrRows.length === PAGE_SIZE);
-      } catch (e) {
-        console.error("Error refetching tokens:", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (page > 0) refetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // No longer needed since we load all tokens at once and filter client-side
+    console.log("Refetch disabled - filtering is done client-side");
   }, [searchTerm]);
 
-  // Map Supabase addresses to SDK token basics (name, symbol, image)
-  async function augmentWithSdk(
-    rows: Array<{ contract_address: string; created_at: string }>
-  ): Promise<Coin[]> {
-    const out: Coin[] = [] as any;
-    const limit = 3;
-    // Build address list and consult cache first
-    const needFetch: string[] = [];
-    const normalized = rows.map((r) => ({
-      row: r,
-      addr: (r.contract_address || "").toLowerCase(),
-    }));
-    for (const n of normalized) {
-      if (!n.addr) continue;
-      if (!sdkCache.current.has(n.addr)) needFetch.push(n.addr);
-    }
-    // Batch fetch missing via SDK (up to 20 coins at once)
-    if (needFetch.length) {
-      const batch = await getCoinsBatchSDK(needFetch, 8453);
-      Object.entries(batch).forEach(([addr, data]) =>
-        sdkCache.current.set(addr, data)
-      );
-    }
-    // Compose output in original order
-    for (const n of normalized) {
-      if (!n.addr) continue;
-      const sdk: any = sdkCache.current.get(n.addr) || {};
-      // Prefer preview image from mediaContent or avatar; fallback to tokenUri (ipfs)
-      const toHttp = (uri?: string) =>
-        uri && uri.startsWith("ipfs://")
-          ? `https://ipfs.io/ipfs/${uri.replace("ipfs://", "")}`
-          : uri || "";
-      const image =
-        sdk?.mediaContent?.previewImage?.medium ||
-        sdk?.mediaContent?.previewImage?.small ||
-        sdk?.creatorProfile?.avatar?.medium ||
-        sdk?.creatorProfile?.avatar?.small ||
-        toHttp(sdk?.tokenUri) ||
-        "";
-      const name = sdk?.name || "";
-      const symbol = sdk?.symbol || "";
-      const creatorHandle = sdk?.creatorProfile?.handle || "";
-      const holders =
-        typeof sdk?.uniqueHolders === "number"
-          ? sdk.uniqueHolders
-          : parseInt(sdk?.uniqueHolders || "0", 10) || 0;
-      const volume24h = sdk?.volume24h ?? sdk?.totalVolume ?? "0";
-      const marketCap = sdk?.marketCap ?? undefined;
-      const change24hRaw = sdk?.marketCapDelta24h ?? undefined;
-      const totalSupply = sdk?.totalSupply ?? undefined;
-      const currentPrice = sdk?.tokenPrice?.priceInPoolToken ?? undefined;
-      const currencyName = sdk?.poolCurrencyToken?.name || "ETH";
-      const createdAt = sdk?.createdAt || n.row.created_at;
-
-      const token: any = {
-        id: n.row.contract_address,
-        name,
-        symbol,
-        description: sdk?.description || "",
-        contract_address: n.row.contract_address,
-        image_url: image,
-        category: undefined,
-        creator_address: sdk?.creatorAddress || "",
-        creator_name: creatorHandle || undefined,
-        tx_hash: "",
-        chain_id: sdk?.chainId || 8453,
-        currency: currencyName,
-        total_supply: totalSupply,
-        current_price: currentPrice,
-        volume_24h:
-          typeof volume24h === "string" ? volume24h : String(volume24h ?? "0"),
-        holders: holders,
-        created_at: createdAt,
-        updated_at: createdAt,
-        // Zora API verilerini doğrudan ekle
-        ...sdk,
-      };
-      (token as any).marketCap =
-        typeof marketCap === "string" ? parseFloat(marketCap) : marketCap;
-      if (
-        change24hRaw !== undefined &&
-        change24hRaw !== null &&
-        !Number.isNaN(Number(change24hRaw))
-      ) {
-        (token as any).change24hPct = Number(change24hRaw);
-      }
-
-      // Price değişimi hesapla (market cap değişiminden)
-      if (
-        change24hRaw !== undefined &&
-        change24hRaw !== null &&
-        !Number.isNaN(Number(change24hRaw)) &&
-        marketCap !== undefined &&
-        marketCap !== null &&
-        !Number.isNaN(Number(marketCap))
-      ) {
-        const deltaValue = Number(change24hRaw);
-        const currentMC = Number(marketCap);
-
-        // Eğer delta, market cap ile aynıysa (yeni token), "NEW" göster
-        if (deltaValue === currentMC) {
-          (token as any).isNew = true;
-          (token as any).priceChange24h = null; // Yeni tokenlarda price change gösterme
-        } else {
-          // Normal hesaplama: (delta / (currentMC - delta)) * 100
-          const previousMC = currentMC - deltaValue;
-          if (previousMC > 0) {
-            const priceChange = (deltaValue / previousMC) * 100;
-            (token as any).priceChange24h = priceChange;
-          } else {
-            (token as any).priceChange24h = null;
-          }
-        }
-      } else {
-        (token as any).priceChange24h = null;
-      }
-      out.push(token);
-    }
-    return out;
-  }
+  // Removed augmentWithSdk function - no longer needed
 
   const handleTrade = (token: Coin) => {
     setSelectedToken(token);

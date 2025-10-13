@@ -158,13 +158,13 @@ export default function TokenGrid({ tokens, onTrade, onView, loading = false, vi
                   </div>
                   <div className="text-right">
                     <div className={`text-sm md:text-lg font-bold ${(() => {
-                      const priceChange = (token as any).priceChange24h;
+                      const priceChange = (token as any).marketCapDelta24h;
                       if (priceChange && parseFloat(priceChange) > 0) return 'text-green-600';
                       if (priceChange && parseFloat(priceChange) < 0) return 'text-red-600';
                       return 'text-art-gray-900';
                     })()}`}>
                       {(() => {
-                        const priceChange = (token as any).priceChange24h;
+                        const priceChange = (token as any).marketCapDelta24h;
                         return priceChange ? `${parseFloat(priceChange) >= 0 ? '+' : ''}${parseFloat(priceChange).toFixed(2)}%` : '0.00%';
                       })()}
                     </div>

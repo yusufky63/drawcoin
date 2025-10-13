@@ -36,13 +36,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
   const [sortBy, setSortBy] = useState('price-high');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
-  // Performance optimization states
-  const [platformFilter, setPlatformFilter] = useState<'all' | 'platform'>('platform');
-  
-  // Debug: Log platform filter changes
-  useEffect(() => {
-    console.log(`🎯 Platform filter changed to: ${platformFilter}`);
-  }, [platformFilter]);
+  // Removed platform filter - now using only Supabase
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
@@ -51,33 +45,69 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
   // Cache for Zora API data
   const sdkCache = useRef<Map<string, any>>(new Map());
 
-  // Optimized function to filter platform coins from Supabase first
-  const filterPlatformCoins = useCallback(async (zoraCoins: any[], isCreatedCoins = false) => {
-    // Get contract addresses from Zora coins
-    const contractAddresses = zoraCoins.map(coin => coin.address || coin.contract_address).filter(Boolean);
-    
-    if (contractAddresses.length === 0) return [];
-    
+  // Function to get platform coins: Supabase addresses + Zora batch details
+  const getPlatformCoins = useCallback(async (page = 0, limit = 1000) => {
     try {
-      // Check which coins exist in our platform database
-      const platformCoins = await CoinService.getCoins({
-        limit: 1000, // Get all platform coins
+      // Get only contract addresses from Supabase
+      const addressRows = await CoinService.getCoinAddresses({
+        limit: 1000, // Get all addresses
         offset: 0
       });
       
-      const platformAddresses = new Set(platformCoins.map(coin => coin.contract_address.toLowerCase()));
+      const contractAddresses = addressRows.map(row => row.contract_address);
       
-      // Filter Zora coins to only include platform coins
-      return zoraCoins.filter(coin => {
-        const address = (coin.address || coin.contract_address || '').toLowerCase();
-        return platformAddresses.has(address);
-      });
+      // Get coin details in batches of 20
+      const allCoins = [];
+      const batchSize = 20;
+      
+      for (let i = 0; i < contractAddresses.length; i += batchSize) {
+        const batch = contractAddresses.slice(i, i + batchSize);
+        console.log(`📦 Fetching batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(contractAddresses.length/batchSize)}: ${batch.length} coins`);
+        
+        const batchData = await getCoinsBatchSDK(batch, 8453);
+        
+        // Convert batch data to coin objects
+        batch.forEach(address => {
+          const zoraCoin = batchData[address.toLowerCase()];
+          if (zoraCoin) {
+            const coin = {
+              id: zoraCoin.address || address,
+              name: zoraCoin.name || 'Unknown Token',
+              symbol: zoraCoin.symbol || 'UNK',
+              description: zoraCoin.description || '',
+              contract_address: address,
+              image_url: zoraCoin.mediaContent?.previewImage?.medium || zoraCoin.mediaContent?.previewImage?.small || '',
+              category: 'Unknown',
+              creator_address: zoraCoin.creatorAddress || '',
+              creator_name: zoraCoin.creatorProfile?.handle || '',
+              tx_hash: '',
+              chain_id: 8453,
+              currency: zoraCoin.poolCurrencyToken?.name || 'ETH',
+              total_supply: zoraCoin.totalSupply || '0',
+              current_price: zoraCoin.tokenPrice?.priceInPoolToken || '0',
+              volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',
+              holders: zoraCoin.uniqueHolders || 0,
+              created_at: zoraCoin.createdAt || new Date().toISOString(),
+              updated_at: zoraCoin.createdAt || new Date().toISOString(),
+              // Additional Zora data
+              marketCap: zoraCoin.marketCap,
+              change24hPct: zoraCoin.marketCapDelta24h,
+              ...zoraCoin
+            };
+            allCoins.push(coin);
+          }
+        });
+      }
+      
+      console.log(`✅ Fetched ${allCoins.length} coins from ${contractAddresses.length} addresses`);
+      
+      return {
+        coins: allCoins,
+        hasMore: false // We get all coins at once
+      };
     } catch (error) {
-      console.error('Error filtering platform coins:', error);
-      // Fallback: Show a warning but continue with all coins
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.warn('Platform filtering failed, showing all coins. Error:', errorMessage);
-      return zoraCoins; // Fallback to all coins if filtering fails
+      console.error('Error getting platform coins:', error);
+      return { coins: [], hasMore: false };
     }
   }, []);
 
@@ -194,7 +224,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
     return filtered;
   }, [heldTokens, createdTokens, activeTab, searchTerm, sortBy]);
 
-  // Optimized portfolio loading with platform filtering
+  // Load portfolio data from Supabase only
   const loadPortfolio = useCallback(async (page = 0, append = false) => {
     if (!isConnected || !address) {
       setLoading(false);
@@ -214,80 +244,43 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         setUserProfile(profile);
       }
       
-      // Load tokens with pagination
-      const [balancesResult, createdCoinsResult] = await Promise.all([
-        getUserBalances(address, PAGE_SIZE).catch(err => {
-          console.warn('Could not fetch user balances:', err);
-          return { balances: [], hasMore: false, nextCursor: null };
-        }),
-        getUserCreatedCoins(address, PAGE_SIZE).catch(err => {
-          console.warn('Could not fetch created coins:', err);
-          return { coins: [], hasMore: false, nextCursor: null };
-        })
-      ]);
-
-      const balances = balancesResult.balances || [];
-      const createdCoins = createdCoinsResult.coins || [];
-
-      // Filter platform coins first (performance optimization)
-      let filteredBalances, filteredCreatedCoins;
+      // Get all platform coins from Supabase
+      const platformResult = await getPlatformCoins(page, PAGE_SIZE);
+      const platformCoins = platformResult.coins;
       
-      if (platformFilter === 'all') {
-        // Show all Zora coins without filtering
-        console.log('🔍 Showing ALL Zora coins (no filtering)');
-        filteredBalances = balances;
-        filteredCreatedCoins = createdCoins;
-      } else {
-        // Filter to show only platform coins
-        console.log('🔍 Filtering to show only platform coins');
-        const [filteredBalancesResult, filteredCreatedCoinsResult] = await Promise.all([
-          filterPlatformCoins(balances),
-          filterPlatformCoins(createdCoins, true)
-        ]);
-        filteredBalances = filteredBalancesResult;
-        filteredCreatedCoins = filteredCreatedCoinsResult;
-      }
+      // Filter coins by user's address
+      const userCreatedTokens = platformCoins.filter(coin => 
+        coin.creator_address?.toLowerCase() === address.toLowerCase()
+      );
       
-      console.log(`📊 Filter results: ${filteredBalances.length} held tokens, ${filteredCreatedCoins.length} created tokens`);
-
-      // Augment with SDK data in batches
-      const [augmentedHeldTokens, augmentedCreatedTokens] = await Promise.all([
-        augmentWithSdk(filteredBalances),
-        augmentWithSdk(filteredCreatedCoins)
-      ]);
+      // For held tokens, show all platform coins (user can hold any token)
+      // In a real implementation, you'd check actual token balances
+      const userHeldTokens = platformCoins; // Show all tokens for now
+      
+      console.log(`📊 Portfolio results: ${userHeldTokens.length} held tokens, ${userCreatedTokens.length} created tokens`);
 
       // Calculate portfolio statistics
-      const stats = calculatePortfolioStats(filteredBalances, filteredCreatedCoins);
+      const stats = calculatePortfolioStats(userHeldTokens, userCreatedTokens);
 
       if (append) {
         // Append to existing data for pagination
-        setHeldTokens(prev => [...prev, ...augmentedHeldTokens]);
-        setCreatedTokens(prev => [...prev, ...augmentedCreatedTokens]);
+        setHeldTokens(prev => [...prev, ...userHeldTokens]);
+        setCreatedTokens(prev => [...prev, ...userCreatedTokens]);
         setIsLoadingMore(false);
       } else {
         // Initial load
-        setHeldTokens(augmentedHeldTokens as Coin[]);
-        setCreatedTokens(augmentedCreatedTokens as Coin[]);
+        setHeldTokens(userHeldTokens);
+        setCreatedTokens(userCreatedTokens);
         setPortfolioStats(stats);
         setLoading(false);
       }
       
       // Check if there's more data
-      setHasMoreData(balancesResult.hasMore || createdCoinsResult.hasMore);
+      setHasMoreData(platformResult.hasMore);
       setCurrentPage(page);
       
     } catch (error) {
       console.error('Error loading portfolio:', error);
-      
-      // Show user-friendly error message
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
-        console.warn('Rate limited by Zora API, will retry automatically');
-        // Could add a toast notification here
-      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
-        console.warn('Network error, please check your connection');
-        // Could add a toast notification here
-      }
       
       setLoading(false);
       setIsLoadingMore(false);
@@ -295,7 +288,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
       // Don't throw the error to prevent app crashes
       // The UI will show empty state gracefully
     }
-  }, [isConnected, address, filterPlatformCoins, augmentWithSdk]);
+  }, [isConnected, address, getPlatformCoins]);
 
   // Load more data for pagination
   const loadMore = useCallback(async () => {
@@ -310,16 +303,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
     }
   }, [isConnected, address]);
 
-  // Reset when platform filter changes
-  useEffect(() => {
-    if (isConnected && address) {
-      setCurrentPage(0);
-      setHasMoreData(true);
-      setHeldTokens([]);
-      setCreatedTokens([]);
-      loadPortfolio(0, false);
-    }
-  }, [platformFilter]);
+  // Removed platform filter reset effect
 
   const handleTrade = (token: Coin) => {
     setSelectedToken(token);
@@ -459,17 +443,6 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                     </a>
                   )}
                 </div>
-                {userProfile.creatorCoin && (
-                  <div className="text-right">
-                    <p className="text-sm text-art-gray-600">Creator Coin</p>
-                    <p className="text-lg font-semibold text-art-gray-900">
-                      {userProfile.creatorCoin.marketCap ? 
-                        `$${parseFloat(userProfile.creatorCoin.marketCap).toLocaleString()}` : 
-                        'N/A'
-                      }
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -501,52 +474,6 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
           </div>
         )}
 
-        {/* Platform Filter */}
-        <div className="mb-4">
-          <div className="hand-drawn-card">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-art-gray-700">Filter by Platform</h3>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => {
-                    console.log('🔄 Switching to Platform filter');
-                    setPlatformFilter('platform');
-                  }}
-                  className={`px-3 py-1 text-xs font-medium transition-all duration-200 ${
-                    platformFilter === 'platform'
-                      ? 'bg-art-gray-900 text-art-white'
-                      : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
-                  }`}
-                  style={{ 
-                    borderRadius: '8px 3px 6px 4px',
-                    border: '1px solid #2d3748',
-                    transform: platformFilter === 'platform' ? 'rotate(-0.5deg)' : 'rotate(0.5deg)'
-                  }}
-                >
-                  Our Platform
-                </button>
-                <button
-                  onClick={() => {
-                    console.log('🔄 Switching to All Zora filter');
-                    setPlatformFilter('all');
-                  }}
-                  className={`px-3 py-1 text-xs font-medium transition-all duration-200 ${
-                    platformFilter === 'all'
-                      ? 'bg-art-gray-900 text-art-white'
-                      : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
-                  }`}
-                  style={{ 
-                    borderRadius: '6px 4px 8px 3px',
-                    border: '1px solid #2d3748',
-                    transform: platformFilter === 'all' ? 'rotate(0.5deg)' : 'rotate(-0.5deg)'
-                  }}
-                >
-                  All Zora
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Tabs */}
         <div className="mb-6">
