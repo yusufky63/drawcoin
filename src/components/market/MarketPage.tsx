@@ -46,7 +46,7 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
         const contractAddresses = addrRows.map(row => row.contract_address);
         
         // Get coin details in batches of 20
-        const allCoins = [];
+        const allCoins: Coin[] = [];
         const batchSize = 20;
         
         for (let i = 0; i < contractAddresses.length; i += batchSize) {

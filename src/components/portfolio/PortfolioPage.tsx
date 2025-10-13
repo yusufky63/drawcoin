@@ -57,7 +57,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
       const contractAddresses = addressRows.map(row => row.contract_address);
       
       // Get coin details in batches of 20
-      const allCoins = [];
+      const allCoins: Coin[] = [];
       const batchSize = 20;
       
       for (let i = 0; i < contractAddresses.length; i += batchSize) {
