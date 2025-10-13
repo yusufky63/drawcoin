@@ -1,0 +1,452 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #121212;
+  --card-background: #ffffff;
+  --card-foreground: #121212;
+  --primary: #7c65c1;
+  --primary-light: #9f91d0;
+  --primary-dark: #6952a3;
+  --accent: #ffa020;
+  --gray-light: #f7f7f7;
+  --gray-mid: #e0e0e0;
+  --gray-dark: #757575;
+  --success: #4caf50;
+  --error: #ef476f;
+  --radius: 0.75rem;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Art Theme Base Styles */
+.art-theme {
+  background-color: #fafafa;
+  color: #1e293b;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+  }
+}
+
+@layer components {
+  .card {
+    @apply p-4 rounded-xl shadow-sm border border-gray-mid;
+    background-color: #ffffff;
+    color: var(--foreground);
+  }
+
+  .container-sm {
+    @apply w-full max-w-md mx-auto px-3;
+  }
+
+  .input-field {
+    @apply rounded-sm border border-gray-mid px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-primary-light focus:border-transparent;
+    background-color: #ffffff;
+    color: var(--foreground);
+  }
+
+  .btn-primary {
+    @apply bg-primary hover:bg-primary-dark text-white font-medium py-2 px-4 rounded-sm transition-colors;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-light font-medium py-2 px-4 rounded-sm transition-colors;
+    color: var(--foreground);
+  }
+
+  .section {
+    @apply py-3;
+  }
+
+  /* Get Started section */
+  .get-started {
+    @apply mb-6 p-4 rounded-xl bg-white border border-gray-mid;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+
+  .get-started-step {
+    @apply flex items-start pb-3 mb-3 border-b border-gray-mid;
+  }
+
+  .get-started-step:last-child {
+    @apply border-0 mb-0 pb-0;
+  }
+}
+
+/* Step number - fix for Tailwind compilation */
+.step-number {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 9999px;
+  background-color: rgba(124, 101, 193, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.75rem;
+  font-weight: 500;
+  color: var(--primary);
+}
+
+/* Minimal progress steps */
+.step-indicator {
+  @apply flex items-center gap-1.5 mb-4;
+}
+
+.step-dot {
+  @apply w-2 h-2 rounded-full bg-gray-mid;
+  transition: all 0.3s ease;
+}
+
+.step-dot.active {
+  @apply bg-primary w-3 h-3;
+}
+
+/* Modern animation utilities */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Add Farcaster safe area insets support */
+.farcaster-safe-container {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Hand-Drawn UI Styles */
+@import url("https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&display=swap");
+
+/* Global Font Override */
+* {
+  font-family: "Kalam", cursive !important;
+}
+
+.hand-drawn-card {
+  border: 3px solid #2d3748;
+  border-radius: 25px 10px 20px 15px;
+  transform: rotate(-0.5deg);
+  box-shadow: 5px 5px 0 #2d3748;
+  background: linear-gradient(135deg, #ffffff, #f7fafc);
+  position: relative;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.hand-drawn-card:hover {
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: 7px 7px 0 #2d3748;
+}
+
+.hand-drawn-card::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border: 2px dashed #4a5568;
+  border-radius: 25px 10px 20px 15px;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.hand-drawn-btn {
+  border: 3px solid #2d3748;
+  border-radius: 20px 5px 15px 10px;
+  transform: rotate(1deg);
+  box-shadow: 4px 4px 0 #2d3748;
+  background: linear-gradient(45deg, #4299e1, #3182ce);
+  color: white;
+  font-family: "Kalam", cursive;
+  font-weight: bold;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.hand-drawn-btn:hover {
+  transform: rotate(-0.5deg) translateY(-2px);
+  box-shadow: 6px 6px 0 #2d3748;
+  background: linear-gradient(45deg, #3182ce, #2c5282);
+}
+
+.hand-drawn-btn:active {
+  transform: rotate(0deg) translateY(1px);
+  box-shadow: 2px 2px 0 #2d3748;
+}
+
+.hand-drawn-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: rotate(0deg);
+}
+
+.hand-drawn-btn.secondary {
+  background: linear-gradient(45deg, #48bb78, #38a169);
+}
+
+.hand-drawn-btn.secondary:hover {
+  background: linear-gradient(45deg, #38a169, #2f855a);
+}
+
+.hand-drawn-btn.danger {
+  background: linear-gradient(45deg, #f56565, #e53e3e);
+}
+
+.hand-drawn-btn.danger:hover {
+  background: linear-gradient(45deg, #e53e3e, #c53030);
+}
+
+.hand-drawn-input {
+  border: 2px solid #2d3748;
+  border-radius: 15px 5px 10px 8px;
+  transform: rotate(-0.3deg);
+  padding: 10px 14px;
+  font-family: "Kalam", cursive;
+  background: #ffffff;
+  box-shadow: 2px 2px 0 #2d3748;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.hand-drawn-input:focus {
+  outline: none;
+  transform: rotate(0deg);
+  box-shadow: 3px 3px 0 #2d3748;
+  border-color: #4299e1;
+}
+
+.hand-drawn-textarea {
+  border: 2px solid #2d3748;
+  border-radius: 20px 8px 15px 12px;
+  transform: rotate(0.2deg);
+  padding: 12px 16px;
+  font-family: "Kalam", cursive;
+  background: #ffffff;
+  box-shadow: 2px 2px 0 #2d3748;
+  resize: none;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.hand-drawn-textarea:focus {
+  outline: none;
+  transform: rotate(0deg);
+  box-shadow: 3px 3px 0 #2d3748;
+  border-color: #4299e1;
+}
+
+.hand-drawn-label {
+  font-family: "Kalam", cursive;
+  font-weight: bold;
+  color: #2d3748;
+  transform: rotate(-0.5deg);
+  display: inline-block;
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
+.hand-drawn-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  transform: rotate(0.3deg);
+}
+
+.hand-drawn-header h3 {
+  font-family: "Kalam", cursive;
+  font-weight: bold;
+  color: #2d3748;
+  margin-left: 0.75rem;
+  font-size: 1.25rem;
+}
+
+.hand-drawn-icon {
+  width: 24px;
+  height: 24px;
+  stroke: #2d3748;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hand-drawn-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid #2d3748;
+  border-radius: 50%;
+  background: #ffffff;
+  transform: rotate(-5deg);
+}
+
+.drawing-canvas {
+  border: 3px solid #2d3748;
+  border-radius: 20px 10px 25px 15px;
+  transform: rotate(0.5deg);
+  box-shadow: 4px 4px 0 #2d3748;
+  background: #ffffff;
+  margin: 1rem 0;
+  overflow: hidden;
+}
+
+.drawing-tools {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.tool-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.color-picker {
+  border: 2px solid #2d3748;
+  border-radius: 10px 5px 8px 6px;
+  transform: rotate(-0.5deg);
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #2d3748;
+}
+
+.brush-size-slider {
+  border: 2px solid #2d3748;
+  border-radius: 15px;
+  transform: rotate(0.3deg);
+  background: #ffffff;
+  box-shadow: 2px 2px 0 #2d3748;
+  width: 100%;
+  height: 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+.art-preview {
+  border: 3px solid #2d3748;
+  border-radius: 20px 10px 25px 15px;
+  transform: rotate(-0.3deg);
+  box-shadow: 4px 4px 0 #2d3748;
+  background: #ffffff;
+  padding: 1rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.art-preview img {
+  max-width: 100%;
+  border-radius: 15px 8px 20px 12px;
+  box-shadow: 2px 2px 0 #2d3748;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .hand-drawn-card {
+    padding: 1rem;
+    transform: rotate(0deg);
+  }
+
+  .hand-drawn-btn {
+    transform: rotate(0deg);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .hand-drawn-input,
+  .hand-drawn-textarea {
+    transform: rotate(0deg);
+  }
+
+  .drawing-tools {
+    justify-content: center;
+  }
+}
+
+/* Hand-drawn slider styles */
+.hand-drawn-input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  border: 2px solid #2d3748;
+  border-radius: 15px 5px 10px 8px;
+  height: 12px;
+  padding: 0;
+}
+
+.hand-drawn-input[type="range"]::-webkit-slider-track {
+  background: #e2e8f0;
+  height: 8px;
+  border-radius: 8px 3px 6px 4px;
+}
+
+.hand-drawn-input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #2d3748;
+  height: 20px;
+  width: 20px;
+  border-radius: 50% 30% 50% 30%;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  transform: rotate(45deg);
+}
+
+.hand-drawn-input[type="range"]::-moz-range-track {
+  background: #e2e8f0;
+  height: 8px;
+  border-radius: 8px 3px 6px 4px;
+  border: none;
+}
+
+.hand-drawn-input[type="range"]::-moz-range-thumb {
+  background: #2d3748;
+  height: 20px;
+  width: 20px;
+  border-radius: 50% 30% 50% 30%;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  transform: rotate(45deg);
+}

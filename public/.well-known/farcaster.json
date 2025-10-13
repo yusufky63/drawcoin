@@ -1,0 +1,31 @@
+﻿{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "baseBuilder": {
+    "allowedAddresses": ["0xc0F52851fCAac0cac016432E5e11954632cd2fcB"]
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "DrawCoin",
+    "description": "Create and trade hand-drawn art tokens on Base.",
+    "iconUrl": "https://drawcoin.vercel.app/logo.png",
+    "homeUrl": "https://drawcoin.vercel.app",
+    "imageUrl": "https://drawcoin.vercel.app/opengraph-image.png",
+    "screenshotUrls": ["https://drawcoin.vercel.app/images/screenshot1.png"],
+    "tags": ["nft", "tokens", "web3", "draw"],
+    "primaryCategory": "art-creativity",
+    "buttonTitle": "Create Token",
+    "splashImageUrl": "https://drawcoin.vercel.app/logo.png",
+    "splashBackgroundColor": "#3182ce",
+    "subtitle": "Hand-drawn art tokens on Base",
+    "heroImageUrl": "https://drawcoin.vercel.app/opengraph-image.png",
+    "tagline": "Create and trade draw tokens instantly",
+    "ogTitle": "DrawCoin",
+    "ogDescription": "Create and trade hand-drawn art tokens on the Base",
+    "ogImageUrl": "https://drawcoin.vercel.app/opengraph-image.png",
+    "noindex": false
+  }
+}
