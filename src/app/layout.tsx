@@ -19,7 +19,7 @@ const crimson = Crimson_Text({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_URL || "https://drawcoin.vercel.app"
+    process.env.NEXT_PUBLIC_URL || "https://drawcoin-mini.vercel.app"
   ),
   title: "DrawCoin",
   description: "Create and trade hand-drawn art tokens on Base.",
@@ -34,10 +34,10 @@ export const metadata: Metadata = {
     title: "DrawCoin",
     description: "Create and trade hand-drawn art tokens on Base.",
     type: "website",
-    url: "https://drawcoin.vercel.app",
+    url: "https://drawcoin-mini.vercel.app",
     images: [
       {
-        url: "https://drawcoin.vercel.app/opengraph-image.png",
+        url: "https://drawcoin-mini.vercel.app/opengraph-image.png",
         width: 1200,
         height: 630,
         alt: "DrawCoin",
@@ -48,19 +48,19 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "DrawCoin",
     description: "Create and trade hand-drawn art tokens on the Base",
-    images: ["https://drawcoin.vercel.app/opengraph-image.png"],
+    images: ["https://drawcoin-mini.vercel.app/opengraph-image.png"],
   },
   other: {
     "fc:miniapp": JSON.stringify({
       version: "next",
-      imageUrl: "https://drawcoin.vercel.app/opengraph-image.png",
+      imageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
       button: {
         title: "Draw Coin",
         action: {
           type: "launch_miniapp",
           name: "DrawCoin",
-          url: "https://drawcoin.vercel.app",
-          splashImageUrl: "https://drawcoin.vercel.app/splash.png",
+          url: "https://drawcoin-mini.vercel.app",
+          splashImageUrl: "https://drawcoin-mini.vercel.app/splash.png",
           splashBackgroundColor: "#3182ce"
         }
       }

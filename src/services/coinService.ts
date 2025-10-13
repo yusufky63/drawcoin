@@ -25,7 +25,7 @@ export class CoinService {
   static async saveCoin(coinData: CreateCoinData): Promise<Coin | null> {
     try {
       const { data, error } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .insert({
           name: coinData.name,
           symbol: coinData.symbol,
@@ -69,7 +69,7 @@ export class CoinService {
   }): Promise<Coin[]> {
     try {
       let query = supabase
-        .from('coins')
+        .from('drawcoins')
         .select('*')
         .order('created_at', { ascending: false })
 
@@ -114,7 +114,7 @@ export class CoinService {
   static async getCoinByAddress(contractAddress: string): Promise<Coin | null> {
     try {
       const { data, error } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .select('*')
         .eq('contract_address', contractAddress)
         .single()
@@ -141,7 +141,7 @@ export class CoinService {
   }): Promise<Array<{ contract_address: string; created_at: string }>> {
     try {
       let query = supabase
-        .from('coins')
+        .from('drawcoins')
         .select('contract_address,created_at')
         .order('created_at', { ascending: false })
 
@@ -176,7 +176,7 @@ export class CoinService {
   static async updateCoin(contractAddress: string, updates: Partial<Coin>): Promise<Coin | null> {
     try {
       const { data, error } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .update({
           ...updates,
           updated_at: new Date().toISOString(),
@@ -231,7 +231,7 @@ export class CoinService {
   static async coinExists(contractAddress: string): Promise<boolean> {
     try {
       const { data, error } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .select('id')
         .eq('contract_address', contractAddress)
         .single()
@@ -248,7 +248,7 @@ export class CoinService {
   static async getTotalCoinsCount(): Promise<number> {
     try {
       const { count, error } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .select('*', { count: 'exact', head: true })
 
       if (error) {
@@ -274,19 +274,19 @@ export class CoinService {
     try {
       // Total coins
       const { count: totalCoins } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .select('*', { count: 'exact', head: true })
 
       // Unique creators
       const { data: creatorsData } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .select('creator_address')
 
       const uniqueCreators = new Set(creatorsData?.map(c => c.creator_address) || [])
 
       // Category counts
       const { data: categoryData } = await supabase
-        .from('coins')
+        .from('drawcoins')
         .select('category')
 
       const categoryCounts = categoryData?.reduce((acc, coin) => {

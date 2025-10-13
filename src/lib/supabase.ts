@@ -52,7 +52,7 @@ export interface Coin {
 export interface Database {
   public: {
     Tables: {
-      coins: {
+      drawcoins: {
         Row: Coin
         Insert: Omit<Coin, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<Coin, 'id' | 'created_at' | 'updated_at'>>

@@ -83,7 +83,7 @@ async function sendNotification(url: string, token: string, message: string) {
         notificationId: `notification-${Date.now()}`,
         title: 'DrawCoin Update',
         body: message,
-        targetUrl: 'https://drawcoin.vercel.app',
+        targetUrl: 'https://drawcoin-mini.vercel.app',
         tokens: [token],
       }),
     });
