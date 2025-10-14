@@ -62,13 +62,13 @@ export const metadata: Metadata = {
       version: "next",
       imageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
       button: {
-        title: "Draw Coin",
+        title: "Create Token",
         action: {
-          type: "launch_miniapp",
+          type: "launch_frame",
           name: "DrawCoin",
           url: "https://drawcoin-mini.vercel.app",
-          splashImageUrl: "https://drawcoin-mini.vercel.app/splash.png",
-          splashBackgroundColor: "#3182ce"
+          splashImageUrl: "https://drawcoin-mini.vercel.app/logo.png",
+          splashBackgroundColor: "#fff"
         }
       }
     })
@@ -78,7 +78,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#3182ce",
+  themeColor: "#fff",
 };
 
 export default function RootLayout({
