@@ -30,6 +30,49 @@ const initializeApiKey = () => {
 // Call initialization on module load
 initializeApiKey();
 
+/**
+ * Retry mechanism for RPC rate limiting and temporary errors
+ * @param {Function} fn - Function to retry
+ * @param {number} maxRetries - Maximum number of retries
+ * @param {number} delay - Delay between retries in ms
+ * @returns {Promise} - Result of the function
+ */
+async function retryWithBackoff(fn, maxRetries = 3, delay = 1000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const isRetryableError = 
+        error?.message?.includes('rate limited') ||
+        error?.message?.includes('Request is being rate limited') ||
+        error?.message?.includes('Internal Server Error') ||
+        error?.message?.includes('An internal error was received') ||
+        error?.message?.includes('timeout') ||
+        error?.message?.includes('network') ||
+        error?.message?.includes('500') ||
+        error?.message?.includes('502') ||
+        error?.message?.includes('503') ||
+        error?.message?.includes('504') ||
+        error?.message?.includes('InternalRpcError') ||
+        error?.message?.includes('RPC') ||
+        error?.message?.includes('connection') ||
+        error?.message?.includes('fetch') ||
+        error?.message?.includes('ECONNRESET') ||
+        error?.message?.includes('ETIMEDOUT');
+
+      if (isRetryableError && attempt < maxRetries) {
+        const backoffDelay = delay * Math.pow(2, attempt - 1); // Exponential backoff
+        console.log(`🔄 Retry attempt ${attempt}/${maxRetries} after ${backoffDelay}ms. Error:`, error.message);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        continue;
+      }
+      
+      // If not retryable or max retries reached, throw the error
+      throw error;
+    }
+  }
+}
+
 // Re-export utility functions for backward compatibility
 export { 
   getZORATokenAddress, 
@@ -70,7 +113,8 @@ export async function executeUniversalTrade({
   validateTransaction = true,
   creatorAddress = null
 }) {
-  try {
+  // Wrap the entire trade execution in retry mechanism
+  return await retryWithBackoff(async () => {
     console.log("=== UNIVERSAL TRADE EXECUTION START ===");
     console.log("Sell Token:", sellToken);
     console.log("Buy Token:", buyToken);
@@ -148,40 +192,7 @@ export async function executeUniversalTrade({
     console.log("=== TRADE SUCCESS ===");
     console.log("Result:", result);
     return result;
-
-  } catch (error) {
-    console.error("=== TRADE ERROR ===");
-    console.error("Error object:", error);
-    console.error("Error message:", error.message);
-    console.error("Error stack:", error.stack);
-    
-    // Specific error handling for common issues
-    if (error.message?.includes("Quote failed") || error.message?.includes("500")) {
-      throw new Error("This trading pair is not ready for trading yet. Please try again in a few minutes.");
-    }
-    
-    if (error.message?.includes("Internal Server Error")) {
-      throw new Error("Zora API is currently unavailable. Please try again in a few minutes.");
-    }
-    
-    if (error.message?.includes("Execution reverted")) {
-      throw new Error("Trade execution failed. Please check your balance and try again.");
-    }
-    
-    if (error.message?.includes("Slippage must be less than 1")) {
-      throw new Error("Slippage must be less than 100%. Please reduce slippage tolerance.");
-    }
-    
-    if (error.message?.includes("Amount in must be greater than 0")) {
-      throw new Error("Please enter a valid amount greater than 0.");
-    }
-    
-    // Re-throw with shorter error message
-    const shortMessage = error.message?.length > 100 ? 
-      error.message.substring(0, 100) + '...' : 
-      error.message || 'Unknown error';
-    throw new Error(shortMessage);
-  }
+  }, 3, 2000); // 3 retries with 2 second base delay
 }
 
 

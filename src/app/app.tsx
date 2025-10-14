@@ -164,30 +164,64 @@ export default function App({ isMiniApp = false, userName = 'User', userFid }: A
           toastOptions={{
             style: {
               background: '#ffffff',
-              color: '#1e293b',
+              color: '#2d3748',
               fontFamily: 'Inter, system-ui, sans-serif',
-              border: '1px solid #e5e5e5',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              border: '2px solid #2d3748',
+              boxShadow: '3px 3px 0 #2d3748',
               fontSize: '0.875rem',
-              padding: '0.75rem',
-              borderRadius: '8px'
+              padding: '0.75rem 1rem',
+              borderRadius: '12px 3px 8px 6px',
+              transform: 'rotate(-0.5deg)',
+              fontWeight: '600',
+              maxWidth: '400px',
+              textAlign: 'center'
             },
             success: {
+              style: {
+                background: '#f0fdf4',
+                color: '#166534',
+                border: '2px solid #16a34a',
+                boxShadow: '3px 3px 0 #16a34a',
+                borderRadius: '12px 3px 8px 6px',
+                transform: 'rotate(0.5deg)',
+              },
               iconTheme: {
-                primary: '#10b981',
+                primary: '#16a34a',
                 secondary: '#ffffff',
               },
             },
             error: {
+              style: {
+                background: '#fef2f2',
+                color: '#dc2626',
+                border: '2px solid #dc2626',
+                boxShadow: '3px 3px 0 #dc2626',
+                borderRadius: '12px 3px 8px 6px',
+                transform: 'rotate(-0.5deg)',
+              },
               iconTheme: {
-                primary: '#ef4444',
+                primary: '#dc2626',
                 secondary: '#ffffff',
               },
             },
-            duration: 3000,
+            loading: {
+              style: {
+                background: '#fefce8',
+                color: '#ca8a04',
+                border: '2px solid #eab308',
+                boxShadow: '3px 3px 0 #eab308',
+                borderRadius: '12px 3px 8px 6px',
+                transform: 'rotate(0.3deg)',
+              },
+              iconTheme: {
+                primary: '#eab308',
+                secondary: '#ffffff',
+              },
+            },
+            duration: 4000,
             id: 'art-toast',
           }}
-          gutter={4}
+          gutter={8}
           containerStyle={{
             top: 20,
           }}

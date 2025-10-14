@@ -183,7 +183,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       return;
     }
 
-    const loadingToast = toast.loading("Processing trade...");
+    const loadingToast = toast.loading(`${tradeType === 'buy' ? 'Processing buy...' : 'Processing sell...'}`);
 
     try {
       if (tradeType === 'buy') {
@@ -212,7 +212,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
           toast.loading(
             `Approving ${selectedCurrency} for trading... This may require 2 transactions.`,
             { 
-              id: "trade-toast",
+              id: loadingToast,
               duration: 0
             }
           );
@@ -232,6 +232,16 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
         }
       } else {
         // Selling token for ETH - pass amount as string, let executeTrade handle conversion
+        
+        // Update loading message for sell operations
+        toast.loading(
+          `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
+          { 
+            id: loadingToast,
+            duration: 0
+          }
+        );
+        
         await executeTrade({
           direction: 'sell',
           coinAddress: token.contract_address,
@@ -600,7 +610,9 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                   })()}
                   onChange={(e) => {
                     const percentage = parseFloat(e.target.value) / 100;
-                    const newAmount = (maxBalance * percentage).toFixed(4);
+                    // For 100%, use 99.9% to avoid precision issues
+                    const adjustedPercentage = percentage === 1 ? 0.999 : percentage;
+                    const newAmount = (maxBalance * adjustedPercentage).toFixed(4);
                     setAmount(newAmount);
                   }}
                   className="hand-drawn-input w-full h-3"
@@ -629,7 +641,9 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                     <button 
                       key={p} 
                       onClick={()=>{
-                        const newAmount = (maxBalance * p).toFixed(4);
+                        // For 100%, use 99.9% to avoid precision issues
+                        const percentage = p === 1 ? 0.999 : p;
+                        const newAmount = (maxBalance * percentage).toFixed(4);
                         setAmount(newAmount);
                       }} 
                       className="hand-drawn-btn text-xs font-bold"

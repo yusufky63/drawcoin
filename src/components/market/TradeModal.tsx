@@ -6,6 +6,7 @@ import { executeTrade } from '../../services/sdk/getTradeCoin';
 import { showTradeMessages, showError } from '../../utils/toastUtils';
 import { Coin } from '../../lib/supabase';
 import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
+import { toast } from 'react-hot-toast';
 import TradeSuccessModal from './TradeSuccessModal';
 
 interface TradeModalProps {
@@ -108,7 +109,14 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
 
     // Set trading state immediately to show loading UI
     setTrading(true);
-    showTradeMessages.loading(tradeType, amount, token.symbol);
+    
+    // Show initial loading message
+    const loadingToast = toast.loading(
+      tradeType === 'buy' 
+        ? `Preparing to buy ${token.symbol}...` 
+        : `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
+      { duration: 0 }
+    );
 
     try {
       // Pass human-readable amount; executeTrade will convert based on direction
@@ -122,9 +130,9 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
         publicClient,
         account: address,
         switchChain
-      });
+      } as any);
       // If no error thrown, treat as success
-      showTradeMessages.success(tradeType);
+      toast.success(`${tradeType === 'buy' ? 'Buy' : 'Sell'} successful!`, { id: loadingToast });
       
       // Show success modal instead of auto-sharing
       setShowSuccessModal(true);
@@ -133,7 +141,25 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
       await refreshBalances();
     } catch (error: any) {
       console.error('Trade error:', error);
-      showTradeMessages.error(error);
+      
+      // User-friendly error messages
+      let errorMessage = 'Transaction failed';
+      
+      if (error?.message?.includes('User rejected') || error?.message?.includes('denied transaction')) {
+        errorMessage = 'Transaction cancelled by user';
+      } else if (error?.message?.includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds';
+      } else if (error?.message?.includes('gas')) {
+        errorMessage = 'Transaction failed - try again';
+      } else if (error?.message?.includes('Quote failed') || error?.message?.includes('500')) {
+        errorMessage = 'Token not ready for trading yet';
+      } else if (error?.message?.includes('Internal Server Error')) {
+        errorMessage = 'Service temporarily unavailable';
+      } else if (error?.message) {
+        errorMessage = error.message.length > 50 ? error.message.substring(0, 50) + '...' : error.message;
+      }
+      
+      toast.error(`❌ ${tradeType === 'buy' ? 'Buy' : 'Sell'} failed: ${errorMessage}`, { id: loadingToast });
     } finally {
       setTrading(false);
     }
@@ -299,7 +325,12 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
                 <>
                   <button onClick={() => setAmount('0.25')} className="hand-drawn-btn text-xs font-bold" style={{ padding: '0.4rem 0.6rem', transform: 'rotate(1deg)' }}>25%</button>
                   <button onClick={() => setAmount('0.5')} className="hand-drawn-btn text-xs font-bold" style={{ padding: '0.4rem 0.6rem', transform: 'rotate(-1deg)' }}>50%</button>
-                  <button onClick={() => setAmount((tokenDetails?.userBalance?.formatted || '0'))} className="hand-drawn-btn text-xs font-bold" style={{ padding: '0.4rem 0.6rem', transform: 'rotate(0.5deg)' }}>Max</button>
+                  <button onClick={() => {
+                    const maxBalance = parseFloat(tokenDetails?.userBalance?.formatted || '0');
+                    // Use 99.9% to avoid precision issues
+                    const adjustedAmount = (maxBalance * 0.999).toFixed(4);
+                    setAmount(adjustedAmount);
+                  }} className="hand-drawn-btn text-xs font-bold" style={{ padding: '0.4rem 0.6rem', transform: 'rotate(0.5deg)' }}>Max</button>
                 </>
               )}
             </div>

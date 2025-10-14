@@ -339,11 +339,9 @@ export default function DetailsModal({
     const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
     const toastId = toast.loading(
-      `${tradeType === "buy" ? "Buying" : "Selling"} ${parseFloat(
-        amount
-      ).toFixed(4)} ${
-        tradeType === "buy" ? selectedCurrency : token.symbol
-      }...`,
+      tradeType === "buy" 
+        ? `Preparing to buy ${token.symbol} with ${selectedCurrency}...`
+        : `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
       {
         id: "trade-toast",
         duration: 0, // Don't auto-dismiss loading toast
@@ -379,7 +377,7 @@ export default function DetailsModal({
           toast.loading(
             `Approving ${selectedCurrency} for trading... This may require 2 transactions.`,
             {
-              id: "trade-toast",
+              id: toastId,
               duration: 0,
             }
           );
@@ -398,6 +396,16 @@ export default function DetailsModal({
         }
       } else {
         // Selling token for ETH
+        
+        // Update toast message for sell operations
+        toast.loading(
+          `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
+          {
+            id: toastId,
+            duration: 0,
+          }
+        );
+        
         await executeTrade({
           direction: "sell",
           coinAddress: token.contract_address,
@@ -408,7 +416,7 @@ export default function DetailsModal({
           publicClient,
           account: address,
           switchChain,
-        });
+        } as any);
       }
 
       // Success toast
@@ -419,7 +427,7 @@ export default function DetailsModal({
           tradeType === "buy" ? selectedCurrency : token.symbol
         } ${tradeType === "buy" ? "purchased" : "sold"}`,
         {
-          id: "trade-toast",
+          id: toastId,
           duration: 4000,
         }
       );
@@ -531,7 +539,7 @@ export default function DetailsModal({
       toast.error(
         `❌ ${tradeType === "buy" ? "Buy" : "Sell"} failed: ${errorMessage}`,
         {
-          id: "trade-toast",
+          id: toastId,
           duration: 4000,
         }
       );
@@ -851,7 +859,9 @@ export default function DetailsModal({
                                 }
                               })()
                             : parseFloat(tokenBalance);
-                        const newAmount = (maxBalance * percentage).toFixed(4);
+                        // For 100%, use 99.9% to avoid precision issues
+                        const adjustedPercentage = percentage === 1 ? 0.999 : percentage;
+                        const newAmount = (maxBalance * adjustedPercentage).toFixed(4);
                         setAmount(newAmount);
                       }}
                       className="hand-drawn-input w-full h-3"
@@ -908,7 +918,9 @@ export default function DetailsModal({
                                     }
                                   })()
                                 : parseFloat(tokenBalance);
-                            const newAmount = (maxBalance * p).toFixed(4);
+                            // For 100%, use 99.9% to avoid precision issues
+                            const percentage = p === 1 ? 0.999 : p;
+                            const newAmount = (maxBalance * percentage).toFixed(4);
                             setAmount(newAmount);
                           }}
                           className="hand-drawn-btn text-xs font-bold"
