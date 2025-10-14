@@ -27,7 +27,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const [loading, setLoading] = useState(false);
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState<string>('');
-  const [slippage, setSlippage] = useState(0.05); // Dynamic slippage
+  const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 30%)
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [ethBalance, setEthBalance] = useState<string>('0');
   const [tokenBalance, setTokenBalance] = useState<string>('0');
@@ -39,6 +39,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const [onchainData, setOnchainData] = useState<any>(null);
   const [marketData, setMarketData] = useState<any>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [isCreator, setIsCreator] = useState<boolean>(false);
 
   // Token addresses on Base
   const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -125,7 +126,23 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
           functionName: 'balanceOf',
           args: [address]
         });
-        setTokenBalance((Number(tokenBalance) / 1e18).toFixed(4));
+        
+        let balance = (Number(tokenBalance) / 1e18).toFixed(4);
+        
+        // If user is the creator, filter out the 10M initial supply
+        const creatorAddress = (token as any).creatorAddress || (token as any).creator_address;
+        const userIsCreator = creatorAddress && address.toLowerCase() === creatorAddress.toLowerCase();
+        setIsCreator(userIsCreator);
+        
+        if (userIsCreator) {
+          const totalSupply = parseFloat((token as any).totalSupply || (token as any).total_supply || '10000000000');
+          const initialSupply = 10000000; // 10M tokens
+          const availableBalance = Math.max(0, parseFloat(balance) - initialSupply);
+          balance = availableBalance.toFixed(4);
+          console.log("Creator detected - filtered 10M initial supply. Available balance:", balance);
+        }
+        
+        setTokenBalance(balance);
       } catch (error) {
         console.error('Error fetching balances:', error);
       }
@@ -182,8 +199,9 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
             walletClient,
             publicClient,
             account: address,
-            switchChain
-          });
+            switchChain,
+            creatorAddress: (token as any).creatorAddress || (token as any).creator_address
+          } as any);
         } else {
           // USDC to Token
           const sellTokenAddress = USDC_ADDRESS;
@@ -208,8 +226,9 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
             walletClient,
             publicClient,
             account: address,
-            switchChain
-          });
+            switchChain,
+            creatorAddress: (token as any).creatorAddress || (token as any).creator_address
+          } as any);
         }
       } else {
         // Selling token for ETH - pass amount as string, let executeTrade handle conversion
@@ -218,12 +237,13 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
           coinAddress: token.contract_address,
           amountIn: amount, // Pass as string, not BigInt
           recipient: address,
-          slippage: 0.05,
+          slippage: slippage,
           walletClient,
           publicClient,
           account: address,
-          switchChain
-        });
+          switchChain,
+          creatorAddress: (token as any).creatorAddress || (token as any).creator_address
+        } as any);
       }
 
       toast.success(`${tradeType === 'buy' ? 'Buy' : 'Sell'} successful!`);
@@ -232,40 +252,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       setShowSuccessModal(true);
       
       // Refresh balances
-      const ethBalance = await publicClient.getBalance({ address });
-      setEthBalance((Number(ethBalance) / 1e18).toFixed(4));
-
-      // Refresh USDC balance
-      const usdcBalance = await publicClient.readContract({
-        address: USDC_ADDRESS as `0x${string}`,
-        abi: [{
-          "constant": true,
-          "inputs": [{"name": "_owner", "type": "address"}],
-          "name": "balanceOf",
-          "outputs": [{"name": "balance", "type": "uint256"}],
-          "type": "function"
-        }],
-        functionName: "balanceOf",
-        args: [address as `0x${string}`]
-      });
-      setUsdcBalance((Number(usdcBalance) / 10**6).toFixed(2));
-
-
-      const tokenBalance = await publicClient.readContract({
-        address: token.contract_address as `0x${string}`,
-        abi: [
-          {
-            "constant": true,
-            "inputs": [{"name": "_owner", "type": "address"}],
-            "name": "balanceOf",
-            "outputs": [{"name": "balance", "type": "uint256"}],
-            "type": "function"
-          }
-        ],
-        functionName: 'balanceOf',
-        args: [address]
-      });
-      setTokenBalance((Number(tokenBalance) / 1e18).toFixed(4));
+      await refreshBalances();
 
       setAmount('');
     } catch (error: any) {
@@ -307,6 +294,67 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       : tokenBalance;
     const newAmount = (parseFloat(balance) * percent / 100).toFixed(4);
     setAmount(newAmount);
+  };
+
+  // Refresh balances function
+  const refreshBalances = async () => {
+    if (!address || !publicClient || !token?.contract_address) return;
+    
+    try {
+      // Refresh ETH balance
+      const ethBalance = await publicClient.getBalance({ address });
+      setEthBalance((Number(ethBalance) / 1e18).toFixed(4));
+
+      // Refresh USDC balance
+      const usdcBalance = await publicClient.readContract({
+        address: USDC_ADDRESS as `0x${string}`,
+        abi: [{
+          "constant": true,
+          "inputs": [{"name": "_owner", "type": "address"}],
+          "name": "balanceOf",
+          "outputs": [{"name": "balance", "type": "uint256"}],
+          "type": "function"
+        }],
+        functionName: "balanceOf",
+        args: [address as `0x${string}`]
+      });
+      setUsdcBalance((Number(usdcBalance) / 10**6).toFixed(2));
+
+      // Refresh token balance
+      const tokenBalance = await publicClient.readContract({
+        address: token.contract_address as `0x${string}`,
+        abi: [
+          {
+            "constant": true,
+            "inputs": [{"name": "_owner", "type": "address"}],
+            "name": "balanceOf",
+            "outputs": [{"name": "balance", "type": "uint256"}],
+            "type": "function"
+          }
+        ],
+        functionName: 'balanceOf',
+        args: [address]
+      });
+      
+      let balance = (Number(tokenBalance) / 1e18).toFixed(4);
+      
+      // If user is the creator, filter out the 10M initial supply
+      const creatorAddress = (token as any).creatorAddress || (token as any).creator_address;
+      const userIsCreator = creatorAddress && address.toLowerCase() === creatorAddress.toLowerCase();
+      setIsCreator(userIsCreator);
+      
+      if (userIsCreator) {
+        const totalSupply = parseFloat((token as any).totalSupply || (token as any).total_supply || '10000000000');
+        const initialSupply = 10000000; // 10M tokens
+        const availableBalance = Math.max(0, parseFloat(balance) - initialSupply);
+        balance = availableBalance.toFixed(4);
+        console.log("Creator detected - filtered 10M initial supply. Available balance:", balance);
+      }
+      
+      setTokenBalance(balance);
+    } catch (error) {
+      console.error('Error refreshing balances:', error);
+    }
   };
 
   const maxBalance = tradeType === 'buy' 
@@ -595,6 +643,25 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                   ))}
                 </div>
               </div>
+
+              {/* Creator Restriction Notice */}
+              {tradeType === 'sell' && isCreator && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-art p-3 mb-4">
+                  <div className="flex items-center">
+                    <svg className="w-4 h-4 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    <div>
+                      <p className="text-sm text-yellow-800 font-medium">
+                        Creator Restriction
+                      </p>
+                      <p className="text-xs text-yellow-600 mt-1">
+                        Only <strong>{parseFloat(tokenBalance).toLocaleString()}</strong> tokens can be sold right now. The initial 10M tokens are locked.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Trade Summary */}
               {amount && (
@@ -945,10 +1012,6 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       <TradeSuccessModal
         isOpen={showSuccessModal}
         onClose={() => setShowSuccessModal(false)}
-        onViewToken={() => {
-          setShowSuccessModal(false);
-          // Already on the token page, just close modal
-        }}
         tradeType={tradeType}
         amount={amount}
         token={token}

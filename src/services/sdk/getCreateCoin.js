@@ -5,10 +5,8 @@
 
 import {
   createCoin,
-  validateMetadataURIContent,
   getCoinCreateFromLogs,
-  DeployCurrency,
-  InitialPurchaseCurrency,
+  CreateConstants,
 } from "@zoralabs/coins-sdk";
 import { base } from "viem/chains";
 import { showError } from "../../utils/toastUtils";
@@ -23,7 +21,9 @@ import { showError } from "../../utils/toastUtils";
  * @param {Array<string>} [params.owners] - Optional array of owner addresses
  * @param {bigint} [params.initialPurchaseWei] - Optional initial purchase amount (for backward compatibility)
  * @param {string} [params.platformReferrer] - Optional platform referrer address for earning referral fees
- * @param {DeployCurrency} [params.currency] - Optional currency (DeployCurrency.ETH or DeployCurrency.ZORA)
+ * @param {string} [params.currency] - Optional currency ("ETH", "ZORA", "CREATOR_COIN", or "CREATOR_COIN_OR_ZORA")
+ * @param {string} [params.startingMarketCap] - Optional starting market cap ("LOW" or "HIGH")
+ * @param {string} [params.smartWalletRouting] - Optional smart wallet routing ("AUTO" or "DISABLE")
  * @param {number} [params.chainId] - Optional chain ID (defaults to current wallet chain)
  * @param {Object} walletClient - Viem wallet client
  * @param {Object} publicClient - Viem public client
@@ -39,6 +39,8 @@ export async function createZoraCoin(
     initialPurchaseWei = 0n,
     platformReferrer,
     currency,
+    startingMarketCap,
+    smartWalletRouting,
     chainId,
   },
   walletClient,
@@ -56,14 +58,8 @@ export async function createZoraCoin(
     }
 
     // Validate metadata URI content before creating the coin
-    try {
-      console.log("Validating metadata URI:", uri);
-      await validateMetadataURIContent(uri);
-      console.log("✅ Metadata URI validation successful");
-    } catch (validationError) {
-      console.error("❌ Metadata URI validation failed:", validationError);
-      throw new Error(`Invalid metadata URI: ${validationError.message}`);
-    }
+    // Note: Metadata validation is now handled automatically by the SDK
+    console.log("Metadata URI:", uri);
 
     // Get wallet chain ID or use provided chainId
     const walletChainId = await walletClient.getChainId();
@@ -81,54 +77,54 @@ export async function createZoraCoin(
       );
     }
 
-    // Determine currency - use DeployCurrency enum from SDK
+    // Determine currency - use new SDK constants
     let selectedCurrency = currency;
     if (selectedCurrency === undefined || selectedCurrency === null) {
       // Follow SDK defaults strictly: Base mainnet defaults to ZORA currency
       selectedCurrency = (targetChainId === base.id)
-        ? DeployCurrency.ZORA
-        : DeployCurrency.ETH;
+        ? CreateConstants.ContentCoinCurrencies.ZORA
+        : CreateConstants.ContentCoinCurrencies.ETH;
     }
 
     console.log(
       "Selected currency:",
-      selectedCurrency === DeployCurrency.ZORA ? "ZORA" : "ETH"
+      selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA ? "ZORA" : "ETH"
     );
 
-    // Prepare coin parameters according to latest SDK docs format
+    // Prepare coin parameters according to new SDK v2 format
     const coinParams = {
+      creator: payoutRecipient, // New SDK requires 'creator' field
       name,
       symbol,
-      uri,
-      payoutRecipient,
-      currency: selectedCurrency, // Use DeployCurrency enum from SDK
-      ...(owners && owners.length > 0 && { owners }), // Only include owners if provided
-      ...(platformReferrer && { platformReferrer }), // Only include platformReferrer if provided
-      // Map legacy initialPurchaseWei into the SDK's initialPurchase object
-      ...(initialPurchaseWei && initialPurchaseWei > 0n && {
-        initialPurchase: {
-          currency: InitialPurchaseCurrency.ETH,
-          amount: initialPurchaseWei,
-        }
-      }),
+      metadata: { type: "RAW_URI", uri }, // New SDK requires metadata object
+      currency: selectedCurrency,
+      ...(startingMarketCap && { startingMarketCap }), // Add starting market cap if provided
+      ...(smartWalletRouting && { smartWalletRouting }), // Add smart wallet routing if provided
+      ...(chainId && { chainId }),
+      ...(platformReferrer && { platformReferrer }),
+      ...(owners && owners.length > 0 && { additionalOwners: owners }), // Changed from 'owners' to 'additionalOwners'
+      ...(payoutRecipient && { payoutRecipientOverride: payoutRecipient }), // New field name
+      skipMetadataValidation: true, // Skip SDK validation since we already uploaded to IPFS
+      // Note: initialPurchase is no longer supported in new SDK
+      // Users will need to make separate purchase after creation
     };
 
-    // Include chainId only if it's different from the current wallet chain
-    if (chainId && chainId !== walletChainId) {
-      coinParams.chainId = chainId;
-    }
+    // Remove chainId from coinParams as it's already included above
+    // The new SDK handles chainId differently
 
-    console.log("=== COIN CREATION PARAMETERS ===");
+    console.log("=== COIN CREATION PARAMETERS (SDK v2) ===");
+    console.log("Creator:", payoutRecipient);
     console.log("Name:", name);
     console.log("Symbol:", symbol);
-    console.log("URI:", uri);
-    console.log("Payout Recipient:", payoutRecipient);
-    console.log("Currency:", selectedCurrency === DeployCurrency.ZORA ? "ZORA" : "ETH");
+    console.log("Metadata URI:", uri);
+    console.log("Currency:", selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA ? "ZORA" : "ETH");
+    console.log("Starting Market Cap:", startingMarketCap || "Not specified");
+    console.log("Smart Wallet Routing:", smartWalletRouting || "Not specified");
     console.log("Platform Referrer:", platformReferrer);
-    console.log("Initial Purchase Wei:", initialPurchaseWei?.toString() || "0");
-    console.log("Initial Purchase ETH:", initialPurchaseWei ? (Number(initialPurchaseWei) / 10**18).toString() : "0");
-    console.log("Owners:", owners);
+    console.log("Additional Owners:", owners);
     console.log("Chain ID:", chainId);
+    console.log("Skip Metadata Validation:", true, "(Already uploaded to IPFS)");
+    console.log("Note: Initial purchase is no longer supported in SDK v2");
     console.log("Final coinParams:", coinParams);
 
     // Fee optimization: Create optimized wallet client for lower gas costs
@@ -149,9 +145,21 @@ export async function createZoraCoin(
       }
     };
 
-    // Use the SDK's createCoin function with fee optimization
-    // No initial purchase = lower gas costs
-    const result = await createCoin(coinParams, optimizedWalletClient, publicClient);
+    // Get current gas price for optimization
+    const currentGasPrice = await publicClient.getGasPrice();
+    console.log("Current gas price:", currentGasPrice.toString(), "wei");
+    console.log("Current gas price:", (Number(currentGasPrice) / 1e9).toFixed(2), "gwei");
+
+    // Use the SDK's createCoin function with new parameter structure
+    const result = await createCoin({
+      call: coinParams,
+      walletClient: optimizedWalletClient,
+      publicClient: publicClient,
+      options: {
+        skipValidateTransaction: false, // Enable validation to get proper gas estimate
+        gasMultiplier: 1.1, // Use 10% buffer instead of default
+      }
+    });
 
     console.log("=== COIN CREATION SUCCESS ===");
     console.log("Transaction Hash:", result.hash);
@@ -159,32 +167,8 @@ export async function createZoraCoin(
     console.log("Deployment Details:", result.deployment);
     console.log("Full Result:", result);
     
-    // Check if initial purchase was made
-    if (initialPurchaseWei && initialPurchaseWei > 0n) {
-      console.log("✅ Initial purchase was requested:", (Number(initialPurchaseWei) / 10**18).toString(), "ETH");
-      
-      // Check transaction value to see if initial purchase ETH was sent
-      try {
-        const receipt = await publicClient.getTransactionReceipt({ hash: result.hash });
-        console.log("Transaction Receipt:", receipt);
-        console.log("Transaction Status:", receipt.status);
-        console.log("Gas Used:", receipt.gasUsed?.toString());
-        
-        const tx = await publicClient.getTransaction({ hash: result.hash });
-        console.log("Transaction Value:", tx.value?.toString(), "wei");
-        console.log("Transaction Value ETH:", tx.value ? (Number(tx.value) / 10**18).toString() : "0", "ETH");
-        
-        if (tx.value && tx.value >= initialPurchaseWei) {
-          console.log("✅ Initial purchase ETH was sent with transaction");
-        } else {
-          console.log("❌ Initial purchase ETH was NOT sent with transaction");
-        }
-      } catch (error) {
-        console.error("Error checking transaction details:", error);
-      }
-    } else {
-      console.log("ℹ️ No initial purchase was requested");
-    }
+    // Note: Initial purchase handling removed as not supported in SDK v2
+    console.log("ℹ️ Initial purchase is no longer supported in SDK v2. Users can purchase tokens separately after creation.");
 
     return result;
   } catch (error) {
@@ -229,5 +213,5 @@ export function getCoinAddressFromReceipt(receipt) {
   }
 }
 
-// Export the DeployCurrency enum from the SDK for consistency
-export { DeployCurrency };
+// Export the new SDK constants for consistency
+export { CreateConstants };

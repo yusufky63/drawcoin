@@ -119,13 +119,20 @@ export default function ArtHeader({
           <div className="flex justify-between items-center h-20">
             {/* Brand */}
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-3 transform rotate-1">
+              <div className="flex flex-col items-start transform rotate-1">
                 <Link href="/" className="text-2xl font-bold text-art-gray-900 transform -rotate-1" style={{ 
                   textShadow: '1px 1px 0 #2d3748',
                   color: '#1a202c'
                 }}>
                   DrawCoin
                 </Link>
+                <div className="text-xs text-art-gray-500 transform rotate-1" style={{ 
+                  fontSize: '10px',
+                  opacity: 0.7,
+                  marginTop: '-2px'
+                }}>
+                  powered by Zora
+                </div>
               </div>
               
               {/* Navigation */}
@@ -265,13 +272,20 @@ export default function ArtHeader({
       }}>
         <div className="px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3 transform rotate-1">
+            <div className="flex flex-col items-start transform rotate-1">
               <Link href="/" className="text-lg font-bold text-art-gray-900 transform -rotate-1" style={{ 
                 textShadow: '1px 1px 0 #2d3748',
                 color: '#1a202c'
               }}>
                 DrawCoin
               </Link>
+              <div className="text-xs text-art-gray-500 transform rotate-1" style={{ 
+                fontSize: '8px',
+                opacity: 0.7,
+                marginTop: '-1px'
+              }}>
+                powered by Zora
+              </div>
             </div>
             
             <div className="flex items-center space-x-2">

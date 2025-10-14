@@ -6,7 +6,6 @@ import { Coin } from '../../lib/supabase';
 interface TradeSuccessModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onViewToken: () => void;
   tradeType: 'buy' | 'sell';
   amount: string;
   token: Coin;
@@ -16,17 +15,12 @@ interface TradeSuccessModalProps {
 export default function TradeSuccessModal({ 
   isOpen, 
   onClose, 
-  onViewToken, 
   tradeType,
   amount,
   token,
   tokenPrice
 }: TradeSuccessModalProps) {
   const router = useRouter();
-
-  const handleViewToken = () => {
-    router.push(`/coin/${token.contract_address}`);
-  };
 
   const handleShare = async () => {
     try {
@@ -147,24 +141,6 @@ export default function TradeSuccessModal({
 
           {/* Action Buttons */}
           <div className="space-y-3">
-            {/* View Token Button */}
-            <button
-              onClick={handleViewToken}
-              className="hand-drawn-btn w-full text-lg py-4"
-              style={{ 
-                transform: 'rotate(-0.5deg)',
-                backgroundColor: '#3182ce'
-              }}
-            >
-              <div className="flex items-center justify-center">
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-                View Token
-              </div>
-            </button>
-
             {/* Share Button */}
             <button
               onClick={handleShare}

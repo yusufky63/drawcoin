@@ -1,6 +1,6 @@
 import { createPublicClient, http, formatEther } from "viem";
 import { base } from "viem/chains";
-import { getCoin, getOnchainCoinDetails } from "@zoralabs/coins-sdk";
+import { getCoin } from "@zoralabs/coins-sdk";
 import { setApiKey } from "@zoralabs/coins-sdk";
 
 // Initialize API key for production environments
@@ -19,7 +19,7 @@ const initializeApiKey = () => {
 initializeApiKey();
 
 // Use RPC URL from environment variables or default to Base RPC
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://mainnet.base.org";
+const RPC_URL =  "https://base-mainnet.g.alchemy.com/v2/W0EIbyevIb8MhQyUPQecm";
 
 // Create Viem public client
 export const getPublicClient = () => {
@@ -90,22 +90,24 @@ export const getOnchainTokenDetails = async (
     
     console.log("Fetching coin details for:", tokenAddress);
     
-    // Use only Zora SDK's getOnchainCoinDetails as per documentation
-    console.log("=== CALLING ZORA getOnchainCoinDetails ===");
-    console.log("Parameters:", { coin: tokenAddress, publicClient, ...(userAddress && { user: userAddress }) });
+    // Use Zora SDK's getCoin function as per new documentation
+    console.log("=== CALLING ZORA getCoin ===");
+    console.log("Parameters:", { address: tokenAddress });
     
     let details;
     try {
-      details = await getOnchainCoinDetails({
-        coin: tokenAddress,
-        publicClient,
-        ...(userAddress && { user: userAddress })
-      });
+      const coinResponse = await getCoin({ address: tokenAddress });
       
-      console.log("=== getOnchainCoinDetails SUCCESS ===");
+      if (!coinResponse.data?.zora20Token) {
+        throw new Error("Coin not found in Zora system");
+      }
+      
+      details = coinResponse.data.zora20Token;
+      
+      console.log("=== getCoin SUCCESS ===");
       console.log("Raw details from Zora SDK:", details);
     } catch (error) {
-      console.error("=== getOnchainCoinDetails FAILED ===");
+      console.error("=== getCoin FAILED ===");
       console.error("Error:", error);
       console.error("This might mean the coin is not recognized by Zora yet or there's an API issue");
       
@@ -113,7 +115,7 @@ export const getOnchainTokenDetails = async (
       throw new Error(`Coin data unavailable from Zora: ${error.message}. The coin might not be ready for trading yet.`);
     }
 
-    // Format according to SDK documentation structure
+    // Format according to new SDK response structure
     const tokenDetails = {
       address: details.address || tokenAddress,
       name: details.name || "Unknown Token",
@@ -133,6 +135,12 @@ export const getOnchainTokenDetails = async (
             userBalance: formatOnchainDetail(details.balance),
           }
         : {}),
+      // Additional fields from new SDK
+      tokenPrice: details.tokenPrice,
+      volume24h: details.volume24h,
+      totalVolume: details.totalVolume,
+      uniqueHolders: details.uniqueHolders,
+      createdAt: details.createdAt,
       // Metadata
       fetchedAt: new Date().toISOString(),
       hasError: false,

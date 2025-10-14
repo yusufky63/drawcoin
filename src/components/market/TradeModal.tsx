@@ -36,7 +36,7 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
   const [trading, setTrading] = useState(false);
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
-  const [slippage, setSlippage] = useState(0.05);
+  const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 30%)
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const quickEthOptions = ['0.01','0.02','0.05'];
 
@@ -62,6 +62,18 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
       showError('Failed to load token data', 'token data loading');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Refresh balances function
+  const refreshBalances = async () => {
+    if (!address || !publicClient || !token?.contract_address) return;
+    
+    try {
+      // Refresh token details which includes balance
+      await fetchTokenDetails();
+    } catch (error) {
+      console.error('Error refreshing balances:', error);
     }
   };
 
@@ -117,8 +129,8 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
       // Show success modal instead of auto-sharing
       setShowSuccessModal(true);
       
-      // Refresh token details
-      await fetchTokenDetails();
+      // Refresh balances after successful trade
+      await refreshBalances();
     } catch (error: any) {
       console.error('Trade error:', error);
       showTradeMessages.error(error);
@@ -377,12 +389,6 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
         onClose={() => {
           setShowSuccessModal(false);
           onClose();
-        }}
-        onViewToken={() => {
-          setShowSuccessModal(false);
-          onClose();
-          // Navigate to token page
-          window.open(`/coin/${token.contract_address}`, '_blank');
         }}
         tradeType={tradeType}
         amount={amount}

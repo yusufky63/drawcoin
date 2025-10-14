@@ -187,7 +187,7 @@ export async function getFarcasterUserContext(): Promise<{
 export function isTrustedFarcasterHost(): boolean {
   if (typeof document === 'undefined') return false;
   const ref = document.referrer?.toLowerCase?.() || '';
-  return ref.includes('farcaster') || ref.includes('warpcast.com');
+  return ref.includes('farcaster') || ref.includes('farcaster.xyz');
 }
 
 /**

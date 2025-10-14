@@ -1,4 +1,4 @@
-import { createZoraCoin, getCoinAddressFromReceipt, DeployCurrency } from '../../services/sdk/getCreateCoin.js';
+import { createZoraCoin, getCoinAddressFromReceipt, CreateConstants } from '../../services/sdk/getCreateCoin.js';
 import { CoinService, type CreateCoinData } from '../../services/coinService';
 import { parseEther } from 'viem';
 import { base } from 'viem/chains';
@@ -12,10 +12,11 @@ export interface CreateTokenData {
   description: string;
   imageUrl: string;
   category: string;
-  selectedPurchaseAmount: string;
-  isPurchaseEnabled: boolean;
+  // Note: Initial purchase fields removed as not supported in SDK v2
   ownersAddresses: string[];
   selectedCurrency: number;
+  startingMarketCap: number; // 0 = LOW, 1 = HIGH
+  smartWalletRouting: number; // 0 = AUTO, 1 = DISABLE
   platformReferrer: string;
 }
 
@@ -54,18 +55,32 @@ export const createToken = async (
     }
 
     // Get user's selected purchase amount
-    const purchaseAmount = parseEther(tokenData.selectedPurchaseAmount);
-    console.log(`User selected purchase amount: ${purchaseAmount} wei`);
+    // Note: Purchase amount calculation removed as initial purchase is not supported in SDK v2
+    // Note: Purchase amount logging removed as initial purchase is not supported in SDK v2
 
     // Show a loading toast for the creation process
     showCreateMessages.loading();
 
     // Create Zora coin using updated SDK with the IPFS URI
     console.log("Creating coin with URI:", tokenData.imageUrl);
-    console.log(
-      "Using currency:",
-      tokenData.selectedCurrency === DeployCurrency.ZORA ? "ZORA" : "ETH"
-    );
+    // Convert selectedCurrency number to string
+    const currencyString = tokenData.selectedCurrency === 0 
+      ? CreateConstants.ContentCoinCurrencies.ZORA 
+      : CreateConstants.ContentCoinCurrencies.ETH;
+    
+    // Convert startingMarketCap number to string
+    const marketCapString = tokenData.startingMarketCap === 0 
+      ? CreateConstants.StartingMarketCaps.LOW 
+      : CreateConstants.StartingMarketCaps.HIGH;
+    
+    // Convert smartWalletRouting number to string
+    const smartWalletString = tokenData.smartWalletRouting === 0 
+      ? "AUTO" 
+      : "DISABLE";
+    
+    console.log("Using currency:", currencyString);
+    console.log("Using starting market cap:", marketCapString);
+    console.log("Using smart wallet routing:", smartWalletString);
 
     // Fee optimization: Use minimal gas settings
     const optimizedWalletClient = {
@@ -86,11 +101,13 @@ export const createToken = async (
         symbol: tokenData.symbol,
         uri: tokenData.imageUrl,
         payoutRecipient: walletAddress,
-        currency: tokenData.selectedCurrency,
+        currency: currencyString,
+        startingMarketCap: marketCapString,
+        smartWalletRouting: smartWalletString,
         chainId: chainId,
         platformReferrer: tokenData.platformReferrer || undefined,
         owners: tokenData.ownersAddresses.length > 0 ? tokenData.ownersAddresses : undefined,
-        initialPurchaseWei: tokenData.isPurchaseEnabled ? purchaseAmount : BigInt(0),
+        // Note: initialPurchaseWei removed as not supported in SDK v2
       },
       optimizedWalletClient,
       publicClient
@@ -131,7 +148,7 @@ export const createToken = async (
           creator_name: walletAddress,
           tx_hash: result.hash,
           chain_id: chainId,
-          currency: tokenData.selectedCurrency === DeployCurrency.ZORA ? "ZORA" : "ETH",
+          currency: currencyString,
           platform_referrer: tokenData.platformReferrer || undefined,
         };
 

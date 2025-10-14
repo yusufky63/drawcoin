@@ -27,18 +27,14 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     imageUrl: "",
   });
 
-  // Purchase and fee optimization state
-  const [selectedPurchaseAmount, setSelectedPurchaseAmount] =
-    useState<string>("1.00");
-  const [selectedPurchasePercentage, setSelectedPurchasePercentage] =
-    useState<number>(1);
-  const [userEthBalance, setUserEthBalance] = useState<bigint>(BigInt(0));
-  const [ethToUsdRate, setEthToUsdRate] = useState<number>(0);
-  const [isCustomAmount, setIsCustomAmount] = useState<boolean>(false);
-  const [isPurchaseEnabled, setIsPurchaseEnabled] = useState<boolean>(true);
+  // Note: Initial purchase is no longer supported in SDK v2
+  // Users will need to purchase tokens separately after creation
   const [ownersAddresses, setOwnersAddresses] = useState<string[]>([]);
   const [newOwnerAddress, setNewOwnerAddress] = useState<string>("");
-  const [selectedCurrency, setSelectedCurrency] = useState<number>(0); // DeployCurrency.ZORA
+  const [selectedCurrency, setSelectedCurrency] = useState<number>(0); // ZORA currency
+  const [startingMarketCap, setStartingMarketCap] = useState<number>(0); // LOW = 0, HIGH = 1
+  const [smartWalletRouting, setSmartWalletRouting] = useState<number>(0); // AUTO = 0, DISABLE = 1 (default AUTO)
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState<boolean>(false);
   const [platformReferrer, setPlatformReferrer] = useState<string>(
     "0xbFA6A45Dd534d39dF47A3F3D2f2b6E88416f9831"
   );
@@ -140,89 +136,13 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     }
   };
 
-  // Get ETH price in USD with cache
-  const ethPriceCache: { value: number | null; timestamp: number } = {
-    value: null,
-    timestamp: 0,
-  };
-  const CACHE_DURATION_MS = 60 * 10000; // 10 minutes
+  // Note: ETH price fetching removed as initial purchase is no longer supported
 
-  const fetchEthPrice = useCallback(async () => {
-    const now = Date.now();
-    if (
-      ethPriceCache.value !== null &&
-      now - ethPriceCache.timestamp < CACHE_DURATION_MS
-    ) {
-      setEthToUsdRate(ethPriceCache.value);
-      return;
-    }
-    try {
-      const response = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
-      );
-      const data = await response.json();
-      if (data && data.ethereum && data.ethereum.usd) {
-        ethPriceCache.value = data.ethereum.usd;
-        ethPriceCache.timestamp = now;
-        setEthToUsdRate(data.ethereum.usd);
-      }
-    } catch (error) {
-      console.error("Failed to fetch ETH price:", error);
-      // Use fallback price if API fails
-      setEthToUsdRate(3000);
-    }
-  }, []);
+  // Note: ETH balance tracking removed as initial purchase is no longer supported
 
-  // Update user's ETH balance
-  const updateUserBalance = useCallback(async () => {
-    if (isConnected && address && publicClient) {
-      try {
-        const balance = await publicClient.getBalance({ address });
-        setUserEthBalance(balance);
-        console.log(
-          `User ETH balance: ${balance} wei (${Number(balance) / 10 ** 18} ETH)`
-        );
-      } catch (error) {
-        console.error("Failed to get user balance:", error);
-      }
-    }
-  }, [isConnected, address, publicClient]);
+  // Note: Purchase amount calculation removed as initial purchase is no longer supported
 
-  // Calculate purchase amount based on percentage of balance
-  const calculatePurchaseAmount = useCallback(
-    (percentage: number): string => {
-      if (userEthBalance === BigInt(0)) return "0.001";
-
-      // Calculate percentage of balance (leave some for gas)
-      const maxUsableBalance = (userEthBalance * BigInt(90)) / BigInt(100); // Use max 90% of balance to leave gas
-      const amount = (maxUsableBalance * BigInt(percentage)) / BigInt(100);
-
-      // Convert to ETH (with 5 decimal places)
-      const ethAmount = Number(amount) / 10 ** 18;
-
-      // Ensure minimum amount of 0.001 ETH
-      const finalAmount = Math.max(ethAmount, 0.001);
-
-      // Format to 5 decimal places max
-      return finalAmount.toFixed(5);
-    },
-    [userEthBalance]
-  );
-
-  // Set predefined amount with 1% slippage margin for 100%
-  const setPredefinedAmount = (percentage: number) => {
-    // If requesting 100%, actually use 99% to leave room for gas (1% slippage)
-    const actualPercentage = percentage === 100 ? 99 : percentage;
-    setSelectedPurchasePercentage(actualPercentage);
-    setIsCustomAmount(false);
-  };
-
-  // Handle custom amount change
-  const handleCustomAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setSelectedPurchaseAmount(value);
-    setIsCustomAmount(true);
-  };
+  // Note: Purchase amount functions removed as initial purchase is no longer supported
 
   // Add owner address
   const addOwnerAddress = () => {
@@ -258,23 +178,9 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     return () => window.removeEventListener("resize", updateCanvasSize);
   }, []);
 
-  // Update purchase amount when slider changes, only if not in custom mode
-  useEffect(() => {
-    if (!isCustomAmount) {
-      const newAmount = calculatePurchaseAmount(selectedPurchasePercentage);
-      setSelectedPurchaseAmount(newAmount);
-    }
-  }, [selectedPurchasePercentage, calculatePurchaseAmount, isCustomAmount]);
+  // Note: Purchase amount useEffect removed as initial purchase is no longer supported
 
-  useEffect(() => {
-    fetchEthPrice();
-    updateUserBalance();
-  }, [fetchEthPrice]);
-
-  // Update balance when wallet connection changes
-  useEffect(() => {
-    updateUserBalance();
-  }, [isConnected, address, updateUserBalance]);
+  // Note: ETH price useEffect removed as initial purchase is no longer supported
 
   const uploadToIPFS = async (
     imageData: string,
@@ -397,10 +303,11 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         description: formData.description,
         imageUrl: ipfsUrl, // Use IPFS URL instead of base64
         category: "DrawCoin",
-        selectedPurchaseAmount: selectedPurchaseAmount,
-        isPurchaseEnabled: isPurchaseEnabled,
+        // Note: Initial purchase parameters removed as not supported in SDK v2
         ownersAddresses: ownersAddresses,
         selectedCurrency: selectedCurrency,
+        startingMarketCap: startingMarketCap,
+        smartWalletRouting: smartWalletRouting,
         platformReferrer: platformReferrer,
       };
 
@@ -479,25 +386,28 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
             </div>
           </div>
 
-          {/* Progress Steps */}
+          {/* Progress Steps - Responsive Design */}
           <div className="flex justify-center md:justify-end">
             <div className="flex flex-col items-center">
-              {/* Step Circles */}
-              <div className="flex items-center">
+              {/* Mobile: Compact Step Indicators */}
+              <div className="md:hidden flex items-center space-x-4 mb-2">
                 {[1, 2, 3].map((step) => (
-                  <div key={step} className="flex items-center">
+                  <div key={step} className="flex flex-col items-center">
                     <div
-                      className={`flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full border-2 transition-all duration-300 ${
+                      className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all duration-300 ${
                         getStepStatus(step) === "completed"
                           ? "bg-green-500 border-green-500 text-white"
                           : getStepStatus(step) === "current"
                           ? "bg-art-gray-900 border-art-gray-900 text-white"
                           : "bg-white border-art-gray-300 text-art-gray-400"
                       }`}
+                      style={{ 
+                        borderRadius: '50% 30% 50% 30%'
+                      }}
                     >
                       {getStepStatus(step) === "completed" ? (
                         <svg
-                          className="w-4 h-4 md:w-5 md:h-5"
+                          className="w-4 h-4"
                           fill="currentColor"
                           viewBox="0 0 20 20"
                         >
@@ -508,29 +418,97 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                           />
                         </svg>
                       ) : (
-                        <span className="text-xs md:text-sm font-medium">
+                        <span className="text-xs font-bold">
                           {step}
                         </span>
                       )}
                     </div>
-                    {step < 3 && (
-                      <div
-                        className={`w-8 md:w-16 h-0.5 mx-2 md:mx-4 transition-all duration-300 ${
-                          getStepStatus(step) === "completed"
-                            ? "bg-green-500"
-                            : "bg-art-gray-300"
-                        }`}
-                      />
-                    )}
                   </div>
                 ))}
               </div>
               
-              {/* Step Labels - Desktop Only */}
-              <div className="hidden md:flex justify-center mt-2 text-xs text-art-gray-500 space-x-8">
-                <span>Draw Your Art</span>
-                <span>Add Details</span>
-                <span>Create Token</span>
+              {/* Mobile: Current Step Label */}
+              <div className="md:hidden text-xs text-art-gray-600 font-medium mb-1">
+                {currentStep === 1 && "Draw Your Art"}
+                {currentStep === 2 && "Add Details"}
+                {currentStep === 3 && "Create Token"}
+              </div>
+              
+              {/* Mobile: Progress Text */}
+              <div className="md:hidden text-xs text-art-gray-400">
+                Step {currentStep} of {totalSteps}
+              </div>
+
+              {/* Desktop: Full Progress Bar */}
+              <div className="hidden md:block">
+                {/* Progress Bar Container */}
+                <div className="relative w-full max-w-md">
+                  {/* Background Progress Bar */}
+                  <div className="absolute top-1/2 left-0 w-full h-2 bg-art-gray-200 rounded-full transform -translate-y-1/2" 
+                       style={{ borderRadius: '20px 5px 15px 8px' }}>
+                    {/* Active Progress Bar */}
+                    <div 
+                      className="h-full bg-gradient-to-r from-art-gray-900 to-art-gray-700 rounded-full transition-all duration-500 ease-out"
+                      style={{ 
+                        width: `${((currentStep - 1) / 2) * 100}%`,
+                        borderRadius: '20px 5px 15px 8px',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                      }}
+                    />
+                  </div>
+                  
+                  {/* Step Indicators */}
+                  <div className="relative flex justify-between items-center">
+                    {[1, 2, 3].map((step) => (
+                      <div key={step} className="flex flex-col items-center">
+                        <div
+                          className={`flex items-center justify-center w-12 h-12 rounded-full border-3 transition-all duration-300 transform ${
+                            getStepStatus(step) === "completed"
+                              ? "bg-green-500 border-green-500 text-white scale-110 shadow-lg"
+                              : getStepStatus(step) === "current"
+                              ? "bg-art-gray-900 border-art-gray-900 text-white scale-110 shadow-lg ring-4 ring-art-gray-200"
+                              : "bg-white border-art-gray-300 text-art-gray-400 hover:scale-105"
+                          }`}
+                          style={{ 
+                            borderRadius: '50% 30% 50% 30%',
+                            borderStyle: 'solid',
+                            borderWidth: '3px'
+                          }}
+                        >
+                          {getStepStatus(step) === "completed" ? (
+                            <svg
+                              className="w-6 h-6"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          ) : (
+                            <span className="text-base font-bold">
+                              {step}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Current Step Label - Desktop Only */}
+                <div className="mt-4 text-sm text-art-gray-700 font-medium">
+                  {currentStep === 1 && "Draw Your Art"}
+                  {currentStep === 2 && "Add Details"}
+                  {currentStep === 3 && "Create Token"}
+                </div>
+                
+                {/* Progress Percentage - Desktop Only */}
+                <div className="mt-2 text-xs text-art-gray-400">
+                  Step {currentStep} of {totalSteps} • {Math.round(((currentStep - 1) / 2) * 100)}% Complete
+                </div>
               </div>
             </div>
           </div>
@@ -544,7 +522,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
               {/* Content based on selected mode */}
               {drawMode === "custom" ? (
-                <div className={`flex flex-col lg:flex-row gap-4 p-2`}>
+                <div className={`flex flex-col lg:flex-row gap-2`}>
                   {/* Canvas Area */}
                   <div className="flex-1 flex justify-center order-1 lg:order-1">
                     <div className="w-full max-w-4xl">
@@ -821,92 +799,79 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                     <h3 className="text-lg">Create Token</h3>
                   </div>
 
-                  {/* Purchase Options */}
-                  <div className="bg-art-off-white rounded-art p-4 border border-art-gray-200 mb-6">
-                    {/* Purchase Toggle */}
-                    <div className="flex items-center justify-between mb-4">
-                      <label className="hand-drawn-label">
-                        Enable Initial Purchase
-                      </label>
-                      <button
-                        onClick={() => setIsPurchaseEnabled(!isPurchaseEnabled)}
-                        className={`hand-drawn-btn ${
-                          isPurchaseEnabled ? "" : "secondary"
+                  {/* Advanced Options Toggle */}
+                  <div className="mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                      className="flex items-center justify-between w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded-art border border-gray-200 transition-colors"
+                    >
+                      <span className="text-sm font-medium text-art-gray-700">
+                        Advanced Options
+                      </span>
+                      <svg
+                        className={`w-4 h-4 text-art-gray-500 transition-transform ${
+                          showAdvancedOptions ? 'rotate-180' : ''
                         }`}
-                        style={{ padding: "0.5rem 1rem" }}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
                       >
-                        {isPurchaseEnabled ? "Enabled" : "Disabled"}
-                      </button>
-                    </div>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </button>
+                  </div>
 
-                    {isPurchaseEnabled && (
-                      <div className="space-y-4">
-                        {/* Purchase Amount Slider */}
-                        <div>
-                          <label className="hand-drawn-label mb-2">
-                            Purchase Amount: {selectedPurchaseAmount} ETH
-                            {ethToUsdRate > 0 && (
-                              <span className="text-art-gray-500 ml-2">
-                                ($
-                                {(
-                                  parseFloat(selectedPurchaseAmount) *
-                                  ethToUsdRate
-                                ).toFixed(2)}
-                                )
-                              </span>
-                            )}
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={selectedPurchasePercentage}
-                            onChange={(e) =>
-                              setPredefinedAmount(Number(e.target.value))
-                            }
-                            className="w-full h-2 bg-art-gray-200 rounded-lg appearance-none cursor-pointer"
-                          />
-                          <div className="flex justify-between text-xs text-art-gray-500 mt-1">
-                            <span>0%</span>
-                            <span>25%</span>
-                            <span>50%</span>
-                            <span>75%</span>
-                            <span>100%</span>
+                  {/* Advanced Options Content */}
+                  {showAdvancedOptions && (
+                    <div className="mb-6 p-4 bg-gray-50 rounded-art border border-gray-200">
+                      {/* Starting Market Cap Selection */}
+                      <div className="mb-4">
+                        <label className="hand-drawn-label mb-3">
+                          Starting Market Cap
+                        </label>
+                        <div className="space-y-3">
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="radio"
+                              id="low-market-cap"
+                              name="marketCap"
+                              value="0"
+                              checked={startingMarketCap === 0}
+                              onChange={(e) => setStartingMarketCap(Number(e.target.value))}
+                              className="w-4 h-4 text-art-gray-900"
+                            />
+                            <label htmlFor="low-market-cap" className="text-sm text-art-gray-700">
+                              <span className="font-bold">LOW</span> - Lower initial liquidity, more price volatility
+                            </label>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="radio"
+                              id="high-market-cap"
+                              name="marketCap"
+                              value="1"
+                              checked={startingMarketCap === 1}
+                              onChange={(e) => setStartingMarketCap(Number(e.target.value))}
+                              className="w-4 h-4 text-art-gray-900"
+                            />
+                            <label htmlFor="high-market-cap" className="text-sm text-art-gray-700">
+                              <span className="font-bold">HIGH</span> - Higher initial liquidity, more stable pricing
+                            </label>
                           </div>
                         </div>
-
-                        {/* Quick Amount Buttons */}
-                        <div className="flex gap-2 flex-wrap">
-                          {[1, 25, 50, 75, 100].map((percentage) => (
-                            <button
-                              key={percentage}
-                              onClick={() => setPredefinedAmount(percentage)}
-                              className="hand-drawn-btn text-xs"
-                              style={{ padding: "0.4rem 0.8rem" }}
-                            >
-                              {percentage}%
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Custom Amount Input */}
-                        <div>
-                          <label className="hand-drawn-label">
-                            Custom Amount (ETH)
-                          </label>
-                          <input
-                            type="number"
-                            value={selectedPurchaseAmount}
-                            onChange={handleCustomAmountChange}
-                            placeholder="0.01"
-                            step="0.001"
-                            min="0.001"
-                            className="hand-drawn-input"
-                          />
+                        <div className="mt-2 text-xs text-art-gray-500">
+                          This affects the initial trading conditions and price discovery for your token.
                         </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
+
 
                   <button
                     onClick={() => handleCreateToken(false)}

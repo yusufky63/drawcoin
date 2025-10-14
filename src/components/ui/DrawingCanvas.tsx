@@ -24,6 +24,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [currentTool, setCurrentTool] = useState<'brush' | 'eraser' | 'fill' | 'line' | 'shape' | 'eyedropper' | 'text'>('brush');
   const [currentColor, setCurrentColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(8);
+  const [brushType, setBrushType] = useState<'normal' | 'soft' | 'hard' | 'marker'>('normal');
   const [showCustomColor, setShowCustomColor] = useState(false);
   const [currentShape, setCurrentShape] = useState<'rectangle' | 'circle' | 'triangle'>('rectangle');
   const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
@@ -35,7 +36,6 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   const [textSize, setTextSize] = useState<number>(32);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
-  const [zoom, setZoom] = useState<number>(1);
   
 
   useEffect(() => {
@@ -168,15 +168,40 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       if (currentTool === 'brush') {
         ctx.globalCompositeOperation = 'source-over';
         ctx.strokeStyle = currentColor;
+        
+        // Apply brush type effects
+        switch (brushType) {
+          case 'soft':
+            ctx.globalAlpha = 0.7;
+            ctx.lineCap = 'round';
+            break;
+          case 'hard':
+            ctx.globalAlpha = 1.0;
+            ctx.lineCap = 'square';
+            break;
+          case 'marker':
+            ctx.globalAlpha = 0.5;
+            ctx.lineWidth = brushSize * 1.5;
+            ctx.lineCap = 'round';
+            break;
+          default: // normal
+            ctx.globalAlpha = 1.0;
+            ctx.lineCap = 'round';
+            break;
+        }
       } else if (currentTool === 'eraser') {
         ctx.globalCompositeOperation = 'source-over';
         ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = 1.0;
       }
 
       ctx.lineTo(x, y);
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(x, y);
+      
+      // Reset globalAlpha for next stroke
+      ctx.globalAlpha = 1.0;
 
       // Notify parent of image change
       if (onImageChange) {
@@ -559,13 +584,13 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
           {toolsVariant === 'full' && <span className="ml-1">Fill</span>}
         </button>
-        <button className={`hand-drawn-btn tool-btn text-xs md:text-sm px-2 py-1 md:px-3 md:py-2 ${currentTool === 'line' ? 'secondary' : ''}`} onClick={() => setCurrentTool('line')} title="Line">
-          <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M3 12h18m-9-9l9 9-9 9" /></svg>
-          {toolsVariant === 'full' && <span className="ml-1">Line</span>}
-        </button>
         <button className={`hand-drawn-btn tool-btn text-xs md:text-sm px-2 py-1 md:px-3 md:py-2 ${currentTool === 'shape' ? 'secondary' : ''}`} onClick={() => setCurrentTool('shape')} title="Shape">
           <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm2 2v14h14V5H5z" /></svg>
           {toolsVariant === 'full' && <span className="ml-1">Shape</span>}
+        </button>
+        <button className={`hand-drawn-btn tool-btn text-xs md:text-sm px-2 py-1 md:px-3 md:py-2 ${currentTool === 'line' ? 'secondary' : ''}`} onClick={() => setCurrentTool('line')} title="Line">
+          <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M3 3h18v18H3V3zm2 2v14h14V5H5z" /><path d="M7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h10v2H7v-2z" /></svg>
+          {toolsVariant === 'full' && <span className="ml-1">Line</span>}
         </button>
         <button className={`hand-drawn-btn tool-btn text-xs md:text-sm px-2 py-1 md:px-3 md:py-2 ${currentTool === 'text' ? 'secondary' : ''}`} onClick={() => setCurrentTool('text')} title="Text">
           <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M4 4h16v2H13v14h-2V6H4z" /></svg>
@@ -605,6 +630,25 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               <input type="range" min="2" max="30" value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="flex-1 h-1" />
               <span className="text-xs font-mono w-8">{brushSize}px</span>
             </div>
+            {currentTool === 'brush' && (
+              <div className="space-y-2">
+                <span className="text-xs text-art-gray-600">Brush Type:</span>
+                <div className="flex gap-1">
+                  <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'normal' ? 'secondary' : ''}`} onClick={() => setBrushType('normal')} title="Normal">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" /></svg>
+                  </button>
+                  <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'soft' ? 'secondary' : ''}`} onClick={() => setBrushType('soft')} title="Soft">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" style={{opacity: 0.7}} /></svg>
+                  </button>
+                  <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'hard' ? 'secondary' : ''}`} onClick={() => setBrushType('hard')} title="Hard">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" style={{strokeLinecap: 'square'}} /></svg>
+                  </button>
+                  <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'marker' ? 'secondary' : ''}`} onClick={() => setBrushType('marker')} title="Marker">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" style={{opacity: 0.5, strokeWidth: 2}} /></svg>
+                  </button>
+                </div>
+              </div>
+            )}
             {currentTool === 'shape' && (
               <div className="space-y-2">
                 <span className="text-xs text-art-gray-600">Shape:</span>
@@ -666,11 +710,6 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
               <input type="range" min="0" max="80" step="1" value={fillTolerance} onChange={(e) => setFillTolerance(Number(e.target.value))} className="flex-1 h-1" />
               <span className="text-xs font-mono w-10">{fillTolerance}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-art-gray-600">Zoom:</span>
-              <input type="range" min="0.5" max="3" step="0.1" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="flex-1 h-1" />
-              <span className="text-xs font-mono w-10">{Math.round(zoom * 100)}%</span>
-            </div>
           </div>
         </div>
       ) : (
@@ -680,6 +719,25 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             <input type="range" min="2" max="30" value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="flex-1 h-1" />
             <span className="text-xs font-mono w-8">{brushSize}px</span>
           </div>
+          {currentTool === 'brush' && (
+            <div className="space-y-2">
+              <span className="text-xs text-art-gray-600">Brush Type:</span>
+              <div className="flex gap-1">
+                <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'normal' ? 'secondary' : ''}`} onClick={() => setBrushType('normal')} title="Normal">
+                  <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" /></svg>
+                </button>
+                <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'soft' ? 'secondary' : ''}`} onClick={() => setBrushType('soft')} title="Soft">
+                  <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" style={{opacity: 0.7}} /></svg>
+                </button>
+                <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'hard' ? 'secondary' : ''}`} onClick={() => setBrushType('hard')} title="Hard">
+                  <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" style={{strokeLinecap: 'square'}} /></svg>
+                </button>
+                <button className={`hand-drawn-btn text-xs px-2 py-1 ${brushType === 'marker' ? 'secondary' : ''}`} onClick={() => setBrushType('marker')} title="Marker">
+                  <svg className="w-3 h-3" viewBox="0 0 24 24"><path d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3z" style={{opacity: 0.5, strokeWidth: 2}} /></svg>
+                </button>
+              </div>
+            </div>
+          )}
           {currentTool === 'shape' && (
             <label className="flex items-center gap-2 text-xs text-art-gray-700">
               <input type="checkbox" checked={shapeFill} onChange={(e) => setShapeFill(e.target.checked)} />
@@ -741,11 +799,6 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             <input type="range" min="0" max="80" step="1" value={fillTolerance} onChange={(e) => setFillTolerance(Number(e.target.value))} className="flex-1 h-1" />
             <span className="text-xs font-mono w-10">{fillTolerance}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-art-gray-600">Zoom:</span>
-            <input type="range" min="0.5" max="3" step="0.1" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="flex-1 h-1" />
-            <span className="text-xs font-mono w-10">{Math.round(zoom * 100)}%</span>
-          </div>
         </div>
       )}
     </div>
@@ -756,12 +809,12 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (onToolsRender) {
       onToolsRender(toolsComponent);
     }
-  }, [currentTool, brushSize, currentColor, currentShape, showCustomColor, undoStack, redoStack, zoom, textValue, textSize, toolsVariant, onToolsRender]);
+  }, [currentTool, brushSize, brushType, currentColor, currentShape, showCustomColor, undoStack, redoStack, textValue, textSize, toolsVariant, onToolsRender]);
 
   return (
     <div className={`drawing-canvas p-2 ${className}`}>
       <div className="w-full max-w-full overflow-hidden flex justify-center ">
-        <div className="relative" style={{ maxWidth: '100%', maxHeight: '80vh', transform: `scale(${zoom})`, transformOrigin: 'center center' }}>
+        <div className="relative" style={{ maxWidth: '100%', maxHeight: '80vh' }}>
           <canvas
             ref={canvasRef}
             width={width}

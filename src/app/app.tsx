@@ -103,20 +103,42 @@ export default function App({ isMiniApp = false, userName = 'User', userFid }: A
 
   const handleView = (token: Coin) => {
     console.log('View token:', token);
-    // Navigate to coin detail page
-    router.push(`/coin/${token.contract_address}`);
+    // Show coin detail page within the same app (no navigation)
+    setSelectedToken(token);
   };
 
   const handleCreateSuccess = (tokenAddress: string) => {
     console.log('Token created:', tokenAddress);
-    // Navigate to the created token's detail page
-    router.push(`/coin/${tokenAddress}`);
+    // Create a token object for the created token
+    const createdToken: Coin = {
+      id: tokenAddress,
+      name: 'Loading...',
+      symbol: 'LOADING',
+      contract_address: tokenAddress,
+      image_url: '',
+      description: '',
+      category: '',
+      creator_address: '',
+      tx_hash: '',
+      chain_id: 8453,
+      currency: 'ZORA',
+      holders: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    // Show the created token's detail page within the same app
+    setSelectedToken(createdToken);
   };
 
   const renderContent = () => {
     // If a token is selected, show coin detail page
     if (selectedToken) {
-      return <CoinDetailPage token={selectedToken} onBack={() => setSelectedToken(null)} />;
+      return <CoinDetailPage token={selectedToken} onBack={() => {
+        setSelectedToken(null);
+        // Return to market tab
+        setActiveTab('explore');
+      }} />;
     }
 
     switch (activeTab) {

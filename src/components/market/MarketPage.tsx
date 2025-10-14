@@ -197,8 +197,8 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
   };
 
   const handleViewDetails = (token: Coin) => {
-    // Navigate to coin detail page instead of opening modal
-    window.location.href = `/coin/${token.contract_address}`;
+    // Use the onView prop to show coin detail page within the same app
+    onView(token);
   };
 
   if (loading) {
