@@ -5,16 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function getSecretEnvVars() {
-  const seedPhrase = process.env.SEED_PHRASE;
-  const fid = process.env.FID;
-  
-  if (!seedPhrase || !fid) {
-    return null;
-  }
-
-  return { seedPhrase, fid };
-}
 
 /**
  * Utility to check if code is running in a Farcaster Mini App environment

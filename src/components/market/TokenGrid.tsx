@@ -99,7 +99,7 @@ export default function TokenGrid({ tokens, onTrade, onView, loading = false, vi
                    className="hand-drawn-btn text-xs md:text-sm font-bold py-2 md:py-3 px-3 md:px-6 transform rotate-1 hover:scale-105 transition-transform duration-200"
                    style={{ 
                      borderRadius: '8px 6px 12px 4px',
-                     backgroundColor: '#48bb78',
+                     backgroundColor: '#22c55e',
                      minWidth: '70px'
                    }}
                  >

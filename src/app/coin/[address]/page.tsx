@@ -37,7 +37,7 @@ export default function CoinRoutePage() {
           creator_address: '',
           tx_hash: '',
           chain_id: 8453,
-          currency: 'ETH',
+          currency: 'ZORA',
           holders: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -143,7 +143,7 @@ export default function CoinRoutePage() {
           creator_address: '',
           tx_hash: '',
           chain_id: 8453,
-          currency: 'ETH',
+          currency: 'ZORA',
           holders: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()

@@ -2,8 +2,9 @@ import { createZoraCoin, getCoinAddressFromReceipt, DeployCurrency } from '../..
 import { CoinService, type CreateCoinData } from '../../services/coinService';
 import { parseEther } from 'viem';
 import { base } from 'viem/chains';
-import { toast } from 'react-hot-toast';
+import { showCreateMessages, showIPFSMessages } from '../../utils/toastUtils';
 import { checkAndSwitchNetwork } from '../../services/networkUtils';
+import { toast } from 'react-hot-toast';
 
 export interface CreateTokenData {
   name: string;
@@ -57,10 +58,7 @@ export const createToken = async (
     console.log(`User selected purchase amount: ${purchaseAmount} wei`);
 
     // Show a loading toast for the creation process
-    toast.loading("Creating your art token - this may take a moment...", {
-      id: "status-toast",
-      duration: 10000,
-    });
+    showCreateMessages.loading();
 
     // Create Zora coin using updated SDK with the IPFS URI
     console.log("Creating coin with URI:", tokenData.imageUrl);

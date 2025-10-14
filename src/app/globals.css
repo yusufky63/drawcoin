@@ -186,7 +186,7 @@ body {
   box-shadow: 4px 4px 0 #2d3748;
   background: linear-gradient(45deg, #4299e1, #3182ce);
   color: white;
-  font-family: "Kalam", cursive;
+  
   font-weight: bold;
   padding: 0.75rem 1.5rem;
   cursor: pointer;
@@ -233,7 +233,7 @@ body {
   border-radius: 15px 5px 10px 8px;
   transform: rotate(-0.3deg);
   padding: 10px 14px;
-  font-family: "Kalam", cursive;
+  
   background: #ffffff;
   box-shadow: 2px 2px 0 #2d3748;
   width: 100%;
@@ -252,7 +252,7 @@ body {
   border-radius: 20px 8px 15px 12px;
   transform: rotate(0.2deg);
   padding: 12px 16px;
-  font-family: "Kalam", cursive;
+  
   background: #ffffff;
   box-shadow: 2px 2px 0 #2d3748;
   resize: none;
@@ -268,7 +268,7 @@ body {
 }
 
 .hand-drawn-label {
-  font-family: "Kalam", cursive;
+  
   font-weight: bold;
   color: #2d3748;
   transform: rotate(-0.5deg);
@@ -285,7 +285,7 @@ body {
 }
 
 .hand-drawn-header h3 {
-  font-family: "Kalam", cursive;
+  
   font-weight: bold;
   color: #2d3748;
   margin-left: 0.75rem;

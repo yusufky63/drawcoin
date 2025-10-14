@@ -1,5 +1,5 @@
 import { base } from 'viem/chains';
-import { toast } from 'react-hot-toast';
+import { showNetworkMessages } from '../utils/toastUtils';
 
 /**
  * Checks if the user is on the Base network and switches if necessary
@@ -13,30 +13,20 @@ export const checkAndSwitchNetwork = async ({ chainId, switchChain }) => {
   if (chainId !== base.id) {
     try {
       // Show notification about network switching
-      toast.loading(`Switching to Base network...`, { id: "network-switch" });
+      showNetworkMessages.switching();
       
       // Attempt to switch network
       await switchChain({ chainId: base.id });
       
       // If successful, show success message
-      toast.success("Successfully switched to Base network", { id: "network-switch" });
+      showNetworkMessages.success();
       
       return true;
     } catch (error) {
       console.error('Network switch error:', error);
       
       // Show user-friendly error message
-      if (error.message?.includes('rejected') || error.message?.includes('denied')) {
-        toast.error("Network switch was rejected. Please switch to Base network manually.", { 
-          id: "network-switch", 
-          duration: 5000 
-        });
-      } else {
-        toast.error(`Please switch to Base network manually in your wallet. (Error: ${error.message || 'Unknown error'})`, { 
-          id: "network-switch", 
-          duration: 5000 
-        });
-      }
+      showNetworkMessages.error(error);
       
       return false;
     }

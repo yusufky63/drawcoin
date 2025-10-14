@@ -182,7 +182,6 @@ export default function TokenCard({ token, onTrade, onView }: TokenCardProps) {
 
 
       {/* Hand-drawn decoration */}
-      <div className="absolute -top-1 -right-1 w-3 h-3 border-2 border-art-gray-900 rounded-full bg-art-gray-100 transform rotate-45"></div>
     </div>
   );
 }

@@ -3,9 +3,10 @@ import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from 'wa
 import { parseEther, formatEther } from 'viem';
 import { getOnchainTokenDetails } from '../../services/sdk/getOnchainData';
 import { executeTrade } from '../../services/sdk/getTradeCoin';
-import { toast } from 'react-hot-toast';
+import { showTradeMessages, showError } from '../../utils/toastUtils';
 import { Coin } from '../../lib/supabase';
 import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
+import TradeSuccessModal from './TradeSuccessModal';
 
 interface TradeModalProps {
   token: Coin | null;
@@ -36,7 +37,8 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
   const [slippage, setSlippage] = useState(0.05);
-  const quickEthOptions = ['0.005','0.01','0.05'];
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const quickEthOptions = ['0.01','0.02','0.05'];
 
   // Fetch token details from Zora API
   useEffect(() => {
@@ -57,7 +59,7 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
       }
     } catch (error) {
       console.error('Error fetching token details:', error);
-      toast.error('Failed to load token data');
+      showError('Failed to load token data', 'token data loading');
     } finally {
       setLoading(false);
     }
@@ -77,23 +79,24 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
       });
     } catch (error) {
       console.error('Error sharing trade:', error);
-      toast.error('Failed to share trade');
+      showError('Failed to share trade', 'share trade');
     }
   };
 
   const handleTrade = async () => {
     if (!isConnected || !address || !walletClient || !publicClient || !token || !tokenDetails) {
-      toast.error('Please connect your wallet');
+      showError('Please connect your wallet', 'wallet connection');
       return;
     }
 
     if (!amount || parseFloat(amount) <= 0) {
-      toast.error('Please enter a valid amount');
+      showError('Please enter a valid amount', 'form validation');
       return;
     }
 
+    // Set trading state immediately to show loading UI
     setTrading(true);
-    toast.loading(`${tradeType === 'buy' ? 'Buying' : 'Selling'} tokens...`, { id: 'trade-toast' });
+    showTradeMessages.loading(tradeType, amount, token.symbol);
 
     try {
       // Pass human-readable amount; executeTrade will convert based on direction
@@ -109,17 +112,16 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
         switchChain
       });
       // If no error thrown, treat as success
-      toast.success(`Successfully ${tradeType === 'buy' ? 'bought' : 'sold'} tokens!`, { id: 'trade-toast' });
+      showTradeMessages.success(tradeType);
       
-      // Auto-share the trade
-      await handleShareTrade();
+      // Show success modal instead of auto-sharing
+      setShowSuccessModal(true);
       
-      onClose();
       // Refresh token details
       await fetchTokenDetails();
     } catch (error: any) {
       console.error('Trade error:', error);
-      toast.error(error.message || 'Trade failed', { id: 'trade-toast' });
+      showTradeMessages.error(error);
     } finally {
       setTrading(false);
     }
@@ -227,23 +229,27 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
             <div className="flex space-x-2">
               <button
                 onClick={() => setTradeType('buy')}
-                className={`flex-1 py-2 px-4 rounded-art text-sm font-bold transition-colors transform ${
-                  tradeType === 'buy'
-                    ? 'bg-art-gray-900 text-art-white rotate-1'
-                    : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200 -rotate-1'
+                className={`hand-drawn-btn flex-1 text-sm font-bold ${
+                  tradeType === 'buy' ? 'secondary' : ''
                 }`}
-                style={{ borderRadius: '15px 5px 10px 8px' }}
+                style={{ 
+                  transform: tradeType === 'buy' ? 'rotate(-1deg)' : 'rotate(0.5deg)',
+                  backgroundColor: tradeType === 'buy' ? undefined : 'transparent',
+                  color: tradeType === 'buy' ? undefined : '#2d3748'
+                }}
               >
                 Buy
               </button>
               <button
                 onClick={() => setTradeType('sell')}
-                className={`flex-1 py-2 px-4 rounded-art text-sm font-bold transition-colors transform ${
-                  tradeType === 'sell'
-                    ? 'bg-art-gray-900 text-art-white -rotate-1'
-                    : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200 rotate-1'
+                className={`hand-drawn-btn flex-1 text-sm font-bold ${
+                  tradeType === 'sell' ? 'danger' : ''
                 }`}
-                style={{ borderRadius: '10px 8px 15px 5px' }}
+                style={{ 
+                  transform: tradeType === 'sell' ? 'rotate(1deg)' : 'rotate(-0.5deg)',
+                  backgroundColor: tradeType === 'sell' ? undefined : 'transparent',
+                  color: tradeType === 'sell' ? undefined : '#2d3748'
+                }}
               >
                 Sell
               </button>
@@ -293,7 +299,7 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
               Slippage Tolerance
             </label>
             <div className="flex space-x-2">
-              {[0.01, 0.05, 0.1].map((value, index) => (
+            {[0.01, 0.05, 0.1].map((value, index) => (
                 <button
                   key={value}
                   onClick={() => setSlippage(value)}
@@ -341,18 +347,19 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
           <button
             onClick={handleTrade}
             disabled={trading || !amount || !isConnected}
-            className="hand-drawn-btn w-full text-sm font-bold"
+            className={`hand-drawn-btn w-full text-sm font-bold ${
+              tradeType === 'buy' ? 'secondary' : 'danger'
+            }`}
             style={{ 
               padding: '0.75rem 1.5rem',
               transform: 'rotate(-0.5deg)',
-              backgroundColor: tradeType === 'buy' ? '#48bb78' : '#f56565',
               opacity: (!amount || !isConnected) ? 0.5 : 1
             }}
           >
             {trading ? (
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Processing...
+                {tradeType === 'buy' ? 'Buying...' : 'Selling...'}
               </div>
             ) : !isConnected ? (
               'Connect Wallet'
@@ -361,25 +368,27 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
             )}
           </button>
 
-          {/* Share Button */}
-          <button
-            onClick={handleShareTrade}
-            className="hand-drawn-btn w-full text-sm font-bold secondary"
-            style={{ 
-              padding: '0.75rem 1.5rem',
-              transform: 'rotate(0.5deg)',
-              marginTop: '0.5rem'
-            }}
-          >
-            <div className="flex items-center justify-center">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-              </svg>
-              Share {tradeType === 'buy' ? 'Purchase' : 'Sale'}
-            </div>
-          </button>
         </div>
       </div>
+
+      {/* Trade Success Modal */}
+      <TradeSuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => {
+          setShowSuccessModal(false);
+          onClose();
+        }}
+        onViewToken={() => {
+          setShowSuccessModal(false);
+          onClose();
+          // Navigate to token page
+          window.open(`/coin/${token.contract_address}`, '_blank');
+        }}
+        tradeType={tradeType}
+        amount={amount}
+        token={token}
+        tokenPrice={tokenDetails?.marketCap?.formatted}
+      />
     </div>
   );
 }

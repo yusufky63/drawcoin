@@ -6,7 +6,7 @@ import { WagmiProvider, createConfig, useAccount, useSwitchChain } from "wagmi";
 import { base } from "wagmi/chains";
 import { http } from "wagmi";
 import { farcasterMiniApp as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
-import { injected, walletConnect, coinbaseWallet } from 'wagmi/connectors';
+import { injected, coinbaseWallet } from 'wagmi/connectors';
 import { sdk } from "@farcaster/miniapp-sdk";
 import { FarcasterProvider } from '../lib/farcaster';
 import { checkAndSwitchNetwork } from '../services/networkUtils';
@@ -15,7 +15,7 @@ import { checkAndSwitchNetwork } from '../services/networkUtils';
 const config = createConfig({
   chains: [base],
   transports: {
-    [base.id]: http(),
+    [base.id]: http('https://base-mainnet.g.alchemy.com/v2/W0EIbyevIb8MhQyUPQecm'),
   },
   connectors: [
     // Farcaster connector for Farcaster mini-apps (auto-connects)

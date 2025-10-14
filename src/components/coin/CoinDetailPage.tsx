@@ -9,6 +9,7 @@ import { getOnchainTokenDetails } from "../../services/sdk/getOnchainData";
 import { getCoinDetails } from "../../services/sdk/getCoins";
 import { executeTrade, executeERC20Trade, getZORATokenAddress } from "../../services/sdk/getTradeCoin";
 import { getETHPrice } from "../../services/ethPrice";
+import TradeSuccessModal from "../market/TradeSuccessModal";
 
 interface CoinDetailPageProps {
   token: Coin;
@@ -37,6 +38,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const [availableTokens, setAvailableTokens] = useState<Array<{symbol: string, address: string, balance: string}>>([]);
   const [onchainData, setOnchainData] = useState<any>(null);
   const [marketData, setMarketData] = useState<any>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Token addresses on Base
   const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -226,6 +228,9 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
 
       toast.success(`${tradeType === 'buy' ? 'Buy' : 'Sell'} successful!`);
       
+      // Show success modal
+      setShowSuccessModal(true);
+      
       // Refresh balances
       const ethBalance = await publicClient.getBalance({ address });
       setEthBalance((Number(ethBalance) / 1e18).toFixed(4));
@@ -384,32 +389,26 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
               <div className="flex space-x-2 mb-4">
                 <button
                   onClick={() => setTradeType('buy')}
-                  className={`flex-1 py-2 px-3 text-sm font-bold transition-all duration-200 ${
-                    tradeType === 'buy'
-                      ? 'bg-art-gray-900 text-art-white'
-                      : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
+                  className={`hand-drawn-btn flex-1 text-sm font-bold ${
+                    tradeType === 'buy' ? 'secondary' : ''
                   }`}
                   style={{ 
-                    borderRadius: '12px 3px 8px 6px',
                     transform: tradeType === 'buy' ? 'rotate(-1deg)' : 'rotate(0.5deg)',
-                    border: '2px solid #2d3748',
-                    boxShadow: tradeType === 'buy' ? '2px 2px 0 #2d3748' : '1px 1px 0 #2d3748'
+                    backgroundColor: tradeType === 'buy' ? undefined : 'transparent',
+                    color: tradeType === 'buy' ? undefined : '#2d3748'
                   }}
                 >
                   Buy
                 </button>
                 <button
                   onClick={() => setTradeType('sell')}
-                  className={`flex-1 py-2 px-3 text-sm font-bold transition-all duration-200 ${
-                    tradeType === 'sell'
-                      ? 'bg-art-gray-900 text-art-white'
-                      : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
+                  className={`hand-drawn-btn flex-1 text-sm font-bold ${
+                    tradeType === 'sell' ? 'danger' : ''
                   }`}
                   style={{ 
-                    borderRadius: '8px 12px 6px 10px',
                     transform: tradeType === 'sell' ? 'rotate(1deg)' : 'rotate(-0.5deg)',
-                    border: '2px solid #2d3748',
-                    boxShadow: tradeType === 'sell' ? '2px 2px 0 #2d3748' : '1px 1px 0 #2d3748'
+                    backgroundColor: tradeType === 'sell' ? undefined : 'transparent',
+                    color: tradeType === 'sell' ? undefined : '#2d3748'
                   }}
                 >
                   Sell
@@ -663,7 +662,9 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
                 <button 
                   onClick={handleTrade}
                   disabled={loading || !amount || parseFloat(amount) <= 0}
-                  className="w-full hand-drawn-btn text-sm font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`w-full hand-drawn-btn text-sm font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    tradeType === 'buy' ? 'secondary' : 'danger'
+                  }`}
                   style={{ 
                     padding: '0.75rem 1rem',
                     transform: 'rotate(-0.5deg)'
@@ -939,6 +940,20 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
           </div>
         </div>
       )}
+
+      {/* Trade Success Modal */}
+      <TradeSuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => setShowSuccessModal(false)}
+        onViewToken={() => {
+          setShowSuccessModal(false);
+          // Already on the token page, just close modal
+        }}
+        tradeType={tradeType}
+        amount={amount}
+        token={token}
+        tokenPrice={marketData?.tokenPrice?.priceInUsdc}
+      />
     </div>
   );
 }

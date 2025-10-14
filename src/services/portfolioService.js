@@ -258,7 +258,7 @@ export const transformZoraCoinToCoin = (zoraCoin, lightweight = false) => {
     creator_name: zoraCoin.creatorProfile?.handle || '',
     tx_hash: '',
     chain_id: zoraCoin.chainId || 8453,
-    currency: 'ETH',
+    currency: 'ZORA',
     total_supply: zoraCoin.totalSupply,
     current_price: zoraCoin.tokenPrice?.priceInPoolToken,
     volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',

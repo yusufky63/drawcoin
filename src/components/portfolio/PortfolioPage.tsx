@@ -170,7 +170,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
           creator_name: n.coin.creatorProfile?.handle || '',
           tx_hash: '',
           chain_id: 8453,
-          currency: 'ETH',
+          currency: 'ZORA',
           total_supply: '0',
           current_price: '0',
           volume_24h: '0',

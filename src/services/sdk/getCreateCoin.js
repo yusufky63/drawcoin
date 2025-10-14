@@ -11,7 +11,7 @@ import {
   InitialPurchaseCurrency,
 } from "@zoralabs/coins-sdk";
 import { base } from "viem/chains";
-import { toast } from "react-hot-toast";
+import { showError } from "../../utils/toastUtils";
 
 /**
  * Creates a Zora coin using the updated SDK's createCoin function
@@ -71,12 +71,9 @@ export async function createZoraCoin(
 
     // Validate Base network (optional - remove if you want to support other chains)
     if (targetChainId === base.id && walletChainId !== base.id) {
-      toast.error(
+      showError(
         `You're connected to network ID ${walletChainId}, but Base network (${base.id}) is required. Please switch networks.`,
-        {
-          id: "network-error",
-          duration: 5000,
-        }
+        'network validation'
       );
 
       throw new Error(
@@ -199,16 +196,20 @@ export async function createZoraCoin(
         "Contract execution failed. This might be due to insufficient funds, invalid parameters, or network congestion. Please try again with a higher gas limit or check your wallet balance."
       );
     } else if (error.message && error.message.includes("user rejected")) {
-      throw new Error("Transaction was rejected by user");
+      throw new Error("Token creation was rejected");
+    } else if (error.message && error.message.includes("rejected") || error.message?.includes("denied")) {
+      throw new Error("Token creation was rejected");
+    } else if (error.message && error.message.includes("cancelled") || error.message?.includes("canceled")) {
+      throw new Error("Token creation was cancelled");
     } else if (error.message && error.message.includes("insufficient funds")) {
       throw new Error("Insufficient funds for transaction including gas fees");
     } else if (
       error.message &&
       error.message.includes("Invalid metadata URI")
     ) {
-      throw new Error(`Metadata validation failed: ${error.message}`);
+      throw new Error(`Invalid token metadata: ${error.message}`);
     } else {
-      throw new Error(`Failed to create coin: ${error.message}`);
+      throw new Error(`Failed to create token: ${error.message}`);
     }
   }
 }

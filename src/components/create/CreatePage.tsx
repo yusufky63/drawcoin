@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from "wagmi";
 import { createToken } from "../../lib/functions/createToken";
-import { toast } from "react-hot-toast";
+import { showCreateMessages, showIPFSMessages, showAIMessages, showError } from "../../utils/toastUtils";
 import DrawingCanvas from "../ui/DrawingCanvas";
 import HandDrawnIcon from "../ui/HandDrawnIcon";
 import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
@@ -79,13 +79,13 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   // AI Draw functions
   const generateAIImage = async () => {
     if (!aiPrompt.trim()) {
-      toast.error("Please enter a description for your AI-generated art");
+      showError("Please enter a description for your AI-generated art", 'AI generation');
       return;
     }
 
     setAiGenerating(true);
     try {
-      toast.loading("Generating AI art...", { id: "ai-generate" });
+      showAIMessages.loading();
 
       // Use the AI service with Gemini and other providers
       const response = await fetch("/api/ai", {
@@ -109,17 +109,13 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         setAiGeneratedImage(result.imageUrl);
         setDrawnImage(result.imageUrl);
         setFormData((prev) => ({ ...prev, imageUrl: result.imageUrl }));
-        toast.success("AI art generated successfully!", {
-          id: "ai-generate",
-        });
+        showAIMessages.success();
       } else {
         throw new Error("No image URL returned from AI service");
       }
     } catch (error) {
       console.error("AI generation error:", error);
-      toast.error("Failed to generate AI art. Please try again.", {
-        id: "ai-generate",
-      });
+      showAIMessages.error(error);
     } finally {
       setAiGenerating(false);
     }
@@ -287,7 +283,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     description: string
   ) => {
     try {
-      toast.loading("Uploading image to IPFS...", { id: "ipfs-toast" });
+      showIPFSMessages.loading();
 
       const response = await fetch("/api/ipfs/upload", {
         method: "POST",
@@ -309,19 +305,14 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       const result = await response.json();
 
       if (result.success && result.ipfsUrl) {
-        toast.success("Image uploaded to IPFS successfully!", {
-          id: "ipfs-toast",
-        });
+        showIPFSMessages.success();
         return result.ipfsUrl;
       } else {
         throw new Error(result.error || "IPFS upload failed");
       }
     } catch (error) {
       console.error("IPFS upload error:", error);
-      toast.error("Failed to upload image to IPFS. Please try again.", { 
-        id: "ipfs-toast", 
-        duration: 5000 
-      });
+      showIPFSMessages.error(error);
       throw error;
     }
   };
@@ -375,7 +366,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
   const handleCreateToken = async (isRetry: boolean = false) => {
     if (!isConnected || !walletClient || !publicClient || !address) {
-      toast.error("Please connect your wallet first", { id: 'wallet-error' });
+      showError("Please connect your wallet first", 'wallet connection');
       return;
     }
 
@@ -385,7 +376,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       !formData.description ||
       !formData.imageUrl
     ) {
-      toast.error("Please complete all steps first", { id: 'form-error' });
+      showError("Please complete all steps first", 'form validation');
       return;
     }
 
@@ -422,10 +413,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       );
 
       if (result.address) {
-        toast.success(
-          "Your hand-drawn art token has been created successfully!",
-          { id: 'create-success', duration: 4000 }
-        );
+        showCreateMessages.success();
         
         // Reset retry count on success
         setRetryCount(0);
@@ -442,10 +430,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         const newRetryCount = retryCount + 1;
         setRetryCount(newRetryCount);
         
-        toast.error(
-          `Failed to create token. Retrying... (${newRetryCount}/${maxRetries})`,
-          { duration: 5000, id: 'create-retry' }
-        );
+        showCreateMessages.retry(newRetryCount, maxRetries);
         
         // Wait 2 seconds before retry
         setTimeout(() => {
@@ -454,10 +439,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       } else {
         // Final failure
         setRetryCount(0);
-        toast.error(
-          `Failed to create token after ${maxRetries} attempts. Please check your network connection and try again.`,
-          { duration: 8000, id: 'create-final-error' }
-        );
+        showCreateMessages.finalError(maxRetries);
       }
     } finally {
       setLoading(false);

@@ -5,6 +5,7 @@ import { useAccount, usePublicClient, useWalletClient, useSwitchChain } from 'wa
 import { executeTrade, executeERC20Trade, getZORATokenAddress } from '../../services/sdk/getTradeCoin';
 import { getETHPrice } from '../../services/ethPrice.js';
 import { toast } from "react-hot-toast";
+import TradeSuccessModal from './TradeSuccessModal';
 
 interface DetailsModalProps {
   token: Coin | null;
@@ -45,6 +46,7 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
   const [usdcBalance, setUsdcBalance] = useState<string>('0');
   const [showTokenSelect, setShowTokenSelect] = useState(false);
   const [availableTokens, setAvailableTokens] = useState<Array<{symbol: string, address: string, balance: string}>>([]);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const quickEthOptions = ['0.005','0.01','0.05'];
   
   // Token addresses on Base
@@ -322,6 +324,9 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
         }
       );
       
+      // Show success modal
+      setShowSuccessModal(true);
+      
       // Refresh balances after successful trade
       try { 
         const refreshed = await getOnchainTokenDetails(token.contract_address, address); 
@@ -451,24 +456,26 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
                 <div className="mb-4 flex items-center border-2 border-art-gray-900 rounded-art p-1" style={{ borderRadius: '15px 5px 10px 8px' }}>
                   <button 
                     onClick={() => setTradeType('buy')} 
-                    className={`w-full py-2 text-sm font-bold transition-all duration-200 ${
-                      tradeType==='buy'?'bg-art-gray-900 text-white':'text-art-gray-700 hover:text-art-gray-900'
+                    className={`hand-drawn-btn w-full text-sm font-bold ${
+                      tradeType === 'buy' ? 'secondary' : ''
                     }`}
                     style={{ 
                       transform: tradeType === 'buy' ? 'rotate(-1deg)' : 'rotate(1deg)',
-                      borderRadius: '10px 3px 8px 5px'
+                      backgroundColor: tradeType === 'buy' ? undefined : 'transparent',
+                      color: tradeType === 'buy' ? undefined : '#2d3748'
                     }}
                   >
                     Buy
                   </button>
                   <button 
                     onClick={() => setTradeType('sell')} 
-                    className={`w-full py-2 text-sm font-bold transition-all duration-200 ${
-                      tradeType==='sell'?'bg-art-gray-900 text-white':'text-art-gray-700 hover:text-art-gray-900'
+                    className={`hand-drawn-btn w-full text-sm font-bold ${
+                      tradeType === 'sell' ? 'danger' : ''
                     }`}
                     style={{ 
                       transform: tradeType === 'sell' ? 'rotate(-1deg)' : 'rotate(1deg)',
-                      borderRadius: '10px 3px 8px 5px'
+                      backgroundColor: tradeType === 'sell' ? undefined : 'transparent',
+                      color: tradeType === 'sell' ? undefined : '#2d3748'
                     }}
                   >
                     Sell
@@ -788,11 +795,12 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
                     <button 
                       onClick={handleTrade} 
                       disabled={trading || !amount || !isConnected} 
-                      className="hand-drawn-btn w-full text-sm font-bold"
+                      className={`hand-drawn-btn w-full text-sm font-bold ${
+                        tradeType === 'buy' ? 'secondary' : 'danger'
+                      }`}
                       style={{ 
                         padding: '0.75rem 1.5rem',
                         transform: 'rotate(-0.5deg)',
-                        backgroundColor: tradeType === 'buy' ? '#48bb78' : '#f56565',
                         opacity: (!amount || !isConnected) ? 0.5 : 1
                       }}
                     >
@@ -1136,6 +1144,25 @@ export default function DetailsModal({ token, isOpen, onClose, onTrade }: Detail
           </div>
         </div>
       )}
+
+      {/* Trade Success Modal */}
+      <TradeSuccessModal
+        isOpen={showSuccessModal}
+        onClose={() => {
+          setShowSuccessModal(false);
+          onClose();
+        }}
+        onViewToken={() => {
+          setShowSuccessModal(false);
+          onClose();
+          // Navigate to token page
+          window.open(`/coin/${token.contract_address}`, '_blank');
+        }}
+        tradeType={tradeType}
+        amount={amount}
+        token={token}
+        tokenPrice={data?.tokenPrice?.priceInUsdc}
+      />
     </div>
   );
 }
