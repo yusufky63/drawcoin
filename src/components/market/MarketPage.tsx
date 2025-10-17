@@ -27,100 +27,179 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [fetchingMore, setFetchingMore] = useState(false);
-  const PAGE_SIZE = 20;
+  const [allAddresses, setAllAddresses] = useState<string[]>([]); // Tüm Supabase adresleri
+  const [loadedAddresses, setLoadedAddresses] = useState<Set<string>>(new Set()); // Yüklenen adresler
+  const INITIAL_LOAD_SIZE = 40; // İlk yükleme
+  const PAGE_SIZE = 20; // Sonraki yüklemeler
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const sdkCache = useRef<Map<string, any>>(new Map());
 
-  // Load tokens from Supabase addresses + Zora batch
-  useEffect(() => {
-    const loadInitial = async () => {
+  // Load initial data and all addresses
+  const loadInitial = useCallback(async () => {
       try {
         setLoading(true);
 
-        // Get contract addresses from Supabase
+        // Get ALL contract addresses from Supabase (for search functionality)
         const addrRows = await CoinService.getCoinAddresses({
           limit: 1000, // Get all addresses
           offset: 0,
         });
         
-        const contractAddresses = addrRows.map(row => row.contract_address);
+        const allContractAddresses = addrRows.map(row => row.contract_address);
+        setAllAddresses(allContractAddresses);
         
-        // Get coin details in batches of 20
-        const allCoins: Coin[] = [];
-        const batchSize = 20;
+        // Load only first 40 coins initially
+        const initialAddresses = allContractAddresses.slice(0, INITIAL_LOAD_SIZE);
+        const initialCoins = await loadCoinsFromAddresses(initialAddresses);
         
-        for (let i = 0; i < contractAddresses.length; i += batchSize) {
-          const batch = contractAddresses.slice(i, i + batchSize);
-          console.log(`📦 Market: Fetching batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(contractAddresses.length/batchSize)}: ${batch.length} coins`);
-          
-          const batchData = await getCoinsBatchSDK(batch, 8453);
-          
-          // Convert batch data to coin objects
-          batch.forEach(address => {
-            const zoraCoin = batchData[address.toLowerCase()];
-            if (zoraCoin) {
-              const coin = {
-                id: zoraCoin.address || address,
-                name: zoraCoin.name || 'Unknown Token',
-                symbol: zoraCoin.symbol || 'UNK',
-                description: zoraCoin.description || '',
-                contract_address: address,
-                image_url: zoraCoin.mediaContent?.previewImage?.medium || zoraCoin.mediaContent?.previewImage?.small || '',
-                category: 'Unknown',
-                creator_address: zoraCoin.creatorAddress || '',
-                creator_name: zoraCoin.creatorProfile?.handle || '',
-                tx_hash: '',
-                chain_id: 8453,
-                currency: zoraCoin.poolCurrencyToken?.name || 'ETH',
-                total_supply: zoraCoin.totalSupply || '0',
-                current_price: zoraCoin.tokenPrice?.priceInPoolToken || '0',
-                volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',
-                holders: zoraCoin.uniqueHolders || 0,
-                created_at: zoraCoin.createdAt || new Date().toISOString(),
-                updated_at: zoraCoin.createdAt || new Date().toISOString(),
-                // Additional Zora data
-                marketCap: zoraCoin.marketCap,
-                change24hPct: zoraCoin.marketCapDelta24h,
-                ...zoraCoin
-              };
-              allCoins.push(coin);
-            }
-          });
-        }
+        console.log(`✅ Market: Loaded ${initialCoins.length} initial coins from ${allContractAddresses.length} total addresses`);
         
-        console.log(`✅ Market: Fetched ${allCoins.length} coins from ${contractAddresses.length} addresses`);
-        
-        setTokens(allCoins);
-        setFilteredTokens(allCoins);
+        setTokens(initialCoins);
+        setFilteredTokens(initialCoins);
         setPage(1);
-        setHasMore(false); // We get all coins at once
+        setHasMore(allContractAddresses.length > INITIAL_LOAD_SIZE);
+        
+        // Track loaded addresses
+        const newLoadedAddresses = new Set(initialAddresses);
+        setLoadedAddresses(newLoadedAddresses);
 
         // Basic stats
-        const totalTokens = allCoins.length;
-        setMarketStats({ totalTokens });
+        setMarketStats({ totalTokens: allContractAddresses.length });
       } catch (error) {
         console.error("Error loading market data:", error);
       } finally {
         setLoading(false);
       }
-    };
+    }, []); // Empty dependency array since this function doesn't depend on any props/state
 
+  useEffect(() => {
     loadInitial();
-  }, []);
+  }, [loadInitial]);
+
+  // Helper function to load coins from addresses
+  const loadCoinsFromAddresses = useCallback(async (addresses: string[]): Promise<Coin[]> => {
+    const allCoins: Coin[] = [];
+    const batchSize = 20;
+    
+    for (let i = 0; i < addresses.length; i += batchSize) {
+      const batch = addresses.slice(i, i + batchSize);
+      console.log(`📦 Market: Fetching batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(addresses.length/batchSize)}: ${batch.length} coins`);
+      
+      const batchData = await getCoinsBatchSDK(batch, 8453);
+      
+      // Convert batch data to coin objects
+      batch.forEach(address => {
+        const zoraCoin = batchData[address.toLowerCase()];
+        if (zoraCoin) {
+          const coin = {
+            id: zoraCoin.address || address,
+            name: zoraCoin.name || 'Unknown Token',
+            symbol: zoraCoin.symbol || 'UNK',
+            description: zoraCoin.description || '',
+            contract_address: address,
+            image_url: zoraCoin.mediaContent?.previewImage?.medium || zoraCoin.mediaContent?.previewImage?.small || '',
+            category: 'Unknown',
+            creator_address: zoraCoin.creatorAddress || '',
+            creator_name: zoraCoin.creatorProfile?.handle || '',
+            tx_hash: '',
+            chain_id: 8453,
+            currency: zoraCoin.poolCurrencyToken?.name || 'ETH',
+            total_supply: zoraCoin.totalSupply || '0',
+            current_price: zoraCoin.tokenPrice?.priceInPoolToken || '0',
+            volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',
+            holders: zoraCoin.uniqueHolders || 0,
+            created_at: zoraCoin.createdAt || new Date().toISOString(),
+            updated_at: zoraCoin.createdAt || new Date().toISOString(),
+            // Additional Zora data
+            marketCap: zoraCoin.marketCap,
+            change24hPct: zoraCoin.marketCapDelta24h,
+            ...zoraCoin
+          };
+          allCoins.push(coin);
+        }
+      });
+    }
+    
+    return allCoins;
+  }, []); // Empty dependency array since this function doesn't depend on any props/state
+
+  // Search functionality - search in all Supabase data
+  const searchInAllCoins = useCallback(async (searchQuery: string) => {
+    if (!searchQuery.trim()) {
+      // If no search query, show currently loaded tokens
+      setFilteredTokens(tokens);
+      return;
+    }
+
+    try {
+      // Search in all Supabase addresses (not just loaded ones)
+      const searchResults = await CoinService.getCoinAddresses({
+        search: searchQuery,
+        limit: 1000
+      });
+      
+      const searchAddresses = searchResults.map(row => row.contract_address);
+      console.log(`🔍 Search "${searchQuery}": Found ${searchAddresses.length} matching addresses`);
+      
+      // Find which addresses are already loaded
+      const loadedSearchAddresses = searchAddresses.filter(addr => loadedAddresses.has(addr));
+      const unloadedSearchAddresses = searchAddresses.filter(addr => !loadedAddresses.has(addr));
+      
+      console.log(`📊 Search results: ${loadedSearchAddresses.length} already loaded, ${unloadedSearchAddresses.length} need to be loaded`);
+      
+      // Filter currently loaded tokens by search results
+      let filteredLoadedTokens = tokens.filter(token => 
+        loadedSearchAddresses.includes(token.contract_address)
+      );
+      
+      // Load unloaded search results (limit to first 20 to avoid too many requests)
+      if (unloadedSearchAddresses.length > 0) {
+        const addressesToLoad = unloadedSearchAddresses.slice(0, 20);
+        const newCoins = await loadCoinsFromAddresses(addressesToLoad);
+        
+        // Add new coins to filtered results
+        filteredLoadedTokens = [...filteredLoadedTokens, ...newCoins];
+        
+        // Update loaded addresses
+        setLoadedAddresses(prev => {
+          const newSet = new Set(prev);
+          addressesToLoad.forEach(addr => newSet.add(addr));
+          return newSet;
+        });
+        
+        // Update tokens state
+        setTokens(prev => {
+          const existingAddresses = new Set(prev.map(t => t.contract_address));
+          const trulyNewCoins = newCoins.filter(coin => !existingAddresses.has(coin.contract_address));
+          return [...prev, ...trulyNewCoins];
+        });
+      }
+      
+      setFilteredTokens(filteredLoadedTokens);
+      
+    } catch (error) {
+      console.error("Error searching coins:", error);
+      // Fallback to client-side search on loaded tokens
+      const filtered = tokens.filter(
+        (token) =>
+          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          token.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          token.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredTokens(filtered);
+    }
+  }, [tokens, loadedAddresses, loadCoinsFromAddresses]);
 
   // Filter and sort tokens
   useEffect(() => {
-    let filtered = [...tokens];
-
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (token) =>
-          token.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          token.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          token.description.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    if (searchTerm.trim()) {
+      // Use search functionality
+      searchInAllCoins(searchTerm);
+      return;
     }
+
+    // No search - apply sorting to all loaded tokens
+    const filtered = [...tokens];
 
     // Apply sorting
     filtered.sort((a, b) => {
@@ -155,13 +234,50 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
     });
 
     setFilteredTokens(filtered);
-  }, [tokens, searchTerm, sortBy]);
+  }, [tokens, searchTerm, sortBy, searchInAllCoins]);
 
-  // Load more handler (disabled since we load all tokens at once)
+  // Load more handler for infinite scroll
   const loadMore = useCallback(async () => {
-    // No longer needed since we load all tokens at once
-    console.log("Load more disabled - all tokens loaded at once");
-  }, []);
+    if (fetchingMore || !hasMore) return;
+    
+    try {
+      setFetchingMore(true);
+      
+      // Calculate next batch of addresses to load
+      const currentLoadedCount = loadedAddresses.size;
+      const nextBatchStart = currentLoadedCount;
+      const nextBatchEnd = Math.min(nextBatchStart + PAGE_SIZE, allAddresses.length);
+      const nextBatchAddresses = allAddresses.slice(nextBatchStart, nextBatchEnd);
+      
+      if (nextBatchAddresses.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      
+      console.log(`📦 Market: Loading more coins (${nextBatchStart}-${nextBatchEnd}) from ${allAddresses.length} total`);
+      
+      // Load new coins
+      const newCoins = await loadCoinsFromAddresses(nextBatchAddresses);
+      
+      // Update state
+      setTokens(prev => [...prev, ...newCoins]);
+      setLoadedAddresses(prev => {
+        const newSet = new Set(prev);
+        nextBatchAddresses.forEach(addr => newSet.add(addr));
+        return newSet;
+      });
+      
+      // Check if there are more coins to load
+      setHasMore(nextBatchEnd < allAddresses.length);
+      
+      console.log(`✅ Market: Loaded ${newCoins.length} more coins. Total loaded: ${currentLoadedCount + newCoins.length}/${allAddresses.length}`);
+      
+    } catch (error) {
+      console.error("Error loading more coins:", error);
+    } finally {
+      setFetchingMore(false);
+    }
+  }, [fetchingMore, hasMore, loadedAddresses, allAddresses, loadCoinsFromAddresses]);
 
   // Intersection observer for sentinel
   useEffect(() => {
@@ -182,7 +298,7 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
   useEffect(() => {
     // No longer needed since we load all tokens at once and filter client-side
     console.log("Refetch disabled - filtering is done client-side");
-  }, [searchTerm]);
+  }, []); // Empty dependency array since this effect doesn't do anything
 
   // Removed augmentWithSdk function - no longer needed
 
@@ -299,10 +415,12 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
           {loading
             ? ""
             : fetchingMore
-            ? "Loading more…"
+            ? "Loading more coins..."
             : hasMore
-            ? " "
-            : "End of list"}
+            ? "Scroll down to load more coins"
+            : searchTerm.trim()
+            ? `Found ${filteredTokens.length} results for "${searchTerm}"`
+            : `Showing ${filteredTokens.length} of ${marketStats.totalTokens} coins`}
         </div>
       </div>
 

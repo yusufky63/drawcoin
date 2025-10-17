@@ -8,9 +8,10 @@ interface TokenGridProps {
   onView: (token: Coin) => void;
   loading?: boolean;
   viewMode?: 'grid' | 'list';
+  showBalance?: boolean; // Optional prop to show user balance
 }
 
-export default function TokenGrid({ tokens, onTrade, onView, loading = false, viewMode = 'grid' }: TokenGridProps) {
+export default function TokenGrid({ tokens, onTrade, onView, loading = false, viewMode = 'grid', showBalance = false }: TokenGridProps) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
@@ -218,6 +219,7 @@ export default function TokenGrid({ tokens, onTrade, onView, loading = false, vi
           token={token}
           onTrade={onTrade}
           onView={onView}
+          showBalance={showBalance}
         />
       ))}
     </div>

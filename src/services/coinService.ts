@@ -140,16 +140,16 @@ export class CoinService {
     limit?: number
     offset?: number
     search?: string
-  }): Promise<Array<{ contract_address: string; created_at: string }>> {
+  }): Promise<Array<{ contract_address: string; created_at: string; name?: string; symbol?: string; description?: string }>> {
     try {
       let query = supabase
         .from('drawcoins')
-        .select('contract_address,created_at')
+        .select('contract_address,created_at,name,symbol,description')
         .order('created_at', { ascending: false })
 
       if (params?.search) {
-        // Search cannot be applied to address-only selection reliably; keep simple contains on contract
-        query = query.or(`contract_address.ilike.%${params.search}%`)
+        // Search in name, symbol, and description fields
+        query = query.or(`name.ilike.%${params.search}%,symbol.ilike.%${params.search}%,description.ilike.%${params.search}%,contract_address.ilike.%${params.search}%`)
       }
 
       if (params?.limit) {
@@ -165,7 +165,7 @@ export class CoinService {
         console.error('Error fetching coin addresses:', error)
         return []
       }
-      return (data || []) as Array<{ contract_address: string; created_at: string }>
+      return (data || []) as Array<{ contract_address: string; created_at: string; name?: string; symbol?: string; description?: string }>
     } catch (err) {
       console.error('❌ Failed to fetch coin addresses:', err)
       return []

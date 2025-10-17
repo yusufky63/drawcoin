@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
 import { Coin } from '../../lib/supabase';
 import { CoinService } from '../../services/coinService';
 import { 
@@ -20,6 +20,7 @@ interface PortfolioPageProps {
 
 export default function PortfolioPage({ onView }: PortfolioPageProps) {
   const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
   const [heldTokens, setHeldTokens] = useState<Coin[]>([]);
   const [createdTokens, setCreatedTokens] = useState<Coin[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -62,7 +63,6 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
       
       for (let i = 0; i < contractAddresses.length; i += batchSize) {
         const batch = contractAddresses.slice(i, i + batchSize);
-        console.log(`📦 Fetching batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(contractAddresses.length/batchSize)}: ${batch.length} coins`);
         
         const batchData = await getCoinsBatchSDK(batch, 8453);
         
@@ -99,14 +99,12 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         });
       }
       
-      console.log(`✅ Fetched ${allCoins.length} coins from ${contractAddresses.length} addresses`);
       
       return {
         coins: allCoins,
         hasMore: false // We get all coins at once
       };
     } catch (error) {
-      console.error('Error getting platform coins:', error);
       return { coins: [], hasMore: false };
     }
   }, []);
@@ -135,10 +133,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         const batch = await getCoinsBatchSDK(needFetch, 8453);
         Object.entries(batch).forEach(([addr, data]) => sdkCache.current.set(addr, data));
       } catch (error) {
-        console.error('Error fetching SDK data:', error);
         // Continue with existing data if SDK fetch fails
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.warn('SDK data fetch failed, using available data. Error:', errorMessage);
       }
     }
     
@@ -156,7 +151,6 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         
         out.push(transformedCoin as Coin);
       } catch (error) {
-        console.error('Error transforming coin data:', error);
         // Fallback: create basic coin data
         const fallbackCoin: Coin = {
           id: n.coin.id || n.coin.address || '',
@@ -238,7 +232,6 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
       // Load user profile first (only once)
       if (page === 0) {
         const profile = await getUserProfile(address).catch(err => {
-          console.warn('Could not fetch user profile:', err);
           return null;
         });
         setUserProfile(profile);
@@ -253,11 +246,83 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         coin.creator_address?.toLowerCase() === address.toLowerCase()
       );
       
-      // For held tokens, show all platform coins (user can hold any token)
-      // In a real implementation, you'd check actual token balances
-      const userHeldTokens = platformCoins; // Show all tokens for now
+      // Get user's actual token balances from Zora API
+      let userHeldTokens: Coin[] = [];
+      try {
+        const balanceResult = await getUserBalances(address, 100); // Get up to 100 balances
+        const userBalances = balanceResult.balances;
+        
+        // Filter platform coins to only show tokens the user actually holds
+        userHeldTokens = platformCoins.filter(platformCoin => {
+          const matchingBalance = userBalances.find(balance => 
+            balance.coin?.address?.toLowerCase() === platformCoin.contract_address?.toLowerCase()
+          );
+          
+          if (!matchingBalance) {
+            return false; // No balance found for this token
+          }
+          
+          const balanceAmount = parseFloat(matchingBalance.balance || '0');
+          const hasPositiveBalance = balanceAmount > 0;
+          
+          
+          return hasPositiveBalance;
+        }).map(platformCoin => {
+          // Add user's balance information to the token
+          const userBalance = userBalances.find(balance => 
+            balance.coin?.address?.toLowerCase() === platformCoin.contract_address?.toLowerCase()
+          );
+          
+          return {
+            ...platformCoin,
+            userBalance: userBalance?.balance || '0',
+            userBalanceFormatted: userBalance ? (parseFloat(userBalance.balance) / 1e18).toFixed(4) : '0.0000'
+          };
+        });
+        
+      } catch (error) {
+        
+        // Fallback: Check balances directly from contracts
+        try {
+          const directBalances: Coin[] = [];
+          
+          for (const platformCoin of platformCoins.slice(0, 20)) { // Limit to first 20 for performance
+            try {
+              const tokenBalance = await publicClient!.readContract({
+                address: platformCoin.contract_address as `0x${string}`,
+                abi: [
+                  {
+                    "constant": true,
+                    "inputs": [{"name": "_owner", "type": "address"}],
+                    "name": "balanceOf",
+                    "outputs": [{"name": "balance", "type": "uint256"}],
+                    "type": "function"
+                  }
+                ],
+                functionName: 'balanceOf',
+                args: [address as `0x${string}`]
+              });
+              
+              const balanceAmount = parseFloat((tokenBalance as bigint).toString()) / 1e18;
+              
+              if (balanceAmount > 0) {
+                directBalances.push({
+                  ...platformCoin,
+                  userBalance: (tokenBalance as bigint).toString(),
+                  userBalanceFormatted: balanceAmount.toFixed(4)
+                } as Coin & { userBalance: string; userBalanceFormatted: string });
+              }
+            } catch (contractError) {
+            }
+          }
+          
+          userHeldTokens = directBalances;
+          
+        } catch (directError) {
+          userHeldTokens = []; // Show no tokens if all methods fail
+        }
+      }
       
-      console.log(`📊 Portfolio results: ${userHeldTokens.length} held tokens, ${userCreatedTokens.length} created tokens`);
 
       // Calculate portfolio statistics
       const stats = calculatePortfolioStats(userHeldTokens, userCreatedTokens);
@@ -280,7 +345,6 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
       setCurrentPage(page);
       
     } catch (error) {
-      console.error('Error loading portfolio:', error);
       
       setLoading(false);
       setIsLoadingMore(false);
@@ -334,6 +398,19 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
     setTradeModalOpen(true);
     setDetailsOpen(false);
   };
+
+  // Refresh balances after trade operations
+  const refreshBalances = useCallback(async () => {
+    if (!address || !publicClient) return;
+    
+    try {
+      
+      // Reload portfolio data
+      await loadPortfolio(0, false);
+      
+    } catch (error) {
+    }
+  }, [address, publicClient, loadPortfolio]);
 
   if (!isConnected) {
     return (
@@ -570,6 +647,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                     onView={handleViewDetails}
                     loading={false}
                     viewMode={viewMode}
+                    showBalance={false}
                   />
                   
                   {/* Load More Button */}
@@ -629,6 +707,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                     onView={handleViewDetails}
                     loading={false}
                     viewMode={viewMode}
+                    showBalance={false}
                   />
                   
                   {/* Load More Button */}
@@ -662,6 +741,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         token={selectedToken}
         isOpen={tradeModalOpen}
         onClose={handleCloseTradeModal}
+        onTradeSuccess={refreshBalances}
       />
 
       {/* Details Modal */}
@@ -670,6 +750,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         isOpen={detailsOpen}
         onClose={handleCloseDetails}
         onTrade={handleTradeFromDetails}
+        onTradeSuccess={refreshBalances}
       />
     </div>
   );

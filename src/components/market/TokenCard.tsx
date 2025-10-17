@@ -5,9 +5,10 @@ interface TokenCardProps {
   token: Coin;
   onTrade: (token: Coin) => void;
   onView: (token: Coin) => void;
+  showBalance?: boolean; // Optional prop to show user balance
 }
 
-export default function TokenCard({ token, onTrade, onView }: TokenCardProps) {
+export default function TokenCard({ token, onTrade, onView, showBalance = false }: TokenCardProps) {
   const handleCardClick = () => {
     // Navigate to coin detail page
     window.location.href = `/coin/${token.contract_address}`;
@@ -150,6 +151,18 @@ export default function TokenCard({ token, onTrade, onView }: TokenCardProps) {
             <p className="text-[11px] text-art-gray-500 truncate transform -rotate-0.5">by {(token as any).creatorProfile.handle}</p>
           )}
         </div>
+
+        {/* User Balance (only shown in portfolio) */}
+        {showBalance && (token as any).userBalanceFormatted && (
+          <div className="bg-blue-50 border border-blue-200 p-2 rounded-art transform -rotate-0.5 mb-2" style={{ borderRadius: '8px 12px 6px 10px' }}>
+            <div className="text-center">
+              <div className="text-sm font-bold text-blue-900">
+                {(token as any).userBalanceFormatted} {(token as any).symbol || token.symbol}
+              </div>
+              <div className="text-xs text-blue-600">Your Balance</div>
+            </div>
+          </div>
+        )}
 
         {/* Market Data */}
         <div className="grid grid-cols-3 gap-1 md:gap-2 text-center">

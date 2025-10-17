@@ -4,7 +4,6 @@
  */
 
 import { parseEther, parseUnits, formatEther, formatUnits } from "viem";
-import { checkAndSwitchNetwork } from '../networkUtils';
 
 /**
  * Gets the correct ZORA token address from SDK

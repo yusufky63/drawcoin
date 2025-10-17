@@ -20,6 +20,7 @@ interface DetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onTrade?: (token: Coin) => void;
+  onTradeSuccess?: () => void;
 }
 
 export default function DetailsModal({
@@ -27,6 +28,7 @@ export default function DetailsModal({
   isOpen,
   onClose,
   onTrade,
+  onTradeSuccess,
 }: DetailsModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -437,6 +439,11 @@ export default function DetailsModal({
 
       // Refresh balances after successful trade
       await refreshBalances();
+      
+      // Notify parent component about successful trade
+      if (onTradeSuccess) {
+        onTradeSuccess();
+      }
 
       // Refresh balances after successful trade
       try {
