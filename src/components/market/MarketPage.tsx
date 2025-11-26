@@ -1,216 +1,102 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
+import useSWR from "swr";
 import { Coin } from "../../lib/supabase";
-import { CoinService } from "../../services/coinService";
 import TokenGrid from "./TokenGrid";
 import TokenFilters from "./TokenFilters";
 import DetailsModal from "./DetailsModal";
-import { getCoinsBatchSDK } from "../../services/sdk/getCoins.js";
+import { useWatchlist } from "../../hooks/useWatchlist";
+import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
 interface MarketPageProps {
   onTrade: (token: Coin) => void;
   onView: (token: Coin) => void;
 }
 
-export default function MarketPage({ onTrade, onView }: MarketPageProps) {
-  const [tokens, setTokens] = useState<Coin[]>([]);
-  const [filteredTokens, setFilteredTokens] = useState<Coin[]>([]);
-  const [loading, setLoading] = useState(true);
+// Fetcher function for SWR
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+export default function MarketPage({ onView }: MarketPageProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [marketStats, setMarketStats] = useState({
-    totalTokens: 0,
-  });
+  const [creationType, setCreationType] = useState<"all" | "ai" | "hand-drawn">(
+    "all"
+  );
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [selectedToken, setSelectedToken] = useState<Coin | null>(null);
-  // Infinite scroll state
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [fetchingMore, setFetchingMore] = useState(false);
-  const [allAddresses, setAllAddresses] = useState<string[]>([]); // Tüm Supabase adresleri
-  const [loadedAddresses, setLoadedAddresses] = useState<Set<string>>(new Set()); // Yüklenen adresler
-  const INITIAL_LOAD_SIZE = 40; // İlk yükleme
-  const PAGE_SIZE = 20; // Sonraki yüklemeler
+  const [selectedCreator, setSelectedCreator] = useState<string | null>(null); // For Profile View
+
+  // Data State
+  const [allTokens, setAllTokens] = useState<Coin[]>([]);
+  const [visibleCount, setVisibleCount] = useState(20); // Start with only 20 for faster initial load
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const sdkCache = useRef<Map<string, any>>(new Map());
 
-  // Load initial data and all addresses
-  const loadInitial = useCallback(async () => {
-      try {
-        setLoading(true);
+  // Fetch more tokens for client-side filtering, but render progressively
+  // Start with 500 tokens which covers most use cases without overwhelming the API
+  const apiUrl = `/api/market?limit=500`;
 
-        // Get ALL contract addresses from Supabase (for search functionality)
-        const addrRows = await CoinService.getCoinAddresses({
-          limit: 1000, // Get all addresses
-          offset: 0,
-        });
-        
-        const allContractAddresses = addrRows.map(row => row.contract_address);
-        setAllAddresses(allContractAddresses);
-        
-        // Load only first 40 coins initially
-        const initialAddresses = allContractAddresses.slice(0, INITIAL_LOAD_SIZE);
-        const initialCoins = await loadCoinsFromAddresses(initialAddresses);
-        
-        console.log(`✅ Market: Loaded ${initialCoins.length} initial coins from ${allContractAddresses.length} total addresses`);
-        
-        setTokens(initialCoins);
-        setFilteredTokens(initialCoins);
-        setPage(1);
-        setHasMore(allContractAddresses.length > INITIAL_LOAD_SIZE);
-        
-        // Track loaded addresses
-        const newLoadedAddresses = new Set(initialAddresses);
-        setLoadedAddresses(newLoadedAddresses);
+  const { data, error, isLoading } = useSWR(apiUrl, fetcher, {
+    revalidateOnMount: true, // Only fetch on first mount
+    keepPreviousData: true, // Keep showing old data while revalidating
+  });
 
-        // Basic stats
-        setMarketStats({ totalTokens: allContractAddresses.length });
-      } catch (error) {
-        console.error("Error loading market data:", error);
-      } finally {
-        setLoading(false);
-      }
-    }, []); // Empty dependency array since this function doesn't depend on any props/state
-
+  // Update allTokens when data arrives (with safety check)
   useEffect(() => {
-    loadInitial();
-  }, [loadInitial]);
-
-  // Helper function to load coins from addresses
-  const loadCoinsFromAddresses = useCallback(async (addresses: string[]): Promise<Coin[]> => {
-    const allCoins: Coin[] = [];
-    const batchSize = 20;
-    
-    for (let i = 0; i < addresses.length; i += batchSize) {
-      const batch = addresses.slice(i, i + batchSize);
-      console.log(`📦 Market: Fetching batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(addresses.length/batchSize)}: ${batch.length} coins`);
-      
-      const batchData = await getCoinsBatchSDK(batch, 8453);
-      
-      // Convert batch data to coin objects
-      batch.forEach(address => {
-        const zoraCoin = batchData[address.toLowerCase()];
-        if (zoraCoin) {
-          const coin = {
-            id: zoraCoin.address || address,
-            name: zoraCoin.name || 'Unknown Token',
-            symbol: zoraCoin.symbol || 'UNK',
-            description: zoraCoin.description || '',
-            contract_address: address,
-            image_url: zoraCoin.mediaContent?.previewImage?.medium || zoraCoin.mediaContent?.previewImage?.small || '',
-            category: 'Unknown',
-            creator_address: zoraCoin.creatorAddress || '',
-            creator_name: zoraCoin.creatorProfile?.handle || '',
-            tx_hash: '',
-            chain_id: 8453,
-            currency: zoraCoin.poolCurrencyToken?.name || 'ETH',
-            total_supply: zoraCoin.totalSupply || '0',
-            current_price: zoraCoin.tokenPrice?.priceInPoolToken || '0',
-            volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',
-            holders: zoraCoin.uniqueHolders || 0,
-            created_at: zoraCoin.createdAt || new Date().toISOString(),
-            updated_at: zoraCoin.createdAt || new Date().toISOString(),
-            // Additional Zora data
-            marketCap: zoraCoin.marketCap,
-            change24hPct: zoraCoin.marketCapDelta24h,
-            ...zoraCoin
-          };
-          allCoins.push(coin);
-        }
-      });
+    if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
+      console.log("✅ Market data loaded:", data.data.length, "tokens");
+      setAllTokens(data.data);
+    } else if (data && !data.data) {
+      console.warn("⚠️ Market API returned no data:", data);
     }
-    
-    return allCoins;
-  }, []); // Empty dependency array since this function doesn't depend on any props/state
+  }, [data]);
 
-  // Search functionality - search in all Supabase data
-  const searchInAllCoins = useCallback(async (searchQuery: string) => {
-    if (!searchQuery.trim()) {
-      // If no search query, show currently loaded tokens
-      setFilteredTokens(tokens);
-      return;
-    }
+  // Client-side Filtering & Sorting
+  const filteredTokens = useMemo(() => {
+    let tokens = [...allTokens];
 
-    try {
-      // Search in all Supabase addresses (not just loaded ones)
-      const searchResults = await CoinService.getCoinAddresses({
-        search: searchQuery,
-        limit: 1000
-      });
-      
-      const searchAddresses = searchResults.map(row => row.contract_address);
-      console.log(`🔍 Search "${searchQuery}": Found ${searchAddresses.length} matching addresses`);
-      
-      // Find which addresses are already loaded
-      const loadedSearchAddresses = searchAddresses.filter(addr => loadedAddresses.has(addr));
-      const unloadedSearchAddresses = searchAddresses.filter(addr => !loadedAddresses.has(addr));
-      
-      console.log(`📊 Search results: ${loadedSearchAddresses.length} already loaded, ${unloadedSearchAddresses.length} need to be loaded`);
-      
-      // Filter currently loaded tokens by search results
-      let filteredLoadedTokens = tokens.filter(token => 
-        loadedSearchAddresses.includes(token.contract_address)
+    // 1. Filter by Creator (Profile View)
+    if (selectedCreator) {
+      tokens = tokens.filter(
+        (t) =>
+          t.creator_address?.toLowerCase() === selectedCreator.toLowerCase()
       );
-      
-      // Load unloaded search results (limit to first 20 to avoid too many requests)
-      if (unloadedSearchAddresses.length > 0) {
-        const addressesToLoad = unloadedSearchAddresses.slice(0, 20);
-        const newCoins = await loadCoinsFromAddresses(addressesToLoad);
-        
-        // Add new coins to filtered results
-        filteredLoadedTokens = [...filteredLoadedTokens, ...newCoins];
-        
-        // Update loaded addresses
-        setLoadedAddresses(prev => {
-          const newSet = new Set(prev);
-          addressesToLoad.forEach(addr => newSet.add(addr));
-          return newSet;
-        });
-        
-        // Update tokens state
-        setTokens(prev => {
-          const existingAddresses = new Set(prev.map(t => t.contract_address));
-          const trulyNewCoins = newCoins.filter(coin => !existingAddresses.has(coin.contract_address));
-          return [...prev, ...trulyNewCoins];
-        });
-      }
-      
-      setFilteredTokens(filteredLoadedTokens);
-      
-    } catch (error) {
-      console.error("Error searching coins:", error);
-      // Fallback to client-side search on loaded tokens
-      const filtered = tokens.filter(
-        (token) =>
-          token.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          token.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          token.description.toLowerCase().includes(searchQuery.toLowerCase())
+    }
+
+    // 2. Filter by Search Term
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      tokens = tokens.filter(
+        (t) =>
+          t.name.toLowerCase().includes(lowerTerm) ||
+          t.symbol.toLowerCase().includes(lowerTerm) ||
+          t.creator_name?.toLowerCase().includes(lowerTerm) ||
+          t.creator_address?.toLowerCase().includes(lowerTerm)
       );
-      setFilteredTokens(filtered);
-    }
-  }, [tokens, loadedAddresses, loadCoinsFromAddresses]);
-
-  // Filter and sort tokens
-  useEffect(() => {
-    if (searchTerm.trim()) {
-      // Use search functionality
-      searchInAllCoins(searchTerm);
-      return;
     }
 
-    // No search - apply sorting to all loaded tokens
-    const filtered = [...tokens];
+    // 3. Filter by Creation Type
+    if (creationType !== "all") {
+      tokens = tokens.filter((t) => t.creation_type === creationType);
+    }
 
-    // Apply sorting
-    filtered.sort((a, b) => {
+    // 4. Sort
+    tokens.sort((a, b) => {
       switch (sortBy) {
         case "newest":
           return (
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            new Date(b.created_at || 0).getTime() -
+            new Date(a.created_at || 0).getTime()
           );
         case "oldest":
           return (
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            new Date(a.created_at || 0).getTime() -
+            new Date(b.created_at || 0).getTime()
           );
         case "price-high":
           return (
@@ -233,75 +119,79 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
       }
     });
 
-    setFilteredTokens(filtered);
-  }, [tokens, searchTerm, sortBy, searchInAllCoins]);
+    return tokens;
+  }, [allTokens, searchTerm, sortBy, creationType, selectedCreator]);
 
-  // Load more handler for infinite scroll
-  const loadMore = useCallback(async () => {
-    if (fetchingMore || !hasMore) return;
-    
-    try {
-      setFetchingMore(true);
-      
-      // Calculate next batch of addresses to load
-      const currentLoadedCount = loadedAddresses.size;
-      const nextBatchStart = currentLoadedCount;
-      const nextBatchEnd = Math.min(nextBatchStart + PAGE_SIZE, allAddresses.length);
-      const nextBatchAddresses = allAddresses.slice(nextBatchStart, nextBatchEnd);
-      
-      if (nextBatchAddresses.length === 0) {
-        setHasMore(false);
-        return;
-      }
-      
-      console.log(`📦 Market: Loading more coins (${nextBatchStart}-${nextBatchEnd}) from ${allAddresses.length} total`);
-      
-      // Load new coins
-      const newCoins = await loadCoinsFromAddresses(nextBatchAddresses);
-      
-      // Update state
-      setTokens(prev => [...prev, ...newCoins]);
-      setLoadedAddresses(prev => {
-        const newSet = new Set(prev);
-        nextBatchAddresses.forEach(addr => newSet.add(addr));
-        return newSet;
-      });
-      
-      // Check if there are more coins to load
-      setHasMore(nextBatchEnd < allAddresses.length);
-      
-      console.log(`✅ Market: Loaded ${newCoins.length} more coins. Total loaded: ${currentLoadedCount + newCoins.length}/${allAddresses.length}`);
-      
-    } catch (error) {
-      console.error("Error loading more coins:", error);
-    } finally {
-      setFetchingMore(false);
+  // Pagination (Visible Subset)
+  const visibleTokens = useMemo(() => {
+    return filteredTokens.slice(0, visibleCount);
+  }, [filteredTokens, visibleCount]);
+
+  const hasMore = visibleTokens.length < filteredTokens.length;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setVisibleCount(20); // Reset to 20 for faster filter response
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [searchTerm, sortBy, creationType, selectedCreator]);
+
+  // Infinite scroll handler - load 20 more at a time
+  const loadMore = useCallback(() => {
+    if (hasMore) {
+      setVisibleCount((prev) => prev + 20);
     }
-  }, [fetchingMore, hasMore, loadedAddresses, allAddresses, loadCoinsFromAddresses]);
+  }, [hasMore]);
 
-  // Intersection observer for sentinel
+  // Intersection observer - trigger earlier with larger rootMargin
   useEffect(() => {
     if (!sentinelRef.current || !hasMore) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMore();
-        }
+        if (entries[0].isIntersecting) loadMore();
       },
-      { rootMargin: "200px" }
+      {
+        rootMargin: "400px", // Load 400px before user reaches the sentinel
+        threshold: 0.01,
+      }
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
   }, [loadMore, hasMore]);
 
-  // Refetch when filters change (disabled since we load all tokens at once)
+  // Watchlist Stats Fetching (Lazy load for visible tokens)
+  const [watchlistStats, setWatchlistStats] = useState<Record<string, number>>(
+    {}
+  );
+
   useEffect(() => {
-    // No longer needed since we load all tokens at once and filter client-side
-    console.log("Refetch disabled - filtering is done client-side");
-  }, []); // Empty dependency array since this effect doesn't do anything
+    const fetchStats = async () => {
+      if (visibleTokens.length === 0) return;
 
-  // Removed augmentWithSdk function - no longer needed
+      // Only fetch for tokens we don't have stats for yet (optimization)
+      // Or just fetch for current page to be safe and simple
+      const tokensToFetch = visibleTokens.map((t) => t.contract_address);
 
+      try {
+        const res = await fetch("/api/market/stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tokens: tokensToFetch }),
+        });
+        const data = await res.json();
+        if (data?.data) {
+          setWatchlistStats((prev) => ({ ...prev, ...data.data }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch watchlist stats", err);
+      }
+    };
+
+    // Debounce slightly to avoid too many requests during fast scroll
+    const timeout = setTimeout(fetchStats, 500);
+    return () => clearTimeout(timeout);
+  }, [visibleTokens.length]); // Re-run when more tokens become visible
+
+  // Handlers
   const handleTrade = (token: Coin) => {
     setSelectedToken(token);
     setTradeModalOpen(true);
@@ -313,53 +203,49 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
   };
 
   const handleViewDetails = (token: Coin) => {
-    // Use the onView prop to show coin detail page within the same app
     onView(token);
   };
 
-  if (loading) {
+  const handleCreatorClick = (creatorAddress: string) => {
+    setSelectedCreator(creatorAddress);
+    setSearchTerm(""); // Clear search to show all from creator
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const clearCreatorFilter = () => {
+    setSelectedCreator(null);
+  };
+
+  // Watchlist Hook
+  const { watchlist, toggleWatchlist } = useWatchlist();
+  const watchlistSet = useMemo(
+    () => new Set(watchlist.map((a) => a.toLowerCase())),
+    [watchlist]
+  );
+
+  // Error State
+  if (error) {
+    console.error("❌ Market data fetch error:", error);
+  }
+
+  // Loading State - Only show skeleton if NO data and currently loading
+  const showLoading = isLoading && allTokens.length === 0;
+
+  if (showLoading) {
     return (
-      <div className="min-h-screen bg-art-off-white">
+      <div className="min-h-screen bg-art-off-white pt-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-4">
-          {/* Loading Skeleton */}
-          <div className="space-y-6">
+          {/* Hand-Drawn Loading Skeleton */}
+          <div className="space-y-6 mt-8">
             {/* Header Skeleton */}
-            <div className="mb-4">
-              <div className="h-8 bg-art-gray-200 rounded animate-pulse w-1/3 mb-4"></div>
-              <div className="flex items-center space-x-4">
-                <div className="h-6 bg-art-gray-200 rounded animate-pulse w-24"></div>
-                <div className="h-6 bg-art-gray-200 rounded animate-pulse w-24"></div>
-              </div>
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+              <HandDrawnSkeleton variant="text" className="w-48 h-8" />
+              <HandDrawnSkeleton variant="text" className="w-64 h-10" />
             </div>
-
-            {/* Filters Skeleton */}
-            <div className="flex items-center space-x-4">
-              <div className="h-10 bg-art-gray-200 rounded animate-pulse w-48"></div>
-              <div className="h-10 bg-art-gray-200 rounded animate-pulse w-32"></div>
-              <div className="h-10 bg-art-gray-200 rounded animate-pulse w-20"></div>
-            </div>
-
-            {/* Results Count Skeleton */}
-            <div className="h-4 bg-art-gray-200 rounded animate-pulse w-48"></div>
 
             {/* Token Grid Skeleton */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {Array.from({ length: 12 }).map((_, index) => (
-                <div key={index} className="hand-drawn-card">
-                  <div
-                    className="aspect-square bg-art-gray-200 rounded-art-lg mb-3 animate-pulse"
-                    style={{ borderRadius: "20px 10px 25px 15px" }}
-                  ></div>
-                  <div className="space-y-2">
-                    <div className="h-5 bg-art-gray-200 rounded animate-pulse w-3/4"></div>
-                    <div className="h-4 bg-art-gray-200 rounded animate-pulse w-1/2"></div>
-                    <div className="flex justify-between">
-                      <div className="h-6 bg-art-gray-200 rounded animate-pulse w-1/3"></div>
-                      <div className="h-4 bg-art-gray-200 rounded animate-pulse w-1/4"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <HandDrawnSkeleton variant="card" count={8} />
             </div>
           </div>
         </div>
@@ -368,19 +254,33 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-art-off-white">
+    <div className="min-h-screen bg-art-off-white pt-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-4">
-        {/* Page Header with Stats */}
-        <div className="mb-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-            {/* Inline Market Stats */}
-            <div className="flex items-center space-x-4 mt-4 md:mt-0"></div>
+        {/* Profile Filter Banner */}
+        {selectedCreator && (
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">👤</span>
+              <div>
+                <p className="text-sm text-blue-600 font-bold">
+                  Viewing Profile
+                </p>
+                <p className="text-xs text-blue-500 font-mono">
+                  {selectedCreator}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={clearCreatorFilter}
+              className="text-sm bg-white border border-blue-200 px-3 py-1 rounded-full hover:bg-blue-100 transition-colors"
+            >
+              Clear Filter ✕
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Filters */}
         <TokenFilters
-          categories={[]}
           selectedCategory=""
           onCategoryChange={() => {}}
           searchTerm={searchTerm}
@@ -389,38 +289,48 @@ export default function MarketPage({ onTrade, onView }: MarketPageProps) {
           onSortChange={setSortBy}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          creationType={creationType}
+          onCreationTypeChange={setCreationType}
         />
 
         {/* Results Count */}
-        <div className="mb-4 md:mb-6">
+        <div className="mb-4 md:mb-6 flex justify-between items-end">
           <p className="text-xs md:text-sm text-art-gray-600">
-            Showing {filteredTokens.length} of {tokens.length} tokens
+            {selectedCreator
+              ? `Found ${filteredTokens.length} tokens by this creator`
+              : `Showing ${visibleTokens.length} of ${filteredTokens.length} tokens`}
+            {allTokens.length > 1000 && (
+              <span className="ml-2 text-xs text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">
+                Large Dataset Loaded ({allTokens.length})
+              </span>
+            )}
           </p>
         </div>
 
         {/* Token Grid */}
         <TokenGrid
-          tokens={filteredTokens}
+          tokens={visibleTokens}
           onTrade={handleTrade}
           onView={handleViewDetails}
-          loading={loading}
+          loading={false}
           viewMode={viewMode}
+          watchlistSet={watchlistSet}
+          onToggleWatchlist={toggleWatchlist}
+          // Pass stats and handlers
+          onCreatorClick={handleCreatorClick}
+          watchlistStats={watchlistStats}
         />
 
         {/* Infinite scroll sentinel */}
         <div
           ref={sentinelRef}
-          className="text-center mt-8 md:mt-12 text-art-gray-500"
+          className="text-center mt-8 md:mt-12 text-art-gray-500 py-8"
         >
-          {loading
-            ? ""
-            : fetchingMore
-            ? "Loading more coins..."
-            : hasMore
+          {hasMore
             ? "Scroll down to load more coins"
-            : searchTerm.trim()
-            ? `Found ${filteredTokens.length} results for "${searchTerm}"`
-            : `Showing ${filteredTokens.length} of ${marketStats.totalTokens} coins`}
+            : filteredTokens.length > 0
+            ? "No more coins to load"
+            : "No coins found matching your criteria"}
         </div>
       </div>
 

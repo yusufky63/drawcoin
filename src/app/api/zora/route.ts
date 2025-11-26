@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCoinDetails } from "../../../services/sdk/getCoins.js";
 import { getZoraProfile, getProfileBalance } from "../../../services/sdk/getProfiles.js";
 
-import { getETHPrice } from "../../../services/ethPrice.js";
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -16,13 +14,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ETH fiyatını getir
+
     if (action === "ethPrice") {
-      const price = await getETHPrice();
-      return NextResponse.json({ price });
+      // Fetch from our unified crypto-price API
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+        const response = await fetch(`${baseUrl}/api/crypto-price?symbol=ETH`);
+        const data = await response.json();
+        
+        if (data.success && data.price) {
+          return NextResponse.json({ price: data.price, source: data.source });
+        } else if (data.fallbackPrice) {
+          return NextResponse.json({ price: data.fallbackPrice, source: 'fallback' });
+        }
+        
+        throw new Error('Failed to fetch ETH price');
+      } catch (error) {
+        console.error('Failed to fetch ETH price:', error);
+        return NextResponse.json({ price: 3000, source: 'fallback' }); // Fallback price
+      }
     }
 
-    // Coin detaylarını getir
     else if (action === "coinDetails") {
       const address = searchParams.get("address");
       if (!address) {
@@ -36,7 +48,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(coinData);
     }
 
-    // Profil bilgilerini getir
     else if (action === "profile") {
       const address = searchParams.get("address");
       if (!address) {
@@ -50,7 +61,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(profileData);
     }
 
-    // Profil bakiyesini getir
     else if (action === "balance") {
       const address = searchParams.get("address");
       if (!address) {

@@ -1,23 +1,33 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from "wagmi";
+import React, { useState, useEffect } from "react";
+import {
+  useAccount,
+  useWalletClient,
+  usePublicClient,
+  useSwitchChain,
+} from "wagmi";
 import { createToken } from "../../lib/functions/createToken";
-import { showCreateMessages, showIPFSMessages, showAIMessages, showError } from "../../utils/toastUtils";
-import DrawingCanvas from "../ui/DrawingCanvas";
+import {
+  showCreateMessages,
+  showIPFSMessages,
+  showAIMessages,
+  showError,
+} from "../../utils/toastUtils";
+import CustomCanvas, { CustomCanvasRef } from "../ui/CustomCanvas";
 import HandDrawnIcon from "../ui/HandDrawnIcon";
-import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
-import SuccessModal from './SuccessModal';
+import SuccessModal from "./SuccessModal";
+import { toast } from "react-hot-toast";
+import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
 interface CreatePageProps {
   onSuccess?: (tokenAddress: string) => void;
 }
 
 export default function CreatePage({ onSuccess }: CreatePageProps) {
-  const router = useRouter();
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
+  const customCanvasRef = React.useRef<CustomCanvasRef>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -29,13 +39,13 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
   // Note: Initial purchase is no longer supported in SDK v2
   // Users will need to purchase tokens separately after creation
-  const [ownersAddresses, setOwnersAddresses] = useState<string[]>([]);
-  const [newOwnerAddress, setNewOwnerAddress] = useState<string>("");
-  const [selectedCurrency, setSelectedCurrency] = useState<number>(0); // ZORA currency
+  const [ownersAddresses] = useState<string[]>([]);
+  const [selectedCurrency] = useState<number>(0); // ZORA currency
   const [startingMarketCap, setStartingMarketCap] = useState<number>(0); // LOW = 0, HIGH = 1
-  const [smartWalletRouting, setSmartWalletRouting] = useState<number>(0); // AUTO = 0, DISABLE = 1 (default AUTO)
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState<boolean>(false);
-  const [platformReferrer, setPlatformReferrer] = useState<string>(
+  const [smartWalletRouting] = useState<number>(0); // AUTO = 0, DISABLE = 1 (default AUTO)
+  const [showAdvancedOptions, setShowAdvancedOptions] =
+    useState<boolean>(false);
+  const [platformReferrer] = useState<string>(
     "0xbFA6A45Dd534d39dF47A3F3D2f2b6E88416f9831"
   );
 
@@ -45,14 +55,12 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const [drawnImage, setDrawnImage] = useState<string>("");
   const [currentStep, setCurrentStep] = useState(1);
   const [canvasSize, setCanvasSize] = useState({ width: 1024, height: 1024 });
-  const [drawingTools, setDrawingTools] = useState<React.ReactNode>(null);
-  const [isMobile, setIsMobile] = useState<boolean>(false);
   const totalSteps = 3;
 
   // Success modal state
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdTokenAddress, setCreatedTokenAddress] = useState<string>("");
-  
+
   // Retry state
   const [retryCount, setRetryCount] = useState(0);
   const [maxRetries] = useState(3);
@@ -62,6 +70,83 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const [aiPrompt, setAiPrompt] = useState<string>("");
   const [aiGenerating, setAiGenerating] = useState<boolean>(false);
   const [aiGeneratedImage, setAiGeneratedImage] = useState<string>("");
+
+  // AI Limit state
+  const [aiLimit, setAiLimit] = useState<{
+    usage: number;
+    limit: number;
+    resetTime?: string;
+  }>({
+    usage: 0,
+    limit: 3, // ✅ Daily limit is 3
+    resetTime: undefined,
+  });
+
+  // Calculate remaining time until reset
+  const getRemainingTime = () => {
+    if (!aiLimit.resetTime) return null;
+    const now = new Date();
+    const reset = new Date(aiLimit.resetTime);
+    const diff = reset.getTime() - now.getTime();
+
+    if (diff <= 0) return "Soon";
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
+  const isAiLimitReached = aiLimit.usage >= aiLimit.limit;
+
+  useEffect(() => {
+    // Simulate initial loading
+    const timer = setTimeout(() => {
+      setInitialLoading(false);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const fetchAiLimit = async () => {
+      if (address) {
+        try {
+          const { supabase } = await import("../../lib/supabase");
+          const { data: user } = await supabase
+            .from("users")
+            .select("daily_ai_usage, last_reset_date")
+            .eq("address", address)
+            .single();
+
+          if (user) {
+            const lastReset = new Date(user.last_reset_date);
+            const now = new Date();
+            const isToday =
+              lastReset.getDate() === now.getDate() &&
+              lastReset.getMonth() === now.getMonth() &&
+              lastReset.getFullYear() === now.getFullYear();
+
+            // Calculate next reset time (midnight)
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(0, 0, 0, 0);
+
+            setAiLimit({
+              usage: isToday ? user.daily_ai_usage || 0 : 0,
+              limit: 3, // ✅ Changed from 5 to 3
+              resetTime: tomorrow.toISOString(),
+            });
+          }
+        } catch (e) {
+          console.error("Error fetching AI limit:", e);
+        }
+      }
+    };
+    fetchAiLimit();
+  }, [address]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -75,7 +160,10 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   // AI Draw functions
   const generateAIImage = async () => {
     if (!aiPrompt.trim()) {
-      showError("Please enter a description for your AI-generated art", 'AI generation');
+      showError(
+        "Please enter a description for your AI-generated art",
+        "AI generation"
+      );
       return;
     }
 
@@ -92,19 +180,32 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         body: JSON.stringify({
           action: "image",
           description: aiPrompt,
+          userAddress: address,
         }),
       });
 
       if (!response.ok) {
+        if (response.status === 429) {
+          const data = await response.json();
+          // Update limit info with reset time
+          if (data.resetTime) {
+            setAiLimit((prev) => ({
+              ...prev,
+              resetTime: data.resetTime,
+            }));
+          }
+          throw new Error(data.error || "Daily limit reached");
+        }
         throw new Error(`AI generation failed: ${response.status}`);
       }
 
       const result = await response.json();
-      
+
       if (result.imageUrl) {
         setAiGeneratedImage(result.imageUrl);
         setDrawnImage(result.imageUrl);
         setFormData((prev) => ({ ...prev, imageUrl: result.imageUrl }));
+        setAiLimit((prev) => ({ ...prev, usage: prev.usage + 1 })); // Optimistic update
         showAIMessages.success();
       } else {
         throw new Error("No image URL returned from AI service");
@@ -118,6 +219,14 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   };
 
   const handleDrawModeChange = (mode: "custom" | "ai") => {
+    if (mode === "ai" && !isConnected) {
+      showError(
+        "Please connect your wallet to use AI generation",
+        "Wallet Required"
+      );
+      return;
+    }
+
     setDrawMode(mode);
     if (mode === "custom") {
       // Reset AI state when switching to custom
@@ -144,23 +253,9 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
   // Note: Purchase amount functions removed as initial purchase is no longer supported
 
-  // Add owner address
-  const addOwnerAddress = () => {
-    if (newOwnerAddress && !ownersAddresses.includes(newOwnerAddress)) {
-      setOwnersAddresses([...ownersAddresses, newOwnerAddress]);
-      setNewOwnerAddress("");
-    }
-  };
-
-  // Remove owner address
-  const removeOwnerAddress = (address: string) => {
-    setOwnersAddresses(ownersAddresses.filter((item) => item !== address));
-  };
-
   // Set canvas size based on screen size
   useEffect(() => {
     const updateCanvasSize = () => {
-      setIsMobile(window.innerWidth < 768);
       if (window.innerWidth < 768) {
         // Mobile: smaller but still good size
         setCanvasSize({ width: 400, height: 400 });
@@ -232,7 +327,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const canProceedToNext = () => {
     switch (currentStep) {
       case 1:
-        return drawnImage; // Sadece çizim yeterli (hem custom hem AI draw için)
+        return drawMode !== null; // Sadece draw mode seçilmiş olmalı
       case 2:
         return formData.name && formData.symbol && formData.description; // Name, symbol ve description gerekli
       case 3:
@@ -242,10 +337,22 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     }
   };
 
-  const nextStep = () => {
-    if (canProceedToNext() && currentStep < totalSteps) {
-      setCurrentStep(currentStep + 1);
+  const nextStep = async () => {
+    if (!canProceedToNext() || currentStep >= totalSteps) return;
+
+    // Step 1'den 2'ye geçerken otomatik capture al
+    if (currentStep === 1 && drawMode === "custom" && customCanvasRef.current) {
+      const image = await customCanvasRef.current.exportImage();
+      if (image) {
+        handleImageChange(image);
+        toast.success("Artwork captured!");
+      } else {
+        toast.error("Draw something first!");
+        return;
+      }
     }
+
+    setCurrentStep(currentStep + 1);
   };
 
   const prevStep = () => {
@@ -262,17 +369,9 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     }
   };
 
-  const handleViewToken = () => {
-    setShowSuccessModal(false);
-    // Navigate to token detail page
-    if (createdTokenAddress && onSuccess) {
-      onSuccess(createdTokenAddress);
-    }
-  };
-
   const handleCreateToken = async (isRetry: boolean = false) => {
     if (!isConnected || !walletClient || !publicClient || !address) {
-      showError("Please connect your wallet first", 'wallet connection');
+      showError("Please connect your wallet first", "wallet connection");
       return;
     }
 
@@ -282,12 +381,12 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       !formData.description ||
       !formData.imageUrl
     ) {
-      showError("Please complete all steps first", 'form validation');
+      showError("Please complete all steps first", "form validation");
       return;
     }
 
     setLoading(true);
-    
+
     try {
       // First upload image to IPFS
       const ipfsUrl = await uploadToIPFS(
@@ -303,6 +402,8 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         description: formData.description,
         imageUrl: ipfsUrl, // Use IPFS URL instead of base64
         category: "DrawCoin",
+        creation_type:
+          drawMode === "ai" ? ("ai" as const) : ("hand-drawn" as const),
         // Note: Initial purchase parameters removed as not supported in SDK v2
         ownersAddresses: ownersAddresses,
         selectedCurrency: selectedCurrency,
@@ -321,24 +422,24 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
       if (result.address) {
         showCreateMessages.success();
-        
+
         // Reset retry count on success
         setRetryCount(0);
-        
+
         // Set the created token address and show success modal
         setCreatedTokenAddress(result.address);
         setShowSuccessModal(true);
       }
     } catch (error: any) {
       console.error("Error creating token:", error);
-      
+
       // Check if we should retry
       if (retryCount < maxRetries && !isRetry) {
         const newRetryCount = retryCount + 1;
         setRetryCount(newRetryCount);
-        
+
         showCreateMessages.retry(newRetryCount, maxRetries);
-        
+
         // Wait 2 seconds before retry
         setTimeout(() => {
           handleCreateToken(true);
@@ -353,6 +454,36 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     }
   };
 
+  // Show skeleton on initial load
+  if (initialLoading) {
+    return (
+      <div className="min-h-screen bg-art-off-white">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="space-y-6">
+            {/* Header Skeleton */}
+            <div className="flex justify-between items-center">
+              <HandDrawnSkeleton variant="text" className="w-64 h-10" />
+              <HandDrawnSkeleton variant="text" className="w-48 h-10" />
+            </div>
+
+            {/* Navigation Skeleton */}
+            <div className="hand-drawn-card p-4">
+              <HandDrawnSkeleton variant="text" className="w-full h-12" />
+            </div>
+
+            {/* Canvas/Content Skeleton */}
+            <div className="hand-drawn-card p-6">
+              <div className="space-y-4">
+                <HandDrawnSkeleton variant="text" className="w-1/3 h-6" />
+                <div className="w-full h-96 bg-art-gray-200 rounded-art animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-art-off-white">
       <div className="max-w-7xl mx-auto px-4">
@@ -362,9 +493,11 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
           <div className="flex justify-center md:justify-start mt-5">
             <div className="flex space-x-2">
               <button
-                onClick={() => handleDrawModeChange('custom')}
-                className={`hand-drawn-btn flex items-center ${
-                  drawMode === 'custom' ? '' : 'secondary'
+                onClick={() => handleDrawModeChange("custom")}
+                className={`flex items-center ${
+                  drawMode === "custom"
+                    ? "hand-drawn-btn"
+                    : "hand-drawn-btn-dotted secondary"
                 }`}
                 style={{ padding: "0.75rem 1.5rem" }}
               >
@@ -372,14 +505,33 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                 <span className="ml-2">Custom Draw</span>
               </button>
               <button
-                onClick={() => handleDrawModeChange('ai')}
-                className={`hand-drawn-btn flex items-center ${
-                  drawMode === 'ai' ? '' : 'secondary'
-                }`}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleDrawModeChange("ai");
+                }}
+                title={
+                  !isConnected ? "Connect wallet to use AI" : "Generate AI Art"
+                }
+                className={`flex items-center ${
+                  drawMode === "ai"
+                    ? "hand-drawn-btn"
+                    : "hand-drawn-btn-dotted secondary"
+                } ${!isConnected ? "opacity-70 cursor-pointer" : ""}`}
                 style={{ padding: "0.75rem 1.5rem" }}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                  />
                 </svg>
                 <span className="ml-2">AI Draw</span>
               </button>
@@ -401,8 +553,8 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                           ? "bg-art-gray-900 border-art-gray-900 text-white"
                           : "bg-white border-art-gray-300 text-art-gray-400"
                       }`}
-                      style={{ 
-                        borderRadius: '50% 30% 50% 30%'
+                      style={{
+                        borderRadius: "50% 30% 50% 30%",
                       }}
                     >
                       {getStepStatus(step) === "completed" ? (
@@ -418,22 +570,20 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                           />
                         </svg>
                       ) : (
-                        <span className="text-xs font-bold">
-                          {step}
-                        </span>
+                        <span className="text-xs font-bold">{step}</span>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
-              
+
               {/* Mobile: Current Step Label */}
               <div className="md:hidden text-xs text-art-gray-600 font-medium mb-1">
                 {currentStep === 1 && "Draw Your Art"}
                 {currentStep === 2 && "Add Details"}
                 {currentStep === 3 && "Create Token"}
               </div>
-              
+
               {/* Mobile: Progress Text */}
               <div className="md:hidden text-xs text-art-gray-400">
                 Step {currentStep} of {totalSteps}
@@ -444,19 +594,21 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                 {/* Progress Bar Container */}
                 <div className="relative w-full max-w-md">
                   {/* Background Progress Bar */}
-                  <div className="absolute top-1/2 left-0 w-full h-2 bg-art-gray-200 rounded-full transform -translate-y-1/2" 
-                       style={{ borderRadius: '20px 5px 15px 8px' }}>
+                  <div
+                    className="absolute top-1/2 left-0 w-full h-2 bg-art-gray-200 rounded-full transform -translate-y-1/2"
+                    style={{ borderRadius: "20px 5px 15px 8px" }}
+                  >
                     {/* Active Progress Bar */}
-                    <div 
+                    <div
                       className="h-full bg-gradient-to-r from-art-gray-900 to-art-gray-700 rounded-full transition-all duration-500 ease-out"
-                      style={{ 
+                      style={{
                         width: `${((currentStep - 1) / 2) * 100}%`,
-                        borderRadius: '20px 5px 15px 8px',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        borderRadius: "20px 5px 15px 8px",
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                       }}
                     />
                   </div>
-                  
+
                   {/* Step Indicators */}
                   <div className="relative flex justify-between items-center">
                     {[1, 2, 3].map((step) => (
@@ -469,10 +621,10 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                               ? "bg-art-gray-900 border-art-gray-900 text-white scale-110 shadow-lg ring-4 ring-art-gray-200"
                               : "bg-white border-art-gray-300 text-art-gray-400 hover:scale-105"
                           }`}
-                          style={{ 
-                            borderRadius: '50% 30% 50% 30%',
-                            borderStyle: 'solid',
-                            borderWidth: '3px'
+                          style={{
+                            borderRadius: "50% 30% 50% 30%",
+                            borderStyle: "solid",
+                            borderWidth: "3px",
                           }}
                         >
                           {getStepStatus(step) === "completed" ? (
@@ -488,74 +640,57 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                               />
                             </svg>
                           ) : (
-                            <span className="text-base font-bold">
-                              {step}
-                            </span>
+                            <span className="text-base font-bold">{step}</span>
                           )}
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
-                
-                {/* Current Step Label - Desktop Only */}
-                <div className="mt-4 text-sm text-art-gray-700 font-medium">
-                  {currentStep === 1 && "Draw Your Art"}
-                  {currentStep === 2 && "Add Details"}
-                  {currentStep === 3 && "Create Token"}
-                </div>
-                
-                {/* Progress Percentage - Desktop Only */}
-                <div className="mt-2 text-xs text-art-gray-400">
-                  Step {currentStep} of {totalSteps} • {Math.round(((currentStep - 1) / 2) * 100)}% Complete
-                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto">
+        <div className="w-full">
+          {/* Navigation Buttons - Top (Desktop Only) */}
+          <div className="hidden md:flex justify-between items-center mb-4 px-4 py-3 bg-white border-2 border-gray-200 rounded-art">
+            <button
+              onClick={prevStep}
+              disabled={currentStep === 1}
+              className="hand-drawn-btn secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              ← Previous
+            </button>
+            <div className="text-center">
+              <span className="text-sm font-bold text-gray-600">
+                Step {currentStep} of {totalSteps}
+              </span>
+            </div>
+            {currentStep < totalSteps && (
+              <button
+                onClick={nextStep}
+                disabled={!canProceedToNext()}
+                className="hand-drawn-btn disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next →
+              </button>
+            )}
+            {currentStep === totalSteps && <div className="w-24"></div>}
+          </div>
+
           {/* Current Step Only */}
           {/* Step 1: Draw Your Art */}
           {currentStep === 1 && (
             <div className="space-y-4">
-
               {/* Content based on selected mode */}
               {drawMode === "custom" ? (
-                <div className={`flex flex-col lg:flex-row gap-2`}>
-                  {/* Canvas Area */}
-                  <div className="flex-1 flex justify-center order-1 lg:order-1">
-                    <div className="w-full max-w-4xl">
-                      <DrawingCanvas
-                        width={canvasSize.width}
-                        height={canvasSize.height}
-                        onImageChange={handleImageChange}
-                        showTools={false}
-                        onToolsRender={setDrawingTools}
-                        toolsVariant={isMobile ? "compact" : "full"}
-                      />
-                      {/* Mobile Tools directly under canvas */}
-                      {isMobile && drawingTools && (
-                        <div className="mt-3 block lg:hidden">
-                          {drawingTools}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Tools Panel */}
-                  <div className="w-full lg:w-80 order-2 lg:order-2">
-                    <div className="hand-drawn-card lg:sticky lg:top-4 hidden lg:block">
-                      {/* Drawing tools from canvas */}
-                      {drawingTools || (
-                        <div className="space-y-3">
-                          <div className="text-sm text-art-gray-500">
-                            Tools are loading...
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                <div className="w-full max-w-full mx-auto">
+                  <CustomCanvas
+                    ref={customCanvasRef}
+                    width={canvasSize.width}
+                    height={canvasSize.height}
+                  />
                 </div>
               ) : (
                 /* AI Draw Mode */
@@ -580,7 +715,18 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                             d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
                           />
                         </svg>
-                        <h3 className="text-lg">AI Art Generation</h3>
+                        <div className="flex-1 flex justify-between items-center ml-2">
+                          <h3 className="text-lg">AI Art Generation</h3>
+                          <span
+                            className={`text-xs font-bold px-2 py-1 rounded-full border ${
+                              aiLimit.usage >= aiLimit.limit
+                                ? "bg-red-100 text-red-600 border-red-200"
+                                : "bg-green-100 text-green-600 border-green-200"
+                            }`}
+                          >
+                            {Math.max(0, aiLimit.limit - aiLimit.usage)} left
+                          </span>
+                        </div>
                       </div>
                       <p className="text-xs md:text-sm text-art-gray-600 mb-4 md:mb-6">
                         Describe what you want to create and let AI generate
@@ -605,16 +751,84 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                         </div>
                       </div>
 
+                      {/* Limit Reached Warning */}
+                      {isAiLimitReached && (
+                        <div className="mb-4 bg-red-50 border-2 border-red-200 rounded-art p-4">
+                          <div className="flex items-start space-x-3">
+                            <svg
+                              className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            <div className="flex-1">
+                              <h4 className="text-sm font-bold text-red-800 mb-1">
+                                Daily Limit Reached ({aiLimit.limit}/
+                                {aiLimit.limit})
+                              </h4>
+                              <p className="text-xs text-red-700">
+                                You've used all your AI generations for today.
+                                {aiLimit.resetTime && (
+                                  <span className="font-semibold">
+                                    {" "}
+                                    Reset in: {getRemainingTime()}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Generate Button */}
                       <button
                         onClick={generateAIImage}
-                        disabled={aiGenerating || !aiPrompt.trim()}
-                        className="hand-drawn-btn w-full text-lg py-4"
+                        disabled={
+                          aiGenerating || !aiPrompt.trim() || isAiLimitReached
+                        }
+                        className="hand-drawn-btn w-full text-lg py-4 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {aiGenerating ? (
                           <div className="flex items-center justify-center">
                             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                             Generating AI Art...
+                          </div>
+                        ) : isAiLimitReached ? (
+                          <div className="flex items-center justify-center">
+                            <svg
+                              className="w-5 h-5 mr-2"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            Available in {getRemainingTime()}
+                          </div>
+                        ) : aiGeneratedImage ? (
+                          <div className="flex items-center justify-center">
+                            <svg
+                              className="w-5 h-5 mr-2"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                              />
+                            </svg>
+                            Regenerate
                           </div>
                         ) : (
                           <div className="flex items-center justify-center">
@@ -688,7 +902,8 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
                       <div className="space-y-3 text-sm text-art-gray-600">
                         <div>
-                          <strong>Be descriptive:</strong> Add details for better results.
+                          <strong>Be descriptive:</strong> Add details for
+                          better results.
                         </div>
                         <div>
                           <strong>Examples:</strong>
@@ -699,7 +914,8 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                           </ul>
                         </div>
                         <div className="bg-art-off-white rounded-art p-3 border border-art-gray-200">
-                          <strong>Note:</strong> AI generates hand-drawn style artwork at 1024x1024 resolution.
+                          <strong>Note:</strong> AI generates hand-drawn style
+                          artwork at 1024x1024 resolution.
                         </div>
                       </div>
                     </div>
@@ -803,7 +1019,9 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                   <div className="mb-4">
                     <button
                       type="button"
-                      onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                      onClick={() =>
+                        setShowAdvancedOptions(!showAdvancedOptions)
+                      }
                       className="flex items-center justify-between w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded-art border border-gray-200 transition-colors"
                     >
                       <span className="text-sm font-medium text-art-gray-700">
@@ -811,7 +1029,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                       </span>
                       <svg
                         className={`w-4 h-4 text-art-gray-500 transition-transform ${
-                          showAdvancedOptions ? 'rotate-180' : ''
+                          showAdvancedOptions ? "rotate-180" : ""
                         }`}
                         fill="none"
                         stroke="currentColor"
@@ -843,11 +1061,17 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                               name="marketCap"
                               value="0"
                               checked={startingMarketCap === 0}
-                              onChange={(e) => setStartingMarketCap(Number(e.target.value))}
+                              onChange={(e) =>
+                                setStartingMarketCap(Number(e.target.value))
+                              }
                               className="w-4 h-4 text-art-gray-900"
                             />
-                            <label htmlFor="low-market-cap" className="text-sm text-art-gray-700">
-                              <span className="font-bold">LOW</span> - Lower initial liquidity, more price volatility
+                            <label
+                              htmlFor="low-market-cap"
+                              className="text-sm text-art-gray-700"
+                            >
+                              <span className="font-bold">LOW</span> - Lower
+                              initial liquidity, more price volatility
                             </label>
                           </div>
                           <div className="flex items-center space-x-3">
@@ -857,21 +1081,27 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                               name="marketCap"
                               value="1"
                               checked={startingMarketCap === 1}
-                              onChange={(e) => setStartingMarketCap(Number(e.target.value))}
+                              onChange={(e) =>
+                                setStartingMarketCap(Number(e.target.value))
+                              }
                               className="w-4 h-4 text-art-gray-900"
                             />
-                            <label htmlFor="high-market-cap" className="text-sm text-art-gray-700">
-                              <span className="font-bold">HIGH</span> - Higher initial liquidity, more stable pricing
+                            <label
+                              htmlFor="high-market-cap"
+                              className="text-sm text-art-gray-700"
+                            >
+                              <span className="font-bold">HIGH</span> - Higher
+                              initial liquidity, more stable pricing
                             </label>
                           </div>
                         </div>
                         <div className="mt-2 text-xs text-art-gray-500">
-                          This affects the initial trading conditions and price discovery for your token.
+                          This affects the initial trading conditions and price
+                          discovery for your token.
                         </div>
                       </div>
                     </div>
                   )}
-
 
                   <button
                     onClick={() => handleCreateToken(false)}
@@ -887,7 +1117,9 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                     {loading ? (
                       <div className="flex items-center justify-center">
                         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                        {retryCount > 0 ? `Retrying... (${retryCount}/${maxRetries})` : 'Creating Token...'}
+                        {retryCount > 0
+                          ? `Retrying... (${retryCount}/${maxRetries})`
+                          : "Creating Token..."}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center">
@@ -896,7 +1128,6 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                       </div>
                     )}
                   </button>
-
 
                   {!isConnected && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-art p-4 mt-4">
@@ -925,24 +1156,30 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
             </div>
           )}
 
-          {/* Navigation Buttons */}
-          <div className="flex justify-between mt-6">
+          {/* Navigation Buttons - Bottom (Mobile Only) */}
+          <div className="md:hidden flex justify-between items-center mt-3 mb-6 px-3 py-2 bg-white border-2 border-gray-200 rounded-art">
             <button
               onClick={prevStep}
               disabled={currentStep === 1}
-              className="hand-drawn-btn secondary"
+              className="hand-drawn-btn secondary disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-2"
             >
-              Previous
+              ← Prev
             </button>
+            <div className="text-center">
+              <span className="text-xs font-bold text-gray-600">
+                {currentStep}/{totalSteps}
+              </span>
+            </div>
             {currentStep < totalSteps && (
               <button
                 onClick={nextStep}
                 disabled={!canProceedToNext()}
-                className="hand-drawn-btn"
+                className="hand-drawn-btn disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-2"
               >
-                Next
+                Next →
               </button>
             )}
+            {currentStep === totalSteps && <div className="w-20"></div>}
           </div>
         </div>
       </div>
@@ -951,7 +1188,6 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
       <SuccessModal
         isOpen={showSuccessModal}
         onClose={handleSuccessModalClose}
-        onViewToken={handleViewToken}
         tokenName={formData.name}
         tokenSymbol={formData.symbol}
         tokenAddress={createdTokenAddress}

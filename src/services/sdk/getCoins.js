@@ -13,10 +13,9 @@ import {
 // Initialize API key for production environments
 // Uses environment variable or allows manual override
 const initializeApiKey = () => {
-  const apiKey = process.env.NEXT_PUBLIC_ZORA_API_KEY;
+  const apiKey = process.env.ZORA_API_KEY;
   if (apiKey) {
     setApiKey(apiKey);
-    console.log("Zora API key initialized from environment variables");
   }
 };
 
@@ -201,10 +200,7 @@ export const getCoinDetails = async (address, chain = 8453) => {
         throw new Error("Failed to fetch coin details");
       }
 
-      console.log(
-        `Zora coin details (${address}):`,
-        response.data.zora20Token
-      );
+     
       return response.data.zora20Token;
     } catch (error) {
       console.error("Error fetching coin details:", error);

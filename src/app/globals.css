@@ -22,7 +22,8 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: var(--font-poppins), "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-poppins), "Inter", system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
 }
 
 /* Art Theme Base Styles */
@@ -179,6 +180,39 @@ body {
   pointer-events: none;
 }
 
+/* Canvas özel hand-drawn card - padding yok */
+.hand-drawn-canvas {
+  border: 3px solid #2d3748;
+  border-radius: 25px 10px 20px 15px;
+  transform: rotate(-0.5deg);
+  box-shadow: 5px 5px 0 #2d3748;
+  background: linear-gradient(135deg, #ffffff, #f7fafc);
+  position: relative;
+  padding: 0;
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.hand-drawn-canvas:hover {
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: 7px 7px 0 #2d3748;
+}
+
+.hand-drawn-canvas::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border: 2px dashed #4a5568;
+  border-radius: 25px 10px 20px 15px;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
 .hand-drawn-btn {
   border: 3px solid #2d3748;
   border-radius: 20px 5px 15px 10px;
@@ -186,7 +220,7 @@ body {
   box-shadow: 4px 4px 0 #2d3748;
   background: linear-gradient(45deg, #4299e1, #3182ce);
   color: white;
-  
+
   font-weight: bold;
   padding: 0.75rem 1.5rem;
   cursor: pointer;
@@ -228,12 +262,31 @@ body {
   background: linear-gradient(45deg, #e53e3e, #c53030);
 }
 
+.hand-drawn-btn-dotted {
+  border: 3px dashed rgb(203, 206, 205);
+  border-radius: 20px 5px 15px 10px;
+  transform: rotate(1deg);
+  background: transparent;
+  color: #2d3748;
+  font-weight: bold;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.hand-drawn-btn-dotted:hover {
+  transform: rotate(-0.5deg) translateY(-2px);
+  background: rgba(45, 55, 72, 0.05);
+}
+
 .hand-drawn-input {
   border: 2px solid #2d3748;
   border-radius: 15px 5px 10px 8px;
   transform: rotate(-0.3deg);
   padding: 10px 14px;
-  
+
   background: #ffffff;
   box-shadow: 2px 2px 0 #2d3748;
   width: 100%;
@@ -252,7 +305,7 @@ body {
   border-radius: 20px 8px 15px 12px;
   transform: rotate(0.2deg);
   padding: 12px 16px;
-  
+
   background: #ffffff;
   box-shadow: 2px 2px 0 #2d3748;
   resize: none;
@@ -268,7 +321,6 @@ body {
 }
 
 .hand-drawn-label {
-  
   font-weight: bold;
   color: #2d3748;
   transform: rotate(-0.5deg);
@@ -285,7 +337,199 @@ body {
 }
 
 .hand-drawn-header h3 {
-  
+  font-weight: bold;
+  color: #2d3748;
+  margin-left: 0.75rem;
+  font-size: 1.25rem;
+}
+
+.hand-drawn-icon {
+  width: 24px;
+  height: 24px;
+  stroke: #2d3748;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hand-drawn-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid #2d3748;
+  border-radius: 50%;
+  background: #ffffff;
+  transform: rotate(-5deg);
+}
+
+.drawing-canvas {
+  border: 3px solid #2d3748;
+  border-radius: 20px 10px 25px 15px;
+  transform: rotate(0.5deg);
+  box-shadow: 4px 4px 0 #2d3748;
+  background: #ffffff;
+  margin: 1rem 0;
+  overflow: hidden;
+}
+
+.drawing-tools {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.tool-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.color-picker {
+  border: 2px solid #2d3748;
+  border-radius: 10px 5px 8px 6px;
+  transform: rotate(-0.5deg);
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #2d3748;
+}
+
+.brush-size-slider {
+  border: 2px solid #2d3748;
+  border-radius: 15px;
+  transform: rotate(0.3deg);
+  background: #ffffff;
+  box-shadow: 2px 2px 0 #2d3748;
+  width: 100%;
+  height: 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+.art-preview {
+  border: 3px solid #2d3748;
+  border-radius: 20px 10px 25px 15px;
+  transform: rotate(-0.3deg);
+  box-shadow: 4px 4px 0 #2d3748;
+  background: #ffffff;
+  padding: 1rem;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.art-preview img {
+  max-width: 100%;
+  border-radius: 15px 8px 20px 12px;
+  box-shadow: 2px 2px 0 #2d3748;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .hand-drawn-card {
+    padding: 1rem;
+    transform: rotate(0deg);
+  }
+
+  .hand-drawn-btn {
+    transform: rotate(0deg);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .hand-drawn-input,
+  .hand-drawn-textarea {
+    transform: rotate(0deg);
+  }
+
+  .drawing-tools {
+    justify-content: center;
+  }
+}
+
+/* Hand-drawn slider styles */
+.hand-drawn-input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  border: 2px solid #2d3748;
+  border-radius: 15px 5px 10px 8px;
+  height: 12px;
+  padding: 0;
+}
+
+.hand-drawn-input[type="range"]::-webkit-slider-track {
+  background: #e2e8f0;
+  height: 8px;
+  border-radius: 8px 3px 6px 4px;
+}
+
+.hand-drawn-input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #2d3748;
+  height: 20px;
+  width: 20px;
+  border-radius: 50% 30% 50% 30%;
+  border: 2px solid #ffffff;
+  cursor: pointer;
+  transform: rotate(45deg);
+}
+
+.hand-drawn-input[type="range"]::-moz-range-track {
+  background: #e2e8f0;
+}
+
+.hand-drawn-input:focus {
+  outline: none;
+  transform: rotate(0deg);
+  box-shadow: 3px 3px 0 #2d3748;
+  border-color: #4299e1;
+}
+
+.hand-drawn-textarea {
+  border: 2px solid #2d3748;
+  border-radius: 20px 8px 15px 12px;
+  transform: rotate(0.2deg);
+  padding: 12px 16px;
+
+  background: #ffffff;
+  box-shadow: 2px 2px 0 #2d3748;
+  resize: none;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.hand-drawn-textarea:focus {
+  outline: none;
+  transform: rotate(0deg);
+  box-shadow: 3px 3px 0 #2d3748;
+  border-color: #4299e1;
+}
+
+.hand-drawn-label {
+  font-weight: bold;
+  color: #2d3748;
+  transform: rotate(-0.5deg);
+  display: inline-block;
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
+.hand-drawn-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  transform: rotate(0.3deg);
+}
+
+.hand-drawn-header h3 {
   font-weight: bold;
   color: #2d3748;
   margin-left: 0.75rem;
@@ -446,4 +690,16 @@ body {
   border: 2px solid #ffffff;
   cursor: pointer;
   transform: rotate(45deg);
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+.animate-marquee {
+  animation: marquee 30s linear infinite;
 }

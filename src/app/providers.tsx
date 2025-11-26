@@ -10,6 +10,7 @@ import { injected, coinbaseWallet } from 'wagmi/connectors';
 import { sdk } from "@farcaster/miniapp-sdk";
 import { FarcasterProvider } from '../lib/farcaster';
 import { checkAndSwitchNetwork } from '../services/networkUtils';
+import { SWRConfig } from 'swr';
 
 // Create Wagmi configuration for both Farcaster mini-apps and BaseApp
 const config = createConfig({
@@ -80,18 +81,74 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     signalMiniAppReady();
   }, []);
 
+  // SWR cache provider with localStorage persistence for market data
+  const swrProvider = () => {
+    const map = new Map();
+    
+    // Try to restore from localStorage on init
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('swr-cache-market');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          // Only restore if cache is less than 5 minutes old
+          if (parsed.timestamp && Date.now() - parsed.timestamp < 5 * 60 * 1000) {
+            Object.entries(parsed.data || {}).forEach(([key, value]) => {
+              map.set(key, value);
+            });
+            console.log('✅ Restored SWR cache from localStorage');
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to restore SWR cache:', e);
+      }
+    }
+    
+    return map;
+  };
+
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <FarcasterProvider>
-          {mounted ? (
-            <>
-              <NetworkSwitcher />
-              {children}
-            </>
-          ) : null}
-        </FarcasterProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <SWRConfig 
+      value={{
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        dedupingInterval: 60000, // 1 minute
+        focusThrottleInterval: 60000,
+        errorRetryCount: 3,
+        errorRetryInterval: 5000,
+        provider: swrProvider,
+        // This is the key: keep data indefinitely until explicitly revalidated
+        revalidateIfStale: false,
+        revalidateOnMount: true,
+        keepPreviousData: true,
+        // Persist cache to localStorage after successful fetch
+        onSuccess: (data: any, key: string) => {
+          if (typeof window !== 'undefined' && key.includes('/api/market')) {
+            try {
+              const currentCache = JSON.parse(localStorage.getItem('swr-cache-market') || '{}');
+              currentCache.data = currentCache.data || {};
+              currentCache.data[key] = data;
+              currentCache.timestamp = Date.now();
+              localStorage.setItem('swr-cache-market', JSON.stringify(currentCache));
+            } catch (e) {
+              console.warn('Failed to persist SWR cache:', e);
+            }
+          }
+        },
+      }}
+    >
+      <WagmiProvider config={config}>
+        <QueryClientProvider client={queryClient}>
+          <FarcasterProvider>
+            {mounted ? (
+              <>
+                <NetworkSwitcher />
+                {children}
+              </>
+            ) : null}
+          </FarcasterProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </SWRConfig>
   );
 }

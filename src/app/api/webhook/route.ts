@@ -68,31 +68,3 @@ export async function HEAD() {
   });
 }
 
-/**
- * Example function to send a notification to a user (for reference)
- * This would be called from another endpoint when you want to notify a user
- */
-async function sendNotification(url: string, token: string, message: string) {
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        notificationId: `notification-${Date.now()}`,
-        title: 'DrawCoin Update',
-        body: message,
-        targetUrl: 'https://drawcoin-mini.vercel.app',
-        tokens: [token],
-      }),
-    });
-
-    const data = await response.json();
-    console.log('Notification sent, response:', data);
-    return data;
-  } catch (error) {
-    console.error('Error sending notification:', error);
-    throw error;
-  }
-}

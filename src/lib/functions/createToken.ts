@@ -1,10 +1,10 @@
 import { createZoraCoin, getCoinAddressFromReceipt, CreateConstants } from '../../services/sdk/getCreateCoin.js';
 import { CoinService, type CreateCoinData } from '../../services/coinService';
-import { parseEther } from 'viem';
 import { base } from 'viem/chains';
-import { showCreateMessages, showIPFSMessages } from '../../utils/toastUtils';
+import { showCreateMessages } from '../../utils/toastUtils';
 import { checkAndSwitchNetwork } from '../../services/networkUtils';
 import { toast } from 'react-hot-toast';
+import { AnalyticsService } from '../../services/analyticsService';
 
 export interface CreateTokenData {
   name: string;
@@ -12,6 +12,7 @@ export interface CreateTokenData {
   description: string;
   imageUrl: string;
   category: string;
+  creation_type?: 'ai' | 'hand-drawn';
   // Note: Initial purchase fields removed as not supported in SDK v2
   ownersAddresses: string[];
   selectedCurrency: number;
@@ -150,6 +151,7 @@ export const createToken = async (
           chain_id: chainId,
           currency: currencyString,
           platform_referrer: tokenData.platformReferrer || undefined,
+          creation_type: tokenData.creation_type || 'hand-drawn',
         };
 
         const savedCoin = await CoinService.saveCoin(coinData);
@@ -158,6 +160,21 @@ export const createToken = async (
           toast.success("Token saved to database successfully!", {
             id: "save-toast",
           });
+          
+          // Record analytics for token creation
+          try {
+            await AnalyticsService.recordTransaction({
+              tx_hash: result.hash,
+              user_address: walletAddress,
+              token_address: contractAddress,
+              type: 'create',
+              amount_token: 0,
+              amount_eth: 0,
+              amount_usd: 0,
+            });
+          } catch (analyticsError) {
+            console.error("Analytics error (non-blocking):", analyticsError);
+          }
         } else {
           toast.error("Failed to save token to database", {
             id: "save-toast",

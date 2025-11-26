@@ -17,7 +17,7 @@ import { setApiKey } from "@zoralabs/coins-sdk";
 // Initialize API key for production environments
 // Uses environment variable or allows manual override
 const initializeApiKey = () => {
-  const apiKey = process.env.NEXT_PUBLIC_ZORA_API_KEY;
+  const apiKey = process.env.ZORA_API_KEY;
   if (apiKey) {
     setApiKey(apiKey);
     console.log("✅ Zora API key initialized from environment variables");

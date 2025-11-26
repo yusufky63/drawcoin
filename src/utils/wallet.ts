@@ -2,58 +2,56 @@
  * Utility functions for wallet connection in different environments
  */
 
-export type AppEnvironment = 'farcaster' | 'baseapp' | 'browser' | 'unknown';
+export type AppEnvironment = "farcaster" | "baseapp" | "browser" | "unknown";
 
 /**
  * Detects the current app environment
  */
 export function detectEnvironment(): AppEnvironment {
-  if (typeof window === 'undefined') return 'unknown';
+  if (typeof window === "undefined") return "unknown";
 
   // Check for BaseApp indicators
-  const hasEthereumProvider = typeof window.ethereum !== 'undefined';
-  const userAgent = window.navigator?.userAgent?.toLowerCase() || '';
+  const hasEthereumProvider = typeof window.ethereum !== "undefined";
+  const userAgent = window.navigator?.userAgent?.toLowerCase() || "";
   const hostname = window.location.hostname;
-  
+
   // Enhanced BaseApp detection
-  const isBaseApp = (
+  const isBaseApp =
     // Check for BaseApp specific client FID (309857)
     (window as any).farcaster?.context?.client?.clientFid === 309857 ||
     // Check user agent
-    userAgent.includes('base') || 
-    userAgent.includes('coinbase') ||
+    userAgent.includes("base") ||
+    userAgent.includes("coinbase") ||
     // Check hostname
-    hostname.includes('base') ||
+    hostname.includes("base") ||
     // Check for BaseApp specific window properties
     (window as any).BaseApp !== undefined ||
     // Check for Coinbase wallet in user agent (BaseApp uses Coinbase infrastructure)
-    (hasEthereumProvider && window.ethereum?.isCoinbaseWallet)
-  );
+    (hasEthereumProvider && window.ethereum?.isCoinbaseWallet);
 
   if (hasEthereumProvider && isBaseApp) {
-    return 'baseapp';
+    return "baseapp";
   }
 
   // Enhanced Farcaster detection (only treat as Farcaster if host is trusted)
-  const isFarcaster = (
-    (
-      userAgent.includes('farcaster') ||
+  const isFarcaster =
+    (userAgent.includes("farcaster") ||
       (window as any).farcaster !== undefined ||
       // Check for embedded frame context
-      ((window as any).top !== window && (window as any).parent?.postMessage)
-    ) && isTrustedFarcasterHost()
-  );
+      ((window as any).top !== window &&
+        (window as any).parent?.postMessage)) &&
+    isTrustedFarcasterHost();
 
   if (isFarcaster) {
-    return 'farcaster';
+    return "farcaster";
   }
 
   // Browser detection with wallet
   if (hasEthereumProvider) {
-    return 'browser';
+    return "browser";
   }
 
-  return 'unknown';
+  return "unknown";
 }
 
 /**
@@ -61,14 +59,14 @@ export function detectEnvironment(): AppEnvironment {
  */
 export function getPreferredConnectorId(environment: AppEnvironment): string {
   switch (environment) {
-    case 'baseapp':
-    case 'browser':
-      return 'injected';
-    case 'farcaster':
+    case "baseapp":
+    case "browser":
+      return "injected";
+    case "farcaster":
       // Connector id varies by package version; prefer a generic hint
-      return 'farcaster';
+      return "farcaster";
     default:
-      return 'injected'; // fallback
+      return "injected"; // fallback
   }
 }
 
@@ -76,15 +74,15 @@ export function getPreferredConnectorId(environment: AppEnvironment): string {
  * Checks if wallet connection is available in the current environment
  */
 export function isWalletAvailable(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
 
   const environment = detectEnvironment();
-  
+
   switch (environment) {
-    case 'baseapp':
-    case 'browser':
-      return typeof window.ethereum !== 'undefined';
-    case 'farcaster':
+    case "baseapp":
+    case "browser":
+      return typeof window.ethereum !== "undefined";
+    case "farcaster":
       return true; // Farcaster should always have wallet available
     default:
       return false;
@@ -94,18 +92,20 @@ export function isWalletAvailable(): boolean {
 /**
  * Gets a user-friendly message about wallet availability
  */
-export function getWalletAvailabilityMessage(environment: AppEnvironment): string {
+export function getWalletAvailabilityMessage(
+  environment: AppEnvironment
+): string {
   switch (environment) {
-    case 'baseapp':
-      return 'Connect your wallet using BaseApp';
-    case 'farcaster':
-      return 'Connect your wallet using Farcaster';
-    case 'browser':
-      return 'Connect your wallet using browser extension';
-    case 'unknown':
-      return 'Wallet connection not available in this environment';
+    case "baseapp":
+      return "Connect your wallet using BaseApp";
+    case "farcaster":
+      return "Connect your wallet using Farcaster";
+    case "browser":
+      return "Connect your wallet using browser extension";
+    case "unknown":
+      return "Wallet connection not available in this environment";
     default:
-      return 'Please use a supported wallet';
+      return "Please use a supported wallet";
   }
 }
 
@@ -117,10 +117,10 @@ export async function getBaseAppContext(): Promise<{
   address?: string;
   fid?: number;
 } | null> {
-  if (typeof window === 'undefined') return null;
-  
+  if (typeof window === "undefined") return null;
+
   const environment = detectEnvironment();
-  if (environment !== 'baseapp') return null;
+  if (environment !== "baseapp") return null;
 
   try {
     // Try to get context from BaseApp
@@ -129,7 +129,7 @@ export async function getBaseAppContext(): Promise<{
       return {
         basename: context.user?.username || context.user?.displayName,
         fid: context.user?.fid,
-        address: context.user?.walletAddress
+        address: context.user?.walletAddress,
       };
     }
 
@@ -139,13 +139,13 @@ export async function getBaseAppContext(): Promise<{
       return {
         basename: context.user?.username || context.user?.displayName,
         fid: context.user?.fid,
-        address: context.user?.walletAddress
+        address: context.user?.walletAddress,
       };
     }
 
     return null;
   } catch (error) {
-    console.error('Error getting BaseApp context:', error);
+    console.error("Error getting BaseApp context:", error);
     return null;
   }
 }
@@ -159,42 +159,42 @@ export async function getFarcasterUserContext(): Promise<{
   fid?: number;
   pfpUrl?: string;
 } | null> {
-  if (typeof window === 'undefined') return null;
-  
+  if (typeof window === "undefined") return null;
+
   try {
     // Import Farcaster SDK dynamically
-    const { sdk } = await import('@farcaster/frame-sdk');
+    const { sdk } = await import("@farcaster/frame-sdk");
     const context = await sdk.context;
-    
+
     return {
       username: context.user?.username,
       displayName: context.user?.displayName,
       fid: context.user?.fid,
-      pfpUrl: context.user?.pfpUrl
+      pfpUrl: context.user?.pfpUrl,
     };
   } catch (error) {
-    console.error('Error getting Farcaster context:', error);
+    console.error("Error getting Farcaster context:", error);
     return null;
   }
 }
 
 /**
  * Returns true if the current frame appears to be embedded by a trusted
- * Farcaster host (e.g., farcaster.xyz / warpcast.com). Used to avoid
+ * Farcaster host (e.g., farcaster.xyz / farcaster.xyz). Used to avoid
  * attempting Farcaster-specific connectors when running in generic iframes
  * during development (e.g., cloudflare tunnels).
  */
 export function isTrustedFarcasterHost(): boolean {
-  if (typeof document === 'undefined') return false;
-  const ref = document.referrer?.toLowerCase?.() || '';
-  return ref.includes('farcaster') || ref.includes('farcaster.xyz');
+  if (typeof document === "undefined") return false;
+  const ref = document.referrer?.toLowerCase?.() || "";
+  return ref.includes("farcaster") || ref.includes("farcaster.xyz");
 }
 
 /**
  * Detects whether Farcaster runtime/SDK is available in the page
  */
 export function hasFarcasterRuntime(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   const w: any = window as any;
   return !!(w.farcaster || w.sdk);
 }

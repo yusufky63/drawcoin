@@ -1,7 +1,7 @@
 import axios from "axios";
 
 // Pinata API anahtarı
-const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT || process.env.PINATA_JWT;
+const PINATA_JWT = process.env.PINATA_JWT;
 
 // JWT token kontrolü
 if (!PINATA_JWT) {
@@ -58,19 +58,16 @@ export const getGatewayUrl = async (hash) => {
   });
 
   try {
-    // 6 saniye bekledikten sonra tüm sonuçları topla
     const results = await Promise.allSettled(gatewayPromises);
     const successfulGateways = results
       .filter((result) => result.status === "fulfilled" && result.value)
       .map((result) => result.value)
       .sort((a, b) => a.responseTime - b.responseTime);
 
-    // En hızlı gateway'i döndür
     return successfulGateways.length > 0
       ? successfulGateways[0].gateway
       : bestGateway;
   } catch {
-    // Hata durumunda Pinata'nın gateway'ini kullan
     return bestGateway;
   }
 };

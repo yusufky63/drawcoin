@@ -3,6 +3,7 @@ import "./globals.css";
 import { Playfair_Display, Crimson_Text, Poppins } from 'next/font/google';
 import Providers from "./providers";
 import ArtHeader from "../components/Header";
+import Footer from "../components/Footer";
 
 const playfair = Playfair_Display({
   subsets: ['latin'],
@@ -26,12 +27,12 @@ const poppins = Poppins({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_URL || "https://drawcoin-mini.vercel.app"
+    "https://drawcoin.app"
   ),
   title: "DrawCoin",
   description: "Create and trade hand-drawn art tokens on Base.",
   keywords: ["Base", "tokens", "drawcoin", "web3", "art", "draw", "drawing", "trading"],
-  authors: [{ name: "DrawCoin Team" }],
+  authors: [{ name: "DrawCoin" }],
   manifest: "/manifest.json",
   icons: {
     icon: "/logo.png",
@@ -41,10 +42,10 @@ export const metadata: Metadata = {
     title: "DrawCoin",
     description: "Create and trade hand-drawn art tokens on Base.",
     type: "website",
-    url: "https://drawcoin-mini.vercel.app",
+    url: "https://drawcoin.app",
     images: [
       {
-        url: "https://drawcoin-mini.vercel.app/opengraph-image.png",
+        url: "https://drawcoin.app/opengraph-image.png",
         width: 1200,
         height: 630,
         alt: "DrawCoin",
@@ -55,19 +56,19 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "DrawCoin",
     description: "Create and trade hand-drawn art tokens on the Base",
-    images: ["https://drawcoin-mini.vercel.app/opengraph-image.png"],
+    images: ["https://drawcoin.app/opengraph-image.png"],
   },
   other: {
     "fc:miniapp": JSON.stringify({
       version: "next",
-      imageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
+      imageUrl: "https://drawcoin.app/opengraph-image.png",
       button: {
-        title: "Create Token",
+        title: "Draw Token",
         action: {
           type: "launch_frame",
           name: "DrawCoin",
-          url: "https://drawcoin-mini.vercel.app",
-          splashImageUrl: "https://drawcoin-mini.vercel.app/logo.png",
+          url: "https://drawcoin.app",
+          splashImageUrl: "https://drawcoin.app/logo.png",
           splashBackgroundColor: "#fff"
         }
       }
@@ -102,6 +103,7 @@ export default function RootLayout({
           <main className="min-h-screen">
             {children}
           </main>
+          <Footer />
         </Providers>
       </body>
     </html>

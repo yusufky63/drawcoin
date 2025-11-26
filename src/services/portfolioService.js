@@ -3,10 +3,15 @@
  * @module services/portfolioService
  */
 
-import { getProfile, getProfileBalances, getProfileCoins, setApiKey } from "@zoralabs/coins-sdk";
+import {
+  getProfile,
+  getProfileBalances,
+  getProfileCoins,
+  setApiKey,
+} from "@zoralabs/coins-sdk";
 
 // Initialize API key
-setApiKey(process.env.NEXT_PUBLIC_ZORA_API_KEY);
+setApiKey(process.env.ZORA_API_KEY);
 
 /**
  * Fetches user profile information from Zora API
@@ -15,14 +20,17 @@ setApiKey(process.env.NEXT_PUBLIC_ZORA_API_KEY);
  */
 export const getUserProfile = async (walletAddress) => {
   try {
-    const response = await getProfile({
-      identifier: walletAddress,
-      chainId: 8453,
-    }, {
-      headers: {
-        "api-key": process.env.NEXT_PUBLIC_ZORA_API_KEY,
+    const response = await getProfile(
+      {
+        identifier: walletAddress,
+        chainId: 8453,
       },
-    });
+      {
+        headers: {
+          "api-key": process.env.ZORA_API_KEY,
+        },
+      }
+    );
 
     if (response.errors && response.errors.length > 0) {
       throw new Error(`Profile fetch error: ${response.errors[0].message}`);
@@ -30,7 +38,7 @@ export const getUserProfile = async (walletAddress) => {
 
     return response.data?.profile || null;
   } catch (error) {
-    console.error('Error fetching user profile:', error);
+    console.error("Error fetching user profile:", error);
     throw error;
   }
 };
@@ -42,18 +50,25 @@ export const getUserProfile = async (walletAddress) => {
  * @param {string} cursor - Pagination cursor
  * @returns {Promise<{balances: Array, hasMore: boolean, nextCursor: string}>} Paginated balances
  */
-export const getUserBalances = async (walletAddress, pageSize = 20, cursor = undefined) => {
+export const getUserBalances = async (
+  walletAddress,
+  pageSize = 20,
+  cursor = undefined
+) => {
   try {
-    const response = await getProfileBalances({
-      identifier: walletAddress,
-      count: pageSize,
-      after: cursor,
-      chainId: 8453,
-    }, {
-      headers: {
-        "api-key": process.env.NEXT_PUBLIC_ZORA_API_KEY,
+    const response = await getProfileBalances(
+      {
+        identifier: walletAddress,
+        count: pageSize,
+        after: cursor,
+        chainId: 8453,
       },
-    });
+      {
+        headers: {
+          "api-key": process.env.ZORA_API_KEY,
+        },
+      }
+    );
 
     if (response.errors && response.errors.length > 0) {
       throw new Error(`Balances fetch error: ${response.errors[0].message}`);
@@ -61,9 +76,9 @@ export const getUserBalances = async (walletAddress, pageSize = 20, cursor = und
 
     const profile = response.data?.profile;
     let balances = [];
-    
+
     if (profile?.coinBalances?.edges) {
-      balances = profile.coinBalances.edges.map(edge => ({
+      balances = profile.coinBalances.edges.map((edge) => ({
         ...edge.node,
         // Normalize the data structure
         coin: edge.node.coin,
@@ -79,10 +94,10 @@ export const getUserBalances = async (walletAddress, pageSize = 20, cursor = und
     return {
       balances,
       hasMore,
-      nextCursor
+      nextCursor,
     };
   } catch (error) {
-    console.error('Error fetching user balances:', error);
+    console.error("Error fetching user balances:", error);
     throw error;
   }
 };
@@ -113,7 +128,7 @@ export const getUserBalancesAll = async (walletAddress, pageSize = 50) => {
 
     return allBalances;
   } catch (error) {
-    console.error('Error fetching all user balances:', error);
+    console.error("Error fetching all user balances:", error);
     throw error;
   }
 };
@@ -125,28 +140,37 @@ export const getUserBalancesAll = async (walletAddress, pageSize = 50) => {
  * @param {string} cursor - Pagination cursor
  * @returns {Promise<{coins: Array, hasMore: boolean, nextCursor: string}>} Paginated created coins
  */
-export const getUserCreatedCoins = async (walletAddress, pageSize = 20, cursor = undefined) => {
+export const getUserCreatedCoins = async (
+  walletAddress,
+  pageSize = 20,
+  cursor = undefined
+) => {
   try {
-    const response = await getProfileCoins({
-      identifier: walletAddress,
-      count: pageSize,
-      after: cursor,
-      chainIds: [8453],
-    }, {
-      headers: {
-        "api-key": process.env.NEXT_PUBLIC_ZORA_API_KEY,
+    const response = await getProfileCoins(
+      {
+        identifier: walletAddress,
+        count: pageSize,
+        after: cursor,
+        chainIds: [8453],
       },
-    });
+      {
+        headers: {
+          "api-key": process.env.ZORA_API_KEY,
+        },
+      }
+    );
 
     if (response.errors && response.errors.length > 0) {
-      throw new Error(`Created coins fetch error: ${response.errors[0].message}`);
+      throw new Error(
+        `Created coins fetch error: ${response.errors[0].message}`
+      );
     }
 
     const profile = response.data?.profile;
     let coins = [];
-    
+
     if (profile?.createdCoins?.edges) {
-      coins = profile.createdCoins.edges.map(edge => edge.node);
+      coins = profile.createdCoins.edges.map((edge) => edge.node);
     }
 
     // Check pagination
@@ -157,10 +181,10 @@ export const getUserCreatedCoins = async (walletAddress, pageSize = 20, cursor =
     return {
       coins,
       hasMore,
-      nextCursor
+      nextCursor,
     };
   } catch (error) {
-    console.error('Error fetching created coins:', error);
+    console.error("Error fetching created coins:", error);
     throw error;
   }
 };
@@ -191,7 +215,7 @@ export const getUserCreatedCoinsAll = async (walletAddress, pageSize = 50) => {
 
     return allCoins;
   } catch (error) {
-    console.error('Error fetching all created coins:', error);
+    console.error("Error fetching all created coins:", error);
     throw error;
   }
 };
@@ -205,11 +229,16 @@ export const getUserCreatedCoinsAll = async (walletAddress, pageSize = 50) => {
 export const calculatePortfolioStats = (balances, createdCoins) => {
   const totalHoldings = balances.length;
   const totalCreated = createdCoins.length;
-  
+
   // Calculate total USD value (if available)
   const totalValueUsd = balances.reduce((sum, balance) => {
     // Try different price fields
-    const valueUsd = parseFloat(balance.valueUsd || balance.tokenPrice?.priceInUsdc || balance.current_price || '0');
+    const valueUsd = parseFloat(
+      balance.valueUsd ||
+        balance.tokenPrice?.priceInUsdc ||
+        balance.current_price ||
+        "0"
+    );
     return sum + valueUsd;
   }, 0);
 
@@ -220,12 +249,12 @@ export const calculatePortfolioStats = (balances, createdCoins) => {
 
   // Calculate total volume across created coins
   const totalVolume = createdCoins.reduce((sum, coin) => {
-    return sum + parseFloat(coin.volume24h || '0');
+    return sum + parseFloat(coin.volume24h || "0");
   }, 0);
 
   // Calculate total market cap across created coins
   const totalMarketCap = createdCoins.reduce((sum, coin) => {
-    return sum + parseFloat(coin.marketCap || '0');
+    return sum + parseFloat(coin.marketCap || "0");
   }, 0);
 
   return {
@@ -247,21 +276,23 @@ export const calculatePortfolioStats = (balances, createdCoins) => {
 export const transformZoraCoinToCoin = (zoraCoin, lightweight = false) => {
   const baseCoin = {
     id: zoraCoin.id || zoraCoin.address,
-    name: zoraCoin.name || '',
-    symbol: zoraCoin.symbol || '',
-    description: zoraCoin.description || '',
-    contract_address: zoraCoin.address || '',
-    image_url: zoraCoin.mediaContent?.previewImage?.medium || 
-               zoraCoin.mediaContent?.previewImage?.small || '',
+    name: zoraCoin.name || "",
+    symbol: zoraCoin.symbol || "",
+    description: zoraCoin.description || "",
+    contract_address: zoraCoin.address || "",
+    image_url:
+      zoraCoin.mediaContent?.previewImage?.medium ||
+      zoraCoin.mediaContent?.previewImage?.small ||
+      "",
     category: undefined,
-    creator_address: zoraCoin.creatorAddress || '',
-    creator_name: zoraCoin.creatorProfile?.handle || '',
-    tx_hash: '',
+    creator_address: zoraCoin.creatorAddress || "",
+    creator_name: zoraCoin.creatorProfile?.handle || "",
+    tx_hash: "",
     chain_id: zoraCoin.chainId || 8453,
-    currency: 'ZORA',
+    currency: "ZORA",
     total_supply: zoraCoin.totalSupply,
     current_price: zoraCoin.tokenPrice?.priceInPoolToken,
-    volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',
+    volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || "0",
     holders: zoraCoin.uniqueHolders || 0,
     created_at: zoraCoin.createdAt || new Date().toISOString(),
     updated_at: zoraCoin.createdAt || new Date().toISOString(),
@@ -277,10 +308,10 @@ export const transformZoraCoinToCoin = (zoraCoin, lightweight = false) => {
     poolAddress: zoraCoin.poolAddress || zoraCoin.pool?.address,
     pool: zoraCoin.pool,
     // Additional Zora-specific data
-    marketCap: parseFloat(zoraCoin.marketCap || '0'),
-    change24hPct: parseFloat(zoraCoin.marketCapDelta24h || '0'),
+    marketCap: parseFloat(zoraCoin.marketCap || "0"),
+    change24hPct: parseFloat(zoraCoin.marketCapDelta24h || "0"),
     // Keep original Zora data for reference
-    ...zoraCoin
+    ...zoraCoin,
   };
 };
 
@@ -292,11 +323,11 @@ export const transformZoraCoinToCoin = (zoraCoin, lightweight = false) => {
 export const getLightweightCoinData = (zoraCoin) => {
   return {
     id: zoraCoin.id || zoraCoin.address,
-    name: zoraCoin.name || '',
-    symbol: zoraCoin.symbol || '',
-    contract_address: zoraCoin.address || '',
-    image_url: zoraCoin.mediaContent?.previewImage?.small || '',
-    creator_address: zoraCoin.creatorAddress || '',
+    name: zoraCoin.name || "",
+    symbol: zoraCoin.symbol || "",
+    contract_address: zoraCoin.address || "",
+    image_url: zoraCoin.mediaContent?.previewImage?.small || "",
+    creator_address: zoraCoin.creatorAddress || "",
     current_price: zoraCoin.tokenPrice?.priceInPoolToken,
     holders: zoraCoin.uniqueHolders || 0,
     created_at: zoraCoin.createdAt || new Date().toISOString(),

@@ -1,7 +1,6 @@
 import React from "react";
 
 interface TokenFiltersProps {
-  categories: string[];
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
   searchTerm: string;
@@ -10,18 +9,20 @@ interface TokenFiltersProps {
   onSortChange: (sort: string) => void;
   viewMode: "grid" | "list";
   onViewModeChange: (mode: "grid" | "list") => void;
+  creationType: 'all' | 'ai' | 'hand-drawn';
+  onCreationTypeChange: (type: 'all' | 'ai' | 'hand-drawn') => void;
 }
 
 export default function TokenFilters({
-  categories,
-  selectedCategory,
-  onCategoryChange,
+
   searchTerm,
   onSearchChange,
   sortBy,
   onSortChange,
   viewMode,
   onViewModeChange,
+  creationType,
+  onCreationTypeChange,
 }: TokenFiltersProps) {
   const sortOptions = [
     { value: "newest", label: "Newest" },
@@ -36,18 +37,29 @@ export default function TokenFilters({
     <div className="space-y-2 md:space-y-4 mb-2 md:mb-4">
       {/* Mobile: Filter üstte, Input ve View Mode altta */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-2 md:space-y-0">
-        {/* Sort Filter - Mobile'da üstte */}
-        <div className="md:flex md:items-center">
+        {/* Sort Filter and Platform Toggle - Mobile'da yan yana */}
+        <div className="flex flex-row items-center gap-2 md:gap-4 w-full md:w-auto">
           <select
             value={sortBy}
             onChange={(e) => onSortChange(e.target.value)}
-            className="hand-drawn-input text-sm w-full md:w-auto"
+            className="hand-drawn-input text-sm w-1/2 md:w-auto"
           >
             {sortOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
+          </select>
+
+          {/* Creation Type Filter - Redesigned */}
+          <select
+            value={creationType}
+            onChange={(e) => onCreationTypeChange(e.target.value as 'all' | 'ai' | 'hand-drawn')}
+            className="hand-drawn-input text-sm w-1/2 md:w-auto"
+          >
+            <option value="all">All Coins</option>
+            <option value="ai">🤖 AI Generated</option>
+            <option value="hand-drawn">✏️ Hand Drawn</option>
           </select>
         </div>
 

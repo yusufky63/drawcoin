@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
-import { parseEther, formatEther } from 'viem';
-import { getOnchainTokenDetails } from '../../services/sdk/getOnchainData';
-import { executeTrade } from '../../services/sdk/getTradeCoin';
-import { showTradeMessages, showError } from '../../utils/toastUtils';
-import { Coin } from '../../lib/supabase';
-import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
-import { toast } from 'react-hot-toast';
-import TradeSuccessModal from './TradeSuccessModal';
+import React, { useState, useEffect } from "react";
+import {
+  useAccount,
+  useWalletClient,
+  usePublicClient,
+} from "wagmi";
+import { formatEther } from "viem";
+import { getCoinDetails } from "../../services/sdk/getCoins";
+import { showError } from "../../utils/toastUtils";
+import { Coin } from "../../lib/supabase";
+import { toast } from "react-hot-toast";
+import TradeSuccessModal from "./TradeSuccessModal";
 
 interface TradeModalProps {
   token: Coin | null;
@@ -26,20 +28,23 @@ interface TokenDetails {
   userBalance?: { raw: string; formatted: string };
 }
 
-export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) {
+export default function TradeModal({
+  token,
+  isOpen,
+  onClose,
+}: TradeModalProps) {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
-  const { switchChain } = useSwitchChain();
 
   const [tokenDetails, setTokenDetails] = useState<TokenDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [trading, setTrading] = useState(false);
-  const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
-  const [amount, setAmount] = useState('');
+  const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
+  const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 30%)
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const quickEthOptions = ['0.01','0.02','0.05'];
+  const quickEthOptions = ["0.01", "0.02", "0.05"];
 
   // Fetch token details from Zora API
   useEffect(() => {
@@ -48,19 +53,79 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
     }
   }, [isOpen, token, address]);
 
-
   const fetchTokenDetails = async () => {
     if (!token?.contract_address) return;
 
     setLoading(true);
     try {
-      const details = await getOnchainTokenDetails(token.contract_address, address);
+      const response: any = await getCoinDetails(token.contract_address);
+      const details = response?.zora20Token || response;
+
       if (details) {
-        setTokenDetails(details as TokenDetails);
+        // Fetch user balance if connected
+        let userBalance = { raw: "0", formatted: "0" };
+        if (address && publicClient) {
+          try {
+            const balance = (await publicClient.readContract({
+              address: token.contract_address as `0x${string}`,
+              abi: [
+                {
+                  constant: true,
+                  inputs: [{ name: "_owner", type: "address" }],
+                  name: "balanceOf",
+                  outputs: [{ name: "balance", type: "uint256" }],
+                  type: "function",
+                },
+              ],
+              functionName: "balanceOf",
+              args: [address as `0x${string}`],
+            })) as bigint;
+            userBalance = {
+              raw: balance.toString(),
+              formatted: formatEther(balance),
+            };
+          } catch (e) {
+            console.error("Failed to fetch balance", e);
+          }
+        }
+
+        const formattedLiquidity = details.liquidity
+          ? parseFloat(details.liquidity) > 1e6
+            ? formatEther(BigInt(details.liquidity))
+            : details.liquidity
+          : "0";
+
+        const formattedSupply = details.totalSupply
+          ? parseFloat(details.totalSupply) > 1e12
+            ? formatEther(BigInt(details.totalSupply))
+            : details.totalSupply
+          : "0";
+
+        setTokenDetails({
+          address: token.contract_address,
+          name: details.name || token.name,
+          symbol: details.symbol || token.symbol,
+          marketCap: {
+            raw: details.marketCap || "0",
+            formatted: details.marketCap
+              ? parseFloat(details.marketCap).toLocaleString()
+              : "0",
+          },
+          liquidity: {
+            raw: details.liquidity || "0",
+            formatted: parseFloat(formattedLiquidity).toFixed(4),
+          },
+          totalSupply: {
+            raw: details.totalSupply || "0",
+            formatted: parseFloat(formattedSupply).toLocaleString(),
+          },
+          ownersCount: details.uniqueHolders || 0,
+          userBalance,
+        });
       }
     } catch (error) {
-      console.error('Error fetching token details:', error);
-      showError('Failed to load token data', 'token data loading');
+      console.error("Error fetching token details:", error);
+      showError("Failed to load token data", "token data loading");
     } finally {
       setLoading(false);
     }
@@ -69,97 +134,90 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
   // Refresh balances function
   const refreshBalances = async () => {
     if (!address || !publicClient || !token?.contract_address) return;
-    
+
     try {
       // Refresh token details which includes balance
       await fetchTokenDetails();
     } catch (error) {
-      console.error('Error refreshing balances:', error);
-    }
-  };
-
-  const handleShareTrade = async () => {
-    if (!token) return;
-
-    try {
-      const shareText = tradeType === 'buy' 
-        ? `Just bought ${amount} ${token.symbol} tokens! 🎨💰 Check out this amazing hand-drawn art token on DrawCoin!`
-        : `Just sold ${amount} ${token.symbol} tokens! 🎨📈 Trading hand-drawn art tokens on DrawCoin!`;
-
-      await miniAppSdk.actions.composeCast({
-        text: shareText,
-        embeds: [`https://drawcoin-mini.vercel.app/coin/${token.contract_address}`]
-      });
-    } catch (error) {
-      console.error('Error sharing trade:', error);
-      showError('Failed to share trade', 'share trade');
+      console.error("Error refreshing balances:", error);
     }
   };
 
   const handleTrade = async () => {
-    if (!isConnected || !address || !walletClient || !publicClient || !token || !tokenDetails) {
-      showError('Please connect your wallet', 'wallet connection');
+    if (
+      !isConnected ||
+      !address ||
+      !walletClient ||
+      !publicClient ||
+      !token ||
+      !tokenDetails
+    ) {
+      showError("Please connect your wallet", "wallet connection");
       return;
     }
 
     if (!amount || parseFloat(amount) <= 0) {
-      showError('Please enter a valid amount', 'form validation');
+      showError("Please enter a valid amount", "form validation");
       return;
     }
 
     // Set trading state immediately to show loading UI
     setTrading(true);
-    
+
     // Show initial loading message
     const loadingToast = toast.loading(
-      tradeType === 'buy' 
-        ? `Preparing to buy ${token.symbol}...` 
+      tradeType === "buy"
+        ? `Preparing to buy ${token.symbol}...`
         : `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
       { duration: 0 }
     );
 
     try {
       // Pass human-readable amount; executeTrade will convert based on direction
-      const result = await executeTrade({
-        direction: tradeType,
-        coinAddress: token.contract_address,
-        amountIn: amount,
-        recipient: address,
-        slippage,
-        walletClient,
-        publicClient,
-        account: address,
-        switchChain
-      } as any);
+
       // If no error thrown, treat as success
-      toast.success(`${tradeType === 'buy' ? 'Buy' : 'Sell'} successful!`, { id: loadingToast });
-      
+      toast.success(`${tradeType === "buy" ? "Buy" : "Sell"} successful!`, {
+        id: loadingToast,
+      });
+
       // Show success modal instead of auto-sharing
       setShowSuccessModal(true);
-      
+
       // Refresh balances after successful trade
       await refreshBalances();
     } catch (error: any) {
-      console.error('Trade error:', error);
-      
+      console.error("Trade error:", error);
+
       // User-friendly error messages
-      let errorMessage = 'Transaction failed';
-      
-      if (error?.message?.includes('User rejected') || error?.message?.includes('denied transaction')) {
-        errorMessage = 'Transaction cancelled by user';
-      } else if (error?.message?.includes('insufficient funds')) {
-        errorMessage = 'Insufficient funds';
-      } else if (error?.message?.includes('gas')) {
-        errorMessage = 'Transaction failed - try again';
-      } else if (error?.message?.includes('Quote failed') || error?.message?.includes('500')) {
-        errorMessage = 'Token not ready for trading yet';
-      } else if (error?.message?.includes('Internal Server Error')) {
-        errorMessage = 'Service temporarily unavailable';
+      let errorMessage = "Transaction failed";
+
+      if (
+        error?.message?.includes("User rejected") ||
+        error?.message?.includes("denied transaction")
+      ) {
+        errorMessage = "Transaction cancelled by user";
+      } else if (error?.message?.includes("insufficient funds")) {
+        errorMessage = "Insufficient funds";
+      } else if (error?.message?.includes("gas")) {
+        errorMessage = "Transaction failed - try again";
+      } else if (
+        error?.message?.includes("Quote failed") ||
+        error?.message?.includes("500")
+      ) {
+        errorMessage = "Token not ready for trading yet";
+      } else if (error?.message?.includes("Internal Server Error")) {
+        errorMessage = "Service temporarily unavailable";
       } else if (error?.message) {
-        errorMessage = error.message.length > 50 ? error.message.substring(0, 50) + '...' : error.message;
+        errorMessage =
+          error.message.length > 50
+            ? error.message.substring(0, 50) + "..."
+            : error.message;
       }
-      
-      toast.error(`❌ ${tradeType === 'buy' ? 'Buy' : 'Sell'} failed: ${errorMessage}`, { id: loadingToast });
+
+      toast.error(
+        `❌ ${tradeType === "buy" ? "Buy" : "Sell"} failed: ${errorMessage}`,
+        { id: loadingToast }
+      );
     } finally {
       setTrading(false);
     }
@@ -169,30 +227,49 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2">
-      <div className="hand-drawn-card max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ 
-        transform: 'rotate(-0.5deg)',
-        maxWidth: '500px',
-        maxHeight: '600px'
-      }}>
+      <div
+        className="hand-drawn-card max-w-md w-full max-h-[90vh] overflow-y-auto"
+        style={{
+          transform: "rotate(-0.5deg)",
+          maxWidth: "500px",
+          maxHeight: "600px",
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b-2 border-art-gray-900" style={{ borderStyle: 'dashed' }}>
+        <div
+          className="flex items-center justify-between p-4 border-b-2 border-art-gray-900"
+          style={{ borderStyle: "dashed" }}
+        >
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-art-gray-50 overflow-hidden" style={{ 
-              border: '2px solid #2d3748',
-              borderRadius: '15px 5px 10px 8px',
-              transform: 'rotate(0.5deg)'
-            }}>
+            <div
+              className="w-12 h-12 bg-art-gray-50 overflow-hidden"
+              style={{
+                border: "2px solid #2d3748",
+                borderRadius: "15px 5px 10px 8px",
+                transform: "rotate(0.5deg)",
+              }}
+            >
               {token.image_url ? (
-                <img 
-                  src={token.image_url} 
+                <img
+                  src={token.image_url}
                   alt={token.name}
                   className="w-full h-full object-contain bg-white"
-                  style={{ borderRadius: '13px 3px 8px 6px' }}
+                  style={{ borderRadius: "13px 3px 8px 6px" }}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-art-gray-400">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ strokeWidth: 2 }}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    style={{ strokeWidth: 2 }}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
                   </svg>
                 </div>
               )}
@@ -210,15 +287,24 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
             onClick={onClose}
             className="text-art-gray-400 hover:text-art-gray-600 transition-colors transform rotate-1"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ strokeWidth: 2 }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              style={{ strokeWidth: 2 }}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
 
         {/* Content */}
         <div className="p-4 space-y-4">
-
           {/* Token Stats */}
           {loading ? (
             <div className="space-y-3">
@@ -228,28 +314,41 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
             </div>
           ) : tokenDetails ? (
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="bg-art-gray-50 p-2 rounded-art transform rotate-1" style={{ borderRadius: '10px 3px 8px 5px' }}>
+              <div
+                className="bg-art-gray-50 p-2 rounded-art transform rotate-1"
+                style={{ borderRadius: "10px 3px 8px 5px" }}
+              >
                 <div className="text-art-gray-500 text-xs">Market Cap</div>
                 <div className="font-bold text-art-gray-900">
-                  {tokenDetails.marketCap?.formatted || '0'} ETH
+                  {tokenDetails.marketCap?.formatted || "0"} ETH
                 </div>
               </div>
-              <div className="bg-art-gray-50 p-2 rounded-art transform -rotate-1" style={{ borderRadius: '8px 5px 10px 3px' }}>
+              <div
+                className="bg-art-gray-50 p-2 rounded-art transform -rotate-1"
+                style={{ borderRadius: "8px 5px 10px 3px" }}
+              >
                 <div className="text-art-gray-500 text-xs">Liquidity</div>
                 <div className="font-bold text-art-gray-900">
-                  {tokenDetails.liquidity?.formatted || '0'} ETH
+                  {tokenDetails.liquidity?.formatted || "0"} ETH
                 </div>
               </div>
-              <div className="bg-art-gray-50 p-2 rounded-art transform rotate-0.5" style={{ borderRadius: '12px 4px 6px 8px' }}>
+              <div
+                className="bg-art-gray-50 p-2 rounded-art transform rotate-0.5"
+                style={{ borderRadius: "12px 4px 6px 8px" }}
+              >
                 <div className="text-art-gray-500 text-xs">Holders</div>
                 <div className="font-bold text-art-gray-900">
                   {tokenDetails.ownersCount || 0}
                 </div>
               </div>
-              <div className="bg-art-gray-50 p-2 rounded-art transform -rotate-0.5" style={{ borderRadius: '6px 8px 12px 4px' }}>
+              <div
+                className="bg-art-gray-50 p-2 rounded-art transform -rotate-0.5"
+                style={{ borderRadius: "6px 8px 12px 4px" }}
+              >
                 <div className="text-art-gray-500 text-xs">Your Balance</div>
                 <div className="font-bold text-art-gray-900">
-                  {tokenDetails.userBalance?.formatted || '0'} {tokenDetails.symbol}
+                  {tokenDetails.userBalance?.formatted || "0"}{" "}
+                  {tokenDetails.symbol}
                 </div>
               </div>
             </div>
@@ -266,27 +365,31 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
             </label>
             <div className="flex space-x-2">
               <button
-                onClick={() => setTradeType('buy')}
+                onClick={() => setTradeType("buy")}
                 className={`hand-drawn-btn flex-1 text-sm font-bold ${
-                  tradeType === 'buy' ? 'secondary' : ''
+                  tradeType === "buy" ? "secondary" : ""
                 }`}
-                style={{ 
-                  transform: tradeType === 'buy' ? 'rotate(-1deg)' : 'rotate(0.5deg)',
-                  backgroundColor: tradeType === 'buy' ? undefined : 'transparent',
-                  color: tradeType === 'buy' ? undefined : '#2d3748'
+                style={{
+                  transform:
+                    tradeType === "buy" ? "rotate(-1deg)" : "rotate(0.5deg)",
+                  backgroundColor:
+                    tradeType === "buy" ? undefined : "transparent",
+                  color: tradeType === "buy" ? undefined : "#2d3748",
                 }}
               >
                 Buy
               </button>
               <button
-                onClick={() => setTradeType('sell')}
+                onClick={() => setTradeType("sell")}
                 className={`hand-drawn-btn flex-1 text-sm font-bold ${
-                  tradeType === 'sell' ? 'danger' : ''
+                  tradeType === "sell" ? "danger" : ""
                 }`}
-                style={{ 
-                  transform: tradeType === 'sell' ? 'rotate(1deg)' : 'rotate(-0.5deg)',
-                  backgroundColor: tradeType === 'sell' ? undefined : 'transparent',
-                  color: tradeType === 'sell' ? undefined : '#2d3748'
+                style={{
+                  transform:
+                    tradeType === "sell" ? "rotate(1deg)" : "rotate(-0.5deg)",
+                  backgroundColor:
+                    tradeType === "sell" ? undefined : "transparent",
+                  color: tradeType === "sell" ? undefined : "#2d3748",
                 }}
               >
                 Sell
@@ -297,40 +400,75 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
           {/* Amount */}
           <div>
             <label className="block text-sm font-bold text-art-gray-600 mb-2 transform -rotate-0.5">
-              Amount ({tradeType === 'buy' ? 'ETH' : token.symbol})
+              Amount ({tradeType === "buy" ? "ETH" : token.symbol})
             </label>
             <input
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder={`Enter ${tradeType === 'buy' ? 'ETH' : token.symbol} amount`}
+              placeholder={`Enter ${
+                tradeType === "buy" ? "ETH" : token.symbol
+              } amount`}
               className="hand-drawn-input w-full text-sm"
               disabled={trading}
             />
             {/* Quick amount buttons */}
             <div className="flex items-center gap-2 mt-2">
-              {tradeType === 'buy' ? quickEthOptions.map((v, index) => (
-                <button 
-                  key={v} 
-                  onClick={() => setAmount(v)} 
-                  className="hand-drawn-btn text-xs font-bold"
-                  style={{ 
-                    padding: '0.4rem 0.6rem',
-                    transform: `rotate(${index % 2 === 0 ? '1deg' : '-1deg'})`
-                  }}
-                >
-                  {v} ETH
-                </button>
-              )) : (
+              {tradeType === "buy" ? (
+                quickEthOptions.map((v, index) => (
+                  <button
+                    key={v}
+                    onClick={() => setAmount(v)}
+                    className="hand-drawn-btn text-xs font-bold"
+                    style={{
+                      padding: "0.4rem 0.6rem",
+                      transform: `rotate(${
+                        index % 2 === 0 ? "1deg" : "-1deg"
+                      })`,
+                    }}
+                  >
+                    {v} ETH
+                  </button>
+                ))
+              ) : (
                 <>
-                  <button onClick={() => setAmount('0.25')} className="hand-drawn-btn text-xs font-bold" style={{ padding: '0.4rem 0.6rem', transform: 'rotate(1deg)' }}>25%</button>
-                  <button onClick={() => setAmount('0.5')} className="hand-drawn-btn text-xs font-bold" style={{ padding: '0.4rem 0.6rem', transform: 'rotate(-1deg)' }}>50%</button>
-                  <button onClick={() => {
-                    const maxBalance = parseFloat(tokenDetails?.userBalance?.formatted || '0');
-                    // Use 99.9% to avoid precision issues
-                    const adjustedAmount = (maxBalance * 0.999).toFixed(4);
-                    setAmount(adjustedAmount);
-                  }} className="hand-drawn-btn text-xs font-bold" style={{ padding: '0.4rem 0.6rem', transform: 'rotate(0.5deg)' }}>Max</button>
+                  <button
+                    onClick={() => setAmount("0.25")}
+                    className="hand-drawn-btn text-xs font-bold"
+                    style={{
+                      padding: "0.4rem 0.6rem",
+                      transform: "rotate(1deg)",
+                    }}
+                  >
+                    25%
+                  </button>
+                  <button
+                    onClick={() => setAmount("0.5")}
+                    className="hand-drawn-btn text-xs font-bold"
+                    style={{
+                      padding: "0.4rem 0.6rem",
+                      transform: "rotate(-1deg)",
+                    }}
+                  >
+                    50%
+                  </button>
+                  <button
+                    onClick={() => {
+                      const maxBalance = parseFloat(
+                        tokenDetails?.userBalance?.formatted || "0"
+                      );
+                      // Use 99.9% to avoid precision issues
+                      const adjustedAmount = (maxBalance * 0.999).toFixed(4);
+                      setAmount(adjustedAmount);
+                    }}
+                    className="hand-drawn-btn text-xs font-bold"
+                    style={{
+                      padding: "0.4rem 0.6rem",
+                      transform: "rotate(0.5deg)",
+                    }}
+                  >
+                    Max
+                  </button>
                 </>
               )}
             </div>
@@ -342,18 +480,18 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
               Slippage Tolerance
             </label>
             <div className="flex space-x-2">
-            {[0.01, 0.05, 0.1].map((value, index) => (
+              {[0.01, 0.05, 0.1].map((value, index) => (
                 <button
                   key={value}
                   onClick={() => setSlippage(value)}
                   className={`px-3 py-1 rounded-art text-sm font-bold transition-colors transform ${
                     slippage === value
-                      ? 'bg-art-gray-900 text-art-white'
-                      : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
+                      ? "bg-art-gray-900 text-art-white"
+                      : "bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200"
                   }`}
-                  style={{ 
-                    borderRadius: '10px 3px 8px 5px',
-                    transform: `rotate(${index % 2 === 0 ? '1deg' : '-1deg'})`
+                  style={{
+                    borderRadius: "10px 3px 8px 5px",
+                    transform: `rotate(${index % 2 === 0 ? "1deg" : "-1deg"})`,
                   }}
                 >
                   {(value * 100).toFixed(1)}%
@@ -391,26 +529,25 @@ export default function TradeModal({ token, isOpen, onClose }: TradeModalProps) 
             onClick={handleTrade}
             disabled={trading || !amount || !isConnected}
             className={`hand-drawn-btn w-full text-sm font-bold ${
-              tradeType === 'buy' ? 'secondary' : 'danger'
+              tradeType === "buy" ? "secondary" : "danger"
             }`}
-            style={{ 
-              padding: '0.75rem 1.5rem',
-              transform: 'rotate(-0.5deg)',
-              opacity: (!amount || !isConnected) ? 0.5 : 1
+            style={{
+              padding: "0.75rem 1.5rem",
+              transform: "rotate(-0.5deg)",
+              opacity: !amount || !isConnected ? 0.5 : 1,
             }}
           >
             {trading ? (
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                {tradeType === 'buy' ? 'Buying...' : 'Selling...'}
+                {tradeType === "buy" ? "Buying..." : "Selling..."}
               </div>
             ) : !isConnected ? (
-              'Connect Wallet'
+              "Connect Wallet"
             ) : (
-              `${tradeType === 'buy' ? 'Buy' : 'Sell'} ${token.symbol}`
+              `${tradeType === "buy" ? "Buy" : "Sell"} ${token.symbol}`
             )}
           </button>
-
         </div>
       </div>
 

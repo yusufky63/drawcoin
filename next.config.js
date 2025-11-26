@@ -58,6 +58,11 @@ const nextConfig = {
         hostname: "gemini.googleapis.com",
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "pbs.twimg.com",
+        pathname: "/**",
+      },
     ],
 
   },

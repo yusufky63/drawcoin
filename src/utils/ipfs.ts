@@ -130,7 +130,6 @@ export async function getImageFromIpfsMetadata(ipfsUrl: string): Promise<string>
     const metadataUrl = getWorkingIpfsUrl(ipfsUrl);
     if (!metadataUrl) return '';
 
-    console.log('Fetching IPFS metadata from:', metadataUrl);
     
     // Fetch the metadata JSON
     const response = await fetch(metadataUrl);
@@ -140,7 +139,6 @@ export async function getImageFromIpfsMetadata(ipfsUrl: string): Promise<string>
     }
 
     const metadata = await response.json();
-    console.log('IPFS metadata loaded:', metadata);
 
     // Extract image URL from metadata
     const imageUrl = metadata.image || metadata.imageUrl || metadata.image_url;

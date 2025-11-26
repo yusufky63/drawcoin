@@ -113,7 +113,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     if (currentTool === 'eyedropper') {
       const color = sampleColorAt(x, y);
       if (color) {
-        const hex = rgbaToHex(color.r, color.g, color.b, color.a);
+        const hex = rgbaToHex(color.r, color.g, color.b);
         setCurrentColor(hex);
         setCurrentTool('brush');
       }
@@ -391,11 +391,6 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     }
   };
 
-  const getImageData = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    return canvas.toDataURL('image/png');
-  };
 
   const pushUndoSnapshot = () => {
     const canvas = canvasRef.current;
@@ -485,7 +480,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     return { r, g, b, a: 255 };
   };
 
-  const rgbaToHex = (r: number, g: number, b: number, a: number) => {
+  const rgbaToHex = (r: number, g: number, b: number) => {
     const toHex = (n: number) => n.toString(16).padStart(2, '0');
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   };

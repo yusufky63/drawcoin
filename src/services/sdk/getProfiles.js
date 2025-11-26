@@ -8,7 +8,7 @@ import { getProfile, getProfileBalances, setApiKey } from "@zoralabs/coins-sdk";
 import { getCoinDetails } from "./getCoins";
 
 // Import getCoinDetails to use in verifyAddressType function
-setApiKey(process.env.NEXT_PUBLIC_ZORA_API_KEY);
+setApiKey(process.env.ZORA_API_KEY);
 /**
  * Fetches Zora profile with simple retry mechanism
  * @param {string} identifier - Wallet address or profile handle
@@ -31,7 +31,7 @@ export const getZoraProfile = async (identifier, isHandle = false) => {
         },
         {
           headers: {
-            "api-key": process.env.NEXT_PUBLIC_ZORA_API_KEY,
+            "api-key": process.env.ZORA_API_KEY,
           },
         }
       );
@@ -125,15 +125,18 @@ export const getProfileBalance = async (
   count = 100,
   after = undefined
 ) => {
-  const maxRetries = 20; // Increased max retries
+  const maxRetries = 5; // Increased max retries
   const baseRetryDelay = 3000;
   let currentAttempt = 0;
 
   while (currentAttempt < maxRetries) {
     try {
-      console.log(`[getProfileBalance] Attempt ${currentAttempt + 1}/${maxRetries} for ${walletAddress}`);
-      
-      // Doğrudan API isteği yap, fazladan kontrol yok
+      console.log(
+        `[getProfileBalance] Attempt ${
+          currentAttempt + 1
+        }/${maxRetries} for ${walletAddress}`
+      );
+
       const response = await getProfileBalances(
         {
           identifier: walletAddress,
@@ -143,7 +146,7 @@ export const getProfileBalance = async (
         },
         {
           headers: {
-            "api-key": process.env.NEXT_PUBLIC_ZORA_API_KEY,
+            "api-key": process.env.ZORA_API_KEY,
           },
         }
       );
@@ -155,16 +158,20 @@ export const getProfileBalance = async (
         response.errors.length > 0
       ) {
         const errorMessage = response.errors[0].message || "";
-        console.log(`[getProfileBalance] GraphQL error detected: "${errorMessage}"`);
+        console.log(
+          `[getProfileBalance] GraphQL error detected: "${errorMessage}"`
+        );
 
         // Handle specific "Rate limit exceeded for direct queries" error
         if (errorMessage.includes("Rate limit exceeded for direct queries")) {
           // Special handling for this exact error message
           const waitTime = 10000; // 10 seconds
           console.warn(
-            `[getProfileBalance] Direct queries rate limit hit: "${errorMessage}". Waiting for ${waitTime/1000}s before retrying. (Attempt ${currentAttempt + 1}/${maxRetries})`
+            `[getProfileBalance] Direct queries rate limit hit: "${errorMessage}". Waiting for ${
+              waitTime / 1000
+            }s before retrying. (Attempt ${currentAttempt + 1}/${maxRetries})`
           );
-          
+
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           currentAttempt++;
           continue;
@@ -177,7 +184,10 @@ export const getProfileBalance = async (
           errorMessage.toLowerCase().includes("try again") ||
           errorMessage.toLowerCase().includes("direct queries")
         ) {
-          console.warn("[getProfileBalance] Rate limit error detected:", errorMessage);
+          console.warn(
+            "[getProfileBalance] Rate limit error detected:",
+            errorMessage
+          );
 
           // Bekleme süresi varsa al, özellikle direct queries hatası için
           const waitMatch = errorMessage.match(/try again in (\d+) seconds/i);
@@ -199,9 +209,9 @@ export const getProfileBalance = async (
           }
 
           console.log(
-            `[getProfileBalance] Rate limit, retrying in ${waitTime / 1000}s (Attempt ${
-              currentAttempt + 1
-            }/${maxRetries})`
+            `[getProfileBalance] Rate limit, retrying in ${
+              waitTime / 1000
+            }s (Attempt ${currentAttempt + 1}/${maxRetries})`
           );
 
           await new Promise((resolve) => setTimeout(resolve, waitTime));
@@ -210,7 +220,9 @@ export const getProfileBalance = async (
         }
 
         // Any other GraphQL error - retry anyway
-        console.warn(`[getProfileBalance] Other GraphQL error: ${errorMessage}, retrying anyway...`);
+        console.warn(
+          `[getProfileBalance] Other GraphQL error: ${errorMessage}, retrying anyway...`
+        );
         const waitTime = baseRetryDelay;
         await new Promise((resolve) => setTimeout(resolve, waitTime));
         currentAttempt++;
@@ -229,45 +241,69 @@ export const getProfileBalance = async (
       }
 
       // Successful response
-      console.log(`[getProfileBalance] Successfully retrieved profile balances for ${walletAddress}`);
+      console.log(
+        `[getProfileBalance] Successfully retrieved profile balances for ${walletAddress}`
+      );
       return response;
     } catch (error) {
       // Log detailed error information to help with debugging
-      console.warn(`[getProfileBalance] Error (${currentAttempt+1}/${maxRetries}):`, {
-        status: error.status,
-        message: error.message,
-        stack: error.stack?.substring(0, 200) // Only log first part of stack trace
-      });
-      
+      console.warn(
+        `[getProfileBalance] Error (${currentAttempt + 1}/${maxRetries}):`,
+        {
+          status: error.status,
+          message: error.message,
+          stack: error.stack?.substring(0, 200), // Only log first part of stack trace
+        }
+      );
+
       currentAttempt++;
 
       // Check for the specific error message even if it comes with a 500 status
-      if (error.message && error.message.includes("Rate limit exceeded for direct queries")) {
+      if (
+        error.message &&
+        error.message.includes("Rate limit exceeded for direct queries")
+      ) {
         const waitTime = 10000; // 10 seconds
         console.warn(
-          `[getProfileBalance] Direct queries rate limit error caught with 500 status. Waiting for ${waitTime/1000}s before retrying.`
+          `[getProfileBalance] Direct queries rate limit error caught with 500 status. Waiting for ${
+            waitTime / 1000
+          }s before retrying.`
         );
         await new Promise((resolve) => setTimeout(resolve, waitTime));
         continue;
       }
 
       // Rate limit errors
-      if (error.isRateLimit || error.status === 429 || 
-          (error.message && error.message.toLowerCase().includes("rate limit"))) {
+      if (
+        error.isRateLimit ||
+        error.status === 429 ||
+        (error.message && error.message.toLowerCase().includes("rate limit"))
+      ) {
         console.warn("[getProfileBalance] Rate limit error detected");
         const waitTime = 4000;
-        console.log(`[getProfileBalance] Waiting for ${waitTime/1000}s before retrying...`);
+        console.log(
+          `[getProfileBalance] Waiting for ${
+            waitTime / 1000
+          }s before retrying...`
+        );
         await new Promise((resolve) => setTimeout(resolve, waitTime));
         continue;
       }
 
       // Server errors (500)
-      if (error.status === 500 || 
-          (error.message && (error.message.includes("500") || 
-                           error.message.includes("Internal Server Error")))) {
+      if (
+        error.status === 500 ||
+        (error.message &&
+          (error.message.includes("500") ||
+            error.message.includes("Internal Server Error")))
+      ) {
         console.warn("[getProfileBalance] Server error (500) detected");
         const waitTime = baseRetryDelay * 2;
-        console.log(`[getProfileBalance] Waiting for ${waitTime/1000}s before retrying...`);
+        console.log(
+          `[getProfileBalance] Waiting for ${
+            waitTime / 1000
+          }s before retrying...`
+        );
         await new Promise((resolve) => setTimeout(resolve, waitTime));
         continue;
       }
@@ -275,7 +311,9 @@ export const getProfileBalance = async (
       // For any other error, retry anyway with a delay
       console.warn("[getProfileBalance] Unexpected error, retrying anyway:");
       const waitTime = baseRetryDelay;
-      console.log(`[getProfileBalance] Waiting for ${waitTime/1000}s before retrying...`);
+      console.log(
+        `[getProfileBalance] Waiting for ${waitTime / 1000}s before retrying...`
+      );
       await new Promise((resolve) => setTimeout(resolve, waitTime));
       continue;
     }
@@ -356,30 +394,34 @@ export async function verifyAddressType(address) {
         }
       } catch (profileError) {
         console.log("Profile check error:", profileError.message);
-        
+
         // Check if it's a rate limit (429) or server error (500)
-        const is429 = 
+        const is429 =
           profileError.status === 429 ||
-          (profileError.message && profileError.message.toLowerCase().includes("rate limit")) ||
-          (profileError.message && profileError.message.toLowerCase().includes("too many requests")) ||
-          (profileError.message && profileError.message.toLowerCase().includes("try again"));
-          
-        const is500 = 
+          (profileError.message &&
+            profileError.message.toLowerCase().includes("rate limit")) ||
+          (profileError.message &&
+            profileError.message.toLowerCase().includes("too many requests")) ||
+          (profileError.message &&
+            profileError.message.toLowerCase().includes("try again"));
+
+        const is500 =
           profileError.status === 500 ||
           (profileError.message && profileError.message.includes("500")) ||
-          (profileError.message && profileError.message.includes("Internal Server Error"));
-        
+          (profileError.message &&
+            profileError.message.includes("Internal Server Error"));
+
         if (is429 || is500) {
           currentAttempt++;
           const waitTime = is500 ? baseRetryDelay * 2 : baseRetryDelay;
           const errorType = is429 ? "Rate limit" : "Server error";
-          
+
           console.warn(
             `Profile ${errorType} detected in verifyAddressType. Retrying in ${
               waitTime / 1000
             }s (${currentAttempt}/${maxRetries})`
           );
-          
+
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           continue; // Try again
         }
@@ -392,34 +434,35 @@ export async function verifyAddressType(address) {
       return result;
     } catch (error) {
       // Check if it's a rate limit or server error
-      const is429 = 
+      const is429 =
         error.status === 429 ||
         (error.message && error.message.toLowerCase().includes("rate limit")) ||
-        (error.message && error.message.toLowerCase().includes("too many requests")) ||
+        (error.message &&
+          error.message.toLowerCase().includes("too many requests")) ||
         (error.message && error.message.toLowerCase().includes("try again"));
-        
-      const is500 = 
+
+      const is500 =
         error.status === 500 ||
         (error.message && error.message.includes("500")) ||
         (error.message && error.message.includes("Internal Server Error"));
-      
+
       if (is429 || is500) {
         currentAttempt++;
         const waitTime = is500 ? baseRetryDelay * 2 : baseRetryDelay;
         const errorType = is429 ? "Rate limit" : "Server error";
-        
+
         console.warn(
           `${errorType} detected in verifyAddressType. Retrying in ${
             waitTime / 1000
           }s (${currentAttempt}/${maxRetries})`
         );
-        
+
         if (currentAttempt < maxRetries) {
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           continue; // Try again
         }
       }
-      
+
       console.error("Type verification error:", error);
       throw error;
     }

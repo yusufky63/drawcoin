@@ -5,23 +5,23 @@
 
 import { tradeCoin, setApiKey } from "@zoralabs/coins-sdk";
 import { parseEther, parseUnits } from "viem";
-import { checkAndSwitchNetwork } from '../networkUtils';
-import { 
-  getZORATokenAddress, 
-  validateCoinForTrade, 
-  extractTradeFromLogs, 
-  checkETHBalance, 
-  checkTokenBalance, 
-  validateTradeBalance 
-} from './tradeUtils';
+import { checkAndSwitchNetwork } from "../networkUtils";
+import {
+  getZORATokenAddress,
+  validateCoinForTrade,
+  extractTradeFromLogs,
+  checkETHBalance,
+  checkTokenBalance,
+  validateTradeBalance,
+} from "./tradeUtils";
+import { AnalyticsService } from "../analyticsService";
 
 // Initialize API key for production environments
 // Uses environment variable or allows manual override
 const initializeApiKey = () => {
-  const apiKey = process.env.NEXT_PUBLIC_ZORA_API_KEY;
+  const apiKey = process.env.ZORA_API_KEY;
   if (apiKey) {
     setApiKey(apiKey);
-    console.log("Zora API key initialized from environment variables:", apiKey.substring(0, 8) + "...");
   } else {
     console.warn("Zora API key not found! Trading may fail without API key.");
   }
@@ -42,31 +42,30 @@ async function retryWithBackoff(fn, maxRetries = 3, delay = 1000) {
     try {
       return await fn();
     } catch (error) {
-      const isRetryableError = 
-        error?.message?.includes('rate limited') ||
-        error?.message?.includes('Request is being rate limited') ||
-        error?.message?.includes('Internal Server Error') ||
-        error?.message?.includes('An internal error was received') ||
-        error?.message?.includes('timeout') ||
-        error?.message?.includes('network') ||
-        error?.message?.includes('500') ||
-        error?.message?.includes('502') ||
-        error?.message?.includes('503') ||
-        error?.message?.includes('504') ||
-        error?.message?.includes('InternalRpcError') ||
-        error?.message?.includes('RPC') ||
-        error?.message?.includes('connection') ||
-        error?.message?.includes('fetch') ||
-        error?.message?.includes('ECONNRESET') ||
-        error?.message?.includes('ETIMEDOUT');
+      const isRetryableError =
+        error?.message?.includes("rate limited") ||
+        error?.message?.includes("Request is being rate limited") ||
+        error?.message?.includes("Internal Server Error") ||
+        error?.message?.includes("An internal error was received") ||
+        error?.message?.includes("timeout") ||
+        error?.message?.includes("network") ||
+        error?.message?.includes("500") ||
+        error?.message?.includes("502") ||
+        error?.message?.includes("503") ||
+        error?.message?.includes("504") ||
+        error?.message?.includes("InternalRpcError") ||
+        error?.message?.includes("RPC") ||
+        error?.message?.includes("connection") ||
+        error?.message?.includes("fetch") ||
+        error?.message?.includes("ECONNRESET") ||
+        error?.message?.includes("ETIMEDOUT");
 
       if (isRetryableError && attempt < maxRetries) {
         const backoffDelay = delay * Math.pow(2, attempt - 1); // Exponential backoff
-        console.log(`🔄 Retry attempt ${attempt}/${maxRetries} after ${backoffDelay}ms. Error:`, error.message);
-        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        await new Promise((resolve) => setTimeout(resolve, backoffDelay));
         continue;
       }
-      
+
       // If not retryable or max retries reached, throw the error
       throw error;
     }
@@ -74,13 +73,13 @@ async function retryWithBackoff(fn, maxRetries = 3, delay = 1000) {
 }
 
 // Re-export utility functions for backward compatibility
-export { 
-  getZORATokenAddress, 
-  validateCoinForTrade, 
-  extractTradeFromLogs, 
-  checkETHBalance, 
-  checkTokenBalance, 
-  validateTradeBalance 
+export {
+  getZORATokenAddress,
+  validateCoinForTrade,
+  extractTradeFromLogs,
+  checkETHBalance,
+  checkTokenBalance,
+  validateTradeBalance,
 };
 
 /**
@@ -111,90 +110,250 @@ export async function executeUniversalTrade({
   account,
   switchChain,
   validateTransaction = true,
-  creatorAddress = null
+  creatorAddress = null,
 }) {
   // Wrap the entire trade execution in retry mechanism
-  return await retryWithBackoff(async () => {
-    console.log("=== UNIVERSAL TRADE EXECUTION START ===");
-    console.log("Sell Token:", sellToken);
-    console.log("Buy Token:", buyToken);
-    console.log("Amount In:", amountIn.toString());
-    console.log("Sender:", sender);
-    console.log("Recipient:", recipient || sender);
+  return await retryWithBackoff(
+    async () => {
+      // Validate Base network requirement
+      const chainId = await walletClient.getChainId();
 
-    // Validate Base network requirement
-    const chainId = await walletClient.getChainId();
-    console.log("Current chain ID:", chainId);
-    
-    if (chainId !== 8453) {
-      console.log(`Chain mismatch: Connected to chain ${chainId}, but Base (8453) is required. Attempting to switch...`);
-      
-      if (switchChain) {
-        const switchSuccess = await checkAndSwitchNetwork({ chainId, switchChain });
-        if (!switchSuccess) {
-          throw new Error("Please switch to Base network manually in your wallet.");
+      if (chainId !== 8453) {
+        if (switchChain) {
+          const switchSuccess = await checkAndSwitchNetwork({
+            chainId,
+            switchChain,
+          });
+          if (!switchSuccess) {
+            throw new Error(
+              "Please switch to Base network manually in your wallet."
+            );
+          }
+          // Wait a moment for the network switch to complete
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } else {
+          throw new Error(
+            "Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network."
+          );
         }
-        // Wait a moment for the network switch to complete
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } else {
-        throw new Error("Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network.");
       }
-    }
 
-    // Prepare trade parameters
-    const tradeParameters = {
-      sell: sellToken,
-      buy: buyToken,
-      amountIn: amountIn,
-      slippage: slippage,
-      sender: sender,
-      recipient: recipient || sender
-    };
+      // Prepare trade parameters
+      const tradeParameters = {
+        sell: sellToken,
+        buy: buyToken,
+        amountIn: amountIn,
+        slippage: slippage,
+        sender: sender,
+        recipient: recipient || sender,
+      };
 
-    console.log("=== TRADE PARAMETERS ===");
-    console.log("Sell:", tradeParameters.sell);
-    console.log("Buy:", tradeParameters.buy);
-    console.log("Amount In (BigInt):", tradeParameters.amountIn.toString());
-    console.log("Slippage:", tradeParameters.slippage);
-    console.log("Sender:", tradeParameters.sender);
-    console.log("Recipient:", tradeParameters.recipient);
+      // Validate balance before trade (including creator restrictions)
+      if (sellToken.type === "erc20") {
+        const tradeType = "sell";
+        const validation = await validateTradeBalance(
+          sender,
+          sellToken.address,
+          tradeType,
+          amountIn,
+          publicClient,
+          creatorAddress
+        );
 
-    // Validate balance before trade (including creator restrictions)
-    if (sellToken.type === "erc20") {
-      const tradeType = "sell";
-      const validation = await validateTradeBalance(
-        sender,
-        sellToken.address,
-        tradeType,
-        amountIn,
+        if (!validation.isValid) {
+          throw new Error(validation.message);
+        }
+      }
+
+      // Execute the trade using Zora SDK tradeCoin function
+
+      const result = await tradeCoin({
+        tradeParameters,
+        walletClient,
+        account: walletClient.account || account,
         publicClient,
-        creatorAddress
-      );
-      
-      if (!validation.isValid) {
-        throw new Error(validation.message);
+        validateTransaction,
+      });
+
+      // Record analytics for trade
+      try {
+        // Determine trade direction and amounts
+        const isBuy = buyToken.type === "erc20" && sellToken.type === "eth";
+        const isSell = sellToken.type === "erc20" && buyToken.type === "eth";
+
+        if (isBuy || isSell) {
+          const tokenAddress = isBuy ? buyToken.address : sellToken.address;
+          const tradeType = isBuy ? "buy" : "sell";
+
+          // Calculate actual amounts
+          let amountEth = 0;
+          let amountToken = 0;
+
+          if (isBuy) {
+            // For buy: user spent ETH
+            amountEth = Number(amountIn) / 1e18;
+
+            // Try to get token amount from result - try multiple sources
+            if (result.buyAmount) {
+              amountToken = Number(result.buyAmount) / 1e18;
+            } else if (result.sellAmount) {
+              // Sometimes sellAmount contains the token amount received
+              amountToken = Number(result.sellAmount) / 1e18;
+            } else if (result.logs && result.logs.length > 0) {
+              // Extract token amount from Transfer logs
+
+              try {
+                // Look for Transfer events to/from the user for the token
+                for (const log of result.logs) {
+                  // Transfer event signature: Transfer(address,address,uint256)
+                  // Topic 0: 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
+                  if (
+                    log.topics &&
+                    log.topics[0] ===
+                      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+                  ) {
+                    // Check if this is a transfer TO the user (topic[2] = recipient)
+                    const recipient = log.topics[2];
+                    const userAddressPadded =
+                      "0x" + sender.slice(2).toLowerCase().padStart(64, "0");
+
+                    if (
+                      recipient &&
+                      recipient.toLowerCase() ===
+                        userAddressPadded.toLowerCase()
+                    ) {
+                      // This is a transfer TO the user - extract amount from data
+                      const transferAmount = BigInt(log.data);
+                      amountToken = Number(transferAmount) / 1e18;
+                      break;
+                    }
+                  }
+                }
+
+                if (amountToken === 0) {
+                }
+              } catch (logError) {
+                console.warn(`[Analytics] Buy - Error parsing logs:`, logError);
+                amountToken = 0;
+              }
+            } else {
+              amountToken = 0;
+            }
+          } else {
+            // For sell: user sold tokens
+            amountToken = Number(amountIn) / 1e18;
+
+            // ETH received from sell - try multiple sources
+            if (result.sellAmount) {
+              amountEth = Number(result.sellAmount) / 1e18;
+            } else if (result.buyAmount) {
+              // Sometimes buyAmount contains the ETH received
+              amountEth = Number(result.buyAmount) / 1e18;
+            } else {
+              // Try to extract from transaction logs
+
+              // Look for Transfer events in logs to find ETH amount
+              if (result.logs && result.logs.length > 0) {
+                // This is a fallback - we might need to parse specific log events
+                amountEth = 0;
+              } else {
+                amountEth = 0;
+              }
+            }
+          }
+
+          // Fetch current ETH price from multi-source API
+          let ethPriceUSD = 3000; // Fallback
+          try {
+            const priceResponse = await fetch("/api/crypto-price?symbol=ETH");
+            const priceData = await priceResponse.json();
+
+            if (priceData.success && priceData.price) {
+              ethPriceUSD = priceData.price;
+            } else if (priceData.fallbackPrice) {
+              ethPriceUSD = priceData.fallbackPrice;
+              console.warn("[Analytics] Using fallback price:", ethPriceUSD);
+            }
+          } catch (priceError) {
+            console.warn(
+              "[Analytics] Could not fetch ETH price, using fallback:",
+              priceError
+            );
+          }
+
+          let amountUsd = amountEth * ethPriceUSD;
+
+          // If we couldn't get ETH amount from sell, try to calculate from token price
+          if (isSell && amountEth === 0 && amountToken > 0) {
+            // Try to get token price from Zora data or estimate
+            try {
+              // Fetch current token data to get price
+              const { getCoinDetails } = await import("./getCoins");
+              const tokenData = await getCoinDetails(tokenAddress);
+
+              if (tokenData?.tokenPrice?.priceInUsdc) {
+                const tokenPriceUsd = parseFloat(
+                  tokenData.tokenPrice.priceInUsdc
+                );
+                amountUsd = amountToken * tokenPriceUsd;
+                amountEth = amountUsd / ethPriceUSD;
+              } else {
+                console.warn(
+                  `[Analytics] Sell - Could not get token price, using 0`
+                );
+              }
+            } catch (priceError) {
+              console.warn(
+                `[Analytics] Sell - Error getting token price:`,
+                priceError
+              );
+            }
+          } else {
+          }
+
+          // Ensure we have a real transaction hash - try multiple sources
+          const txHash =
+            result.transactionHash ||
+            result.hash ||
+            result.receipt?.transactionHash;
+          if (!txHash) {
+            console.warn(
+              "[Analytics] No transaction hash found, skipping analytics"
+            );
+            console.warn("[Analytics] Result keys:", Object.keys(result));
+            return result;
+          }
+
+          const transactionData = {
+            tx_hash: txHash,
+            user_address: sender,
+            token_address: tokenAddress,
+            type: tradeType,
+            amount_token: amountToken,
+            amount_eth: amountEth,
+            amount_usd: amountUsd,
+            price_eth: ethPriceUSD,
+            price_usd: ethPriceUSD,
+          };
+
+          const recordResult = await AnalyticsService.recordTransaction(
+            transactionData
+          );
+        } else {
+          console.warn(
+            "[Analytics] Trade type not recognized, skipping analytics"
+          );
+        }
+      } catch (analyticsError) {
+        console.error("❌ Analytics error (non-blocking):", analyticsError);
       }
-      
-      console.log("Balance validation passed:", validation.message);
-    }
 
-    // Execute the trade using Zora SDK tradeCoin function
-    console.log("=== CALLING ZORA tradeCoin ===");
-    
-    const result = await tradeCoin({
-      tradeParameters,
-      walletClient,
-      account: walletClient.account || account,
-      publicClient,
-      validateTransaction
-    });
-
-    console.log("=== TRADE SUCCESS ===");
-    console.log("Result:", result);
-    return result;
-  }, 3, 2000); // 3 retries with 2 second base delay
+      return result;
+    },
+    3,
+    2000
+  ); // 3 retries with 2 second base delay
 }
-
 
 /**
  * Helper function to get token decimals
@@ -204,20 +363,22 @@ export async function executeUniversalTrade({
  */
 async function getTokenDecimals(tokenAddress, publicClient) {
   try {
-    const erc20DecimalsAbi = [{ 
-      constant: true, 
-      inputs: [], 
-      name: 'decimals', 
-      outputs: [{ name: '', type: 'uint8' }], 
-      type: 'function' 
-    }];
-    return await publicClient.readContract({ 
-      address: tokenAddress, 
-      abi: erc20DecimalsAbi, 
-      functionName: 'decimals' 
+    const erc20DecimalsAbi = [
+      {
+        constant: true,
+        inputs: [],
+        name: "decimals",
+        outputs: [{ name: "", type: "uint8" }],
+        type: "function",
+      },
+    ];
+    return await publicClient.readContract({
+      address: tokenAddress,
+      abi: erc20DecimalsAbi,
+      functionName: "decimals",
     });
   } catch (error) {
-    console.warn('Failed to fetch token decimals; defaulting to 18', error);
+    console.warn("Failed to fetch token decimals; defaulting to 18", error);
     return 18;
   }
 }
@@ -246,14 +407,15 @@ export async function executeTrade({
   publicClient,
   account,
   switchChain,
-  creatorAddress = null
+  creatorAddress = null,
 }) {
   // Determine sender address
-  const senderAddress = (typeof account === 'string' ? account : account?.address) || recipient;
-  
+  const senderAddress =
+    (typeof account === "string" ? account : account?.address) || recipient;
+
   let sellToken, buyToken, amountInBigInt;
-  
-  if (direction === 'buy') {
+
+  if (direction === "buy") {
     // Buying coin with ETH
     sellToken = { type: "eth" };
     buyToken = { type: "erc20", address: coinAddress };
@@ -277,7 +439,7 @@ export async function executeTrade({
     publicClient,
     account,
     switchChain,
-    creatorAddress
+    creatorAddress,
   });
 }
 
@@ -305,10 +467,11 @@ export async function executeERC20Trade({
   publicClient,
   account,
   switchChain,
-  creatorAddress = null
+  creatorAddress = null,
 }) {
-  const senderAddress = (typeof account === 'string' ? account : account?.address) || recipient;
-  
+  const senderAddress =
+    (typeof account === "string" ? account : account?.address) || recipient;
+
   return await executeUniversalTrade({
     sellToken: { type: "erc20", address: sellTokenAddress },
     buyToken: { type: "erc20", address: buyTokenAddress },
@@ -320,7 +483,7 @@ export async function executeERC20Trade({
     publicClient,
     account,
     switchChain,
-    creatorAddress
+    creatorAddress,
   });
 }
 
@@ -333,14 +496,20 @@ export async function executeERC20Trade({
  * @param {number} [slippage] - Slippage tolerance
  * @returns {Object} Trade parameters
  */
-export function createETHToTokenTrade(tokenAddress, ethAmount, sender, recipient, slippage = 0.05) {
+export function createETHToTokenTrade(
+  tokenAddress,
+  ethAmount,
+  sender,
+  recipient,
+  slippage = 0.05
+) {
   return {
     sellToken: { type: "eth" },
     buyToken: { type: "erc20", address: tokenAddress },
     amountIn: parseEther(ethAmount),
     sender,
     recipient: recipient || sender,
-    slippage
+    slippage,
   };
 }
 
@@ -354,14 +523,21 @@ export function createETHToTokenTrade(tokenAddress, ethAmount, sender, recipient
  * @param {number} [slippage] - Slippage tolerance
  * @returns {Object} Trade parameters
  */
-export function createTokenToETHTrade(tokenAddress, tokenAmount, tokenDecimals, sender, recipient, slippage = 0.05) {
+export function createTokenToETHTrade(
+  tokenAddress,
+  tokenAmount,
+  tokenDecimals,
+  sender,
+  recipient,
+  slippage = 0.05
+) {
   return {
     sellToken: { type: "erc20", address: tokenAddress },
     buyToken: { type: "eth" },
     amountIn: parseUnits(tokenAmount, tokenDecimals),
     sender,
     recipient: recipient || sender,
-    slippage
+    slippage,
   };
 }
 
@@ -375,14 +551,21 @@ export function createTokenToETHTrade(tokenAddress, tokenAmount, tokenDecimals, 
  * @param {number} [slippage] - Slippage tolerance
  * @returns {Object} Trade parameters
  */
-export function createTokenToTokenTrade(sellTokenAddress, buyTokenAddress, amountIn, sender, recipient, slippage = 0.05) {
+export function createTokenToTokenTrade(
+  sellTokenAddress,
+  buyTokenAddress,
+  amountIn,
+  sender,
+  recipient,
+  slippage = 0.05
+) {
   return {
     sellToken: { type: "erc20", address: sellTokenAddress },
     buyToken: { type: "erc20", address: buyTokenAddress },
     amountIn,
     sender,
     recipient: recipient || sender,
-    slippage
+    slippage,
   };
 }
 
@@ -394,14 +577,19 @@ export function createTokenToTokenTrade(sellTokenAddress, buyTokenAddress, amoun
  * @param {Function} [switchChain] - Network switch function
  * @returns {Promise<Object>} Transaction receipt
  */
-export async function executeTradeWithParams(tradeParams, clients, account, switchChain, creatorAddress = null) {
+export async function executeTradeWithParams(
+  tradeParams,
+  clients,
+  account,
+  switchChain,
+  creatorAddress = null
+) {
   return await executeUniversalTrade({
     ...tradeParams,
     walletClient: clients.walletClient,
     publicClient: clients.publicClient,
     account,
     switchChain,
-    creatorAddress
+    creatorAddress,
   });
 }
-

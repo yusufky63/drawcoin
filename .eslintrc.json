@@ -3,13 +3,13 @@
   "plugins": ["@typescript-eslint"],
   "parser": "@typescript-eslint/parser",
   "rules": {
-    "@typescript-eslint/no-unused-vars": "off",
-    "@typescript-eslint/no-explicit-any": "off",
-    "react/no-unescaped-entities": "off",
-    "react-hooks/exhaustive-deps": "off",
-    "react/display-name": "off",
-    "@next/next/no-img-element": "off",
-    "@typescript-eslint/prefer-ts-expect-error": "off",
-    "@typescript-eslint/ban-ts-comment": "off"
+    "@typescript-eslint/no-unused-vars": 1,
+    "@typescript-eslint/no-explicit-any": 1,
+    "react/no-unescaped-entities": "on",
+    "react-hooks/exhaustive-deps": "on",
+    "react/display-name": "on",
+    "@next/next/no-img-element": "on",
+    "@typescript-eslint/prefer-ts-expect-error": "on",
+    "@typescript-eslint/ban-ts-comment": 1
   }
 }

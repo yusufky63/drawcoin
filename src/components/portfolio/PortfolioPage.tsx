@@ -1,428 +1,292 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useAccount, usePublicClient } from 'wagmi';
-import { Coin } from '../../lib/supabase';
-import { CoinService } from '../../services/coinService';
-import { 
-  getUserProfile, 
-  getUserBalances, 
-  getUserCreatedCoins, 
-  calculatePortfolioStats,
-  transformZoraCoinToCoin 
-} from '../../services/portfolioService';
-import { getCoinsBatchSDK } from '../../services/sdk/getCoins.js';
-import TokenGrid from '../market/TokenGrid';
-import DetailsModal from '../market/DetailsModal';
-import TokenFilters from '../market/TokenFilters';
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { useAccount } from "wagmi";
+import {
+  AnalyticsService,
+  PortfolioItem,
+} from "../../services/analyticsService";
+import { getUserProfile } from "../../services/portfolioService";
+import { TransactionHistory } from "./TransactionHistory";
+import { formatNumber } from "../../utils/format";
+import { supabase } from "../../lib/supabase";
+import ShareModal from "./ShareModal";
+import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
 interface PortfolioPageProps {
-  onView?: (token: Coin) => void;
+  onView?: (token: any) => void;
 }
 
 export default function PortfolioPage({ onView }: PortfolioPageProps) {
   const { address, isConnected } = useAccount();
-  const publicClient = usePublicClient();
-  const [heldTokens, setHeldTokens] = useState<Coin[]>([]);
-  const [createdTokens, setCreatedTokens] = useState<Coin[]>([]);
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [portfolioStats, setPortfolioStats] = useState<any>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [userStats, setUserStats] = useState<any>(null);
+  const [zoraProfile, setZoraProfile] = useState<any>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [createdTokens, setCreatedTokens] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'held' | 'created'>('held');
-  const [tradeModalOpen, setTradeModalOpen] = useState(false);
-  const [selectedToken, setSelectedToken] = useState<Coin | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [detailsToken, setDetailsToken] = useState<Coin | null>(null);
-  
-  // Filter states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('price-high');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  
-  // Removed platform filter - now using only Supabase
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreData, setHasMoreData] = useState(true);
-  const [currentPage, setCurrentPage] = useState(0);
-  const PAGE_SIZE = 20;
-  
-  // Cache for Zora API data
-  const sdkCache = useRef<Map<string, any>>(new Map());
+  const [activeTab, setActiveTab] = useState<
+    "portfolio" | "transactions" | "created"
+  >("portfolio");
+  const [showShareModal, setShowShareModal] = useState(false);
 
-  // Function to get platform coins: Supabase addresses + Zora batch details
-  const getPlatformCoins = useCallback(async (page = 0, limit = 1000) => {
-    try {
-      // Get only contract addresses from Supabase
-      const addressRows = await CoinService.getCoinAddresses({
-        limit: 1000, // Get all addresses
-        offset: 0
-      });
-      
-      const contractAddresses = addressRows.map(row => row.contract_address);
-      
-      // Get coin details in batches of 20
-      const allCoins: Coin[] = [];
-      const batchSize = 20;
-      
-      for (let i = 0; i < contractAddresses.length; i += batchSize) {
-        const batch = contractAddresses.slice(i, i + batchSize);
-        
-        const batchData = await getCoinsBatchSDK(batch, 8453);
-        
-        // Convert batch data to coin objects
-        batch.forEach(address => {
-          const zoraCoin = batchData[address.toLowerCase()];
-          if (zoraCoin) {
-            const coin = {
-              id: zoraCoin.address || address,
-              name: zoraCoin.name || 'Unknown Token',
-              symbol: zoraCoin.symbol || 'UNK',
-              description: zoraCoin.description || '',
-              contract_address: address,
-              image_url: zoraCoin.mediaContent?.previewImage?.medium || zoraCoin.mediaContent?.previewImage?.small || '',
-              category: 'Unknown',
-              creator_address: zoraCoin.creatorAddress || '',
-              creator_name: zoraCoin.creatorProfile?.handle || '',
-              tx_hash: '',
-              chain_id: 8453,
-              currency: zoraCoin.poolCurrencyToken?.name || 'ETH',
-              total_supply: zoraCoin.totalSupply || '0',
-              current_price: zoraCoin.tokenPrice?.priceInPoolToken || '0',
-              volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || '0',
-              holders: zoraCoin.uniqueHolders || 0,
-              created_at: zoraCoin.createdAt || new Date().toISOString(),
-              updated_at: zoraCoin.createdAt || new Date().toISOString(),
-              // Additional Zora data
-              marketCap: zoraCoin.marketCap,
-              change24hPct: zoraCoin.marketCapDelta24h,
-              ...zoraCoin
-            };
-            allCoins.push(coin);
-          }
-        });
-      }
-      
-      
-      return {
-        coins: allCoins,
-        hasMore: false // We get all coins at once
-      };
-    } catch (error) {
-      return { coins: [], hasMore: false };
-    }
-  }, []);
+  // Sorting states
+  const [portfolioSort, setPortfolioSort] = useState<{
+    key: string;
+    direction: "asc" | "desc";
+  }>({ key: "balance", direction: "desc" });
+  const [createdSort, setCreatedSort] = useState<{
+    key: string;
+    direction: "asc" | "desc";
+  }>({ key: "holders", direction: "desc" });
 
-  // Optimized function to augment coins with Zora SDK data
-  const augmentWithSdk = useCallback(async (coins: any[]): Promise<Coin[]> => {
-    if (coins.length === 0) return [];
-    
-    const out: Coin[] = [];
-    const needFetch: string[] = [];
-    
-    // Build address list and consult cache first
-    const normalized = coins.map(coin => ({ 
-      coin, 
-      addr: (coin.address || coin.contract_address || '').toLowerCase() 
+  // Sorting functions
+  const handlePortfolioSort = (key: string) => {
+    setPortfolioSort((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
     }));
-    
-    for (const n of normalized) {
-      if (!n.addr) continue;
-      if (!sdkCache.current.has(n.addr)) needFetch.push(n.addr);
-    }
-    
-    // Batch fetch missing via SDK (up to 20 coins at once)
-    if (needFetch.length) {
-      try {
-        const batch = await getCoinsBatchSDK(needFetch, 8453);
-        Object.entries(batch).forEach(([addr, data]) => sdkCache.current.set(addr, data));
-      } catch (error) {
-        // Continue with existing data if SDK fetch fails
+  };
+
+  const handleCreatedSort = (key: string) => {
+    setCreatedSort((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
+    }));
+  };
+
+  const getSortedPortfolio = () => {
+    const sorted = [...portfolio].sort((a, b) => {
+      const tokenA = (a as any).token_details;
+      const tokenB = (b as any).token_details;
+      let aVal: any, bVal: any;
+
+      switch (portfolioSort.key) {
+        case "name":
+          aVal = tokenA?.name?.toLowerCase() || "";
+          bVal = tokenB?.name?.toLowerCase() || "";
+          break;
+        case "mc":
+          aVal = parseFloat(tokenA?.marketCap || "0");
+          bVal = parseFloat(tokenB?.marketCap || "0");
+          break;
+        case "volume":
+          aVal = parseFloat(tokenA?.volume24h || "0");
+          bVal = parseFloat(tokenB?.volume24h || "0");
+          break;
+        case "change":
+          aVal = parseFloat(tokenA?.change24h || "0");
+          bVal = parseFloat(tokenB?.change24h || "0");
+          break;
+        case "balance":
+          aVal = a.balance || 0;
+          bVal = b.balance || 0;
+          break;
+        default:
+          return 0;
       }
-    }
-    
-    // Compose output in original order
-    for (const n of normalized) {
-      if (!n.addr) continue;
-      const sdk: any = sdkCache.current.get(n.addr) || {};
-      
-      try {
-        // Transform to our Coin format
-        const transformedCoin = transformZoraCoinToCoin({
-          ...n.coin,
-          ...sdk // Override with SDK data if available
-        });
-        
-        out.push(transformedCoin as Coin);
-      } catch (error) {
-        // Fallback: create basic coin data
-        const fallbackCoin: Coin = {
-          id: n.coin.id || n.coin.address || '',
-          name: n.coin.name || 'Unknown Token',
-          symbol: n.coin.symbol || 'UNK',
-          description: n.coin.description || '',
-          contract_address: n.coin.address || '',
-          image_url: n.coin.mediaContent?.previewImage?.small || '',
-          category: 'Unknown',
-          creator_address: n.coin.creatorAddress || '',
-          creator_name: n.coin.creatorProfile?.handle || '',
-          tx_hash: '',
-          chain_id: 8453,
-          currency: 'ZORA',
-          total_supply: '0',
-          current_price: '0',
-          volume_24h: '0',
-          holders: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        out.push(fallbackCoin);
+
+      if (aVal < bVal) return portfolioSort.direction === "asc" ? -1 : 1;
+      if (aVal > bVal) return portfolioSort.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  };
+
+  const getSortedCreatedTokens = () => {
+    const sorted = [...createdTokens].sort((a, b) => {
+      let aVal: any, bVal: any;
+
+      switch (createdSort.key) {
+        case "name":
+          aVal = a.name?.toLowerCase() || "";
+          bVal = b.name?.toLowerCase() || "";
+          break;
+        case "mc":
+          aVal = parseFloat(a.marketCap || "0");
+          bVal = parseFloat(b.marketCap || "0");
+          break;
+        case "volume":
+          aVal = parseFloat(a.volume_24h || "0");
+          bVal = parseFloat(b.volume_24h || "0");
+          break;
+        case "change":
+          aVal = parseFloat(a.change24h || "0");
+          bVal = parseFloat(b.change24h || "0");
+          break;
+        case "holders":
+          aVal = a.holders || 0;
+          bVal = b.holders || 0;
+          break;
+        default:
+          return 0;
       }
-    }
-    
-    return out;
-  }, []);
 
-  // Memoized filtered tokens for performance
-  const filteredTokens = useMemo(() => {
-    const currentTokens = activeTab === 'held' ? heldTokens : createdTokens;
-    let filtered = [...currentTokens];
+      if (aVal < bVal) return createdSort.direction === "asc" ? -1 : 1;
+      if (aVal > bVal) return createdSort.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  };
 
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter(token =>
-        token.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        token.symbol?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        token.description?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
+  const SortIcon = ({
+    active,
+    direction,
+  }: {
+    active: boolean;
+    direction: "asc" | "desc";
+  }) => (
+    <svg
+      className={`w-3 h-3 inline ml-1 ${
+        active ? "text-blue-600" : "text-art-gray-400"
+      }`}
+      fill="currentColor"
+      viewBox="0 0 20 20"
+    >
+      {direction === "asc" ? (
+        <path
+          fillRule="evenodd"
+          d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z"
+          clipRule="evenodd"
+        />
+      ) : (
+        <path
+          fillRule="evenodd"
+          d="M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l2.293-2.293a1 1 0 011.414 0z"
+          clipRule="evenodd"
+        />
+      )}
+    </svg>
+  );
 
-    // Sort
-    switch (sortBy) {
-      case 'newest':
-        filtered.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-        break;
-      case 'oldest':
-        filtered.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-        break;
-      case 'price-high':
-        filtered.sort((a, b) => (b.current_price ? parseFloat(b.current_price) : 0) - (a.current_price ? parseFloat(a.current_price) : 0));
-        break;
-      case 'price-low':
-        filtered.sort((a, b) => (a.current_price ? parseFloat(a.current_price) : 0) - (b.current_price ? parseFloat(b.current_price) : 0));
-        break;
-      case 'volume-high':
-        filtered.sort((a, b) => (b.volume_24h ? parseFloat(b.volume_24h) : 0) - (a.volume_24h ? parseFloat(a.volume_24h) : 0));
-        break;
-      case 'holders-high':
-        filtered.sort((a, b) => (b.holders || 0) - (a.holders || 0));
-        break;
-    }
-
-    return filtered;
-  }, [heldTokens, createdTokens, activeTab, searchTerm, sortBy]);
-
-  // Load portfolio data from Supabase only
-  const loadPortfolio = useCallback(async (page = 0, append = false) => {
-    if (!isConnected || !address) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      if (!append) setLoading(true);
-      else setIsLoadingMore(true);
-      
-      // Load user profile first (only once)
-      if (page === 0) {
-        const profile = await getUserProfile(address).catch(err => {
-          return null;
-        });
-        setUserProfile(profile);
+  useEffect(() => {
+    const fetchPortfolio = async () => {
+      if (!address) {
+        setLoading(false);
+        return;
       }
-      
-      // Get all platform coins from Supabase
-      const platformResult = await getPlatformCoins(page, PAGE_SIZE);
-      const platformCoins = platformResult.coins;
-      
-      // Filter coins by user's address
-      const userCreatedTokens = platformCoins.filter(coin => 
-        coin.creator_address?.toLowerCase() === address.toLowerCase()
-      );
-      
-      // Get user's actual token balances from Zora API
-      let userHeldTokens: Coin[] = [];
+
       try {
-        const balanceResult = await getUserBalances(address, 100); // Get up to 100 balances
-        const userBalances = balanceResult.balances;
-        
-        // Filter platform coins to only show tokens the user actually holds
-        userHeldTokens = platformCoins.filter(platformCoin => {
-          const matchingBalance = userBalances.find(balance => 
-            balance.coin?.address?.toLowerCase() === platformCoin.contract_address?.toLowerCase()
-          );
-          
-          if (!matchingBalance) {
-            return false; // No balance found for this token
-          }
-          
-          const balanceAmount = parseFloat(matchingBalance.balance || '0');
-          const hasPositiveBalance = balanceAmount > 0;
-          
-          
-          return hasPositiveBalance;
-        }).map(platformCoin => {
-          // Add user's balance information to the token
-          const userBalance = userBalances.find(balance => 
-            balance.coin?.address?.toLowerCase() === platformCoin.contract_address?.toLowerCase()
-          );
-          
-          return {
-            ...platformCoin,
-            userBalance: userBalance?.balance || '0',
-            userBalanceFormatted: userBalance ? (parseFloat(userBalance.balance) / 1e18).toFixed(4) : '0.0000'
-          };
-        });
-        
-      } catch (error) {
-        
-        // Fallback: Check balances directly from contracts
+        setLoading(true);
+        const [portfolioData, stats, txHistory] = await Promise.all([
+          AnalyticsService.getPortfolio(address),
+          AnalyticsService.getUserStats(address),
+          AnalyticsService.getTransactionHistory(address, 20),
+        ]);
+
+        setPortfolio(portfolioData);
+        setUserStats(stats);
+        setTransactions(txHistory);
+
+        // Fetch created tokens from Supabase and enrich with Zora API data
         try {
-          const directBalances: Coin[] = [];
-          
-          for (const platformCoin of platformCoins.slice(0, 20)) { // Limit to first 20 for performance
-            try {
-              const tokenBalance = await publicClient!.readContract({
-                address: platformCoin.contract_address as `0x${string}`,
-                abi: [
-                  {
-                    "constant": true,
-                    "inputs": [{"name": "_owner", "type": "address"}],
-                    "name": "balanceOf",
-                    "outputs": [{"name": "balance", "type": "uint256"}],
-                    "type": "function"
-                  }
-                ],
-                functionName: 'balanceOf',
-                args: [address as `0x${string}`]
-              });
-              
-              const balanceAmount = parseFloat((tokenBalance as bigint).toString()) / 1e18;
-              
-              if (balanceAmount > 0) {
-                directBalances.push({
-                  ...platformCoin,
-                  userBalance: (tokenBalance as bigint).toString(),
-                  userBalanceFormatted: balanceAmount.toFixed(4)
-                } as Coin & { userBalance: string; userBalanceFormatted: string });
-              }
-            } catch (contractError) {
-            }
+          // 1. Get tokens created by this user from Supabase
+          const { data: platformTokens, error: dbError } = await supabase
+            .from("drawcoins")
+            .select("*")
+            .ilike("creator_address", address);
+
+          if (dbError) {
+            console.error("Error fetching created tokens from DB:", dbError);
+            setCreatedTokens([]);
+          } else if (!platformTokens || platformTokens.length === 0) {
+            setCreatedTokens([]);
+          } else {
+            // 2. Fetch Zora data for each token to get live stats
+            const { getUserCreatedCoins } = await import(
+              "../../services/portfolioService"
+            );
+            const { coins: zoraCoins } = await getUserCreatedCoins(
+              address,
+              100
+            );
+
+            // Create a map of Zora data by contract address
+            const zoraDataMap = new Map(
+              (zoraCoins || []).map((coin) => [
+                coin.address?.toLowerCase(),
+                coin,
+              ])
+            );
+
+            // 3. Merge Supabase tokens with Zora live data
+            const enrichedTokens = platformTokens.map((token) => {
+              const zoraData = zoraDataMap.get(
+                token.contract_address.toLowerCase()
+              );
+
+              return {
+                ...token,
+                // Use Zora's CDN-optimized images (same as holdings)
+                image_url:
+                  zoraData?.mediaContent?.previewImage?.medium ||
+                  zoraData?.mediaContent?.previewImage?.small ||
+                  token.image_url,
+                // Live market data from Zora
+                // Note: Zora API structure uses tokenPrice.priceInPoolToken for price
+                current_price:
+                  zoraData?.tokenPrice?.priceInPoolToken || token.current_price,
+                volume_24h:
+                  zoraData?.volume24h ||
+                  zoraData?.totalVolume ||
+                  token.volume_24h,
+                holders: zoraData?.uniqueHolders || token.holders,
+                marketCap: zoraData?.marketCap,
+                change24h: zoraData?.marketCapDelta24h,
+                // Keep full Zora data for reference
+                zora_data: zoraData,
+              };
+            });
+
+            setCreatedTokens(enrichedTokens);
           }
-          
-          userHeldTokens = directBalances;
-          
-        } catch (directError) {
-          userHeldTokens = []; // Show no tokens if all methods fail
+        } catch (createdError) {
+          console.warn("Could not fetch created tokens:", createdError);
+          setCreatedTokens([]);
         }
-      }
-      
 
-      // Calculate portfolio statistics
-      const stats = calculatePortfolioStats(userHeldTokens, userCreatedTokens);
-
-      if (append) {
-        // Append to existing data for pagination
-        setHeldTokens(prev => [...prev, ...userHeldTokens]);
-        setCreatedTokens(prev => [...prev, ...userCreatedTokens]);
-        setIsLoadingMore(false);
-      } else {
-        // Initial load
-        setHeldTokens(userHeldTokens);
-        setCreatedTokens(userCreatedTokens);
-        setPortfolioStats(stats);
+        // Fetch Zora profile data
+        try {
+          const profile = await getUserProfile(address);
+          setZoraProfile(profile);
+        } catch (profileError) {
+          console.warn("Could not fetch Zora profile:", profileError);
+        }
+      } catch (error) {
+        console.error("Failed to fetch portfolio:", error);
+      } finally {
         setLoading(false);
       }
-      
-      // Check if there's more data
-      setHasMoreData(platformResult.hasMore);
-      setCurrentPage(page);
-      
-    } catch (error) {
-      
-      setLoading(false);
-      setIsLoadingMore(false);
-      
-      // Don't throw the error to prevent app crashes
-      // The UI will show empty state gracefully
-    }
-  }, [isConnected, address, getPlatformCoins]);
+    };
 
-  // Load more data for pagination
-  const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMoreData) return;
-    await loadPortfolio(currentPage + 1, true);
-  }, [loadPortfolio, currentPage, isLoadingMore, hasMoreData]);
+    fetchPortfolio();
+  }, [address]);
 
-  // Initial load
-  useEffect(() => {
-    if (isConnected && address) {
-      loadPortfolio(0, false);
-    }
-  }, [isConnected, address]);
 
-  // Removed platform filter reset effect
-
-  const handleTrade = (token: Coin) => {
-    setSelectedToken(token);
-    setTradeModalOpen(true);
-  };
-
-  const handleCloseTradeModal = () => {
-    setTradeModalOpen(false);
-    setSelectedToken(null);
-  };
-
-  const handleViewDetails = (token: Coin) => {
-    if (onView) {
-      onView(token);
-    } else {
-      // Navigate to coin detail page
-      window.location.href = `/coin/${token.contract_address}`;
-    }
-  };
-
-  const handleCloseDetails = () => {
-    setDetailsOpen(false);
-    setDetailsToken(null);
-  };
-
-  const handleTradeFromDetails = (token: Coin) => {
-    setSelectedToken(token);
-    setTradeModalOpen(true);
-    setDetailsOpen(false);
-  };
-
-  // Refresh balances after trade operations
-  const refreshBalances = useCallback(async () => {
-    if (!address || !publicClient) return;
-    
-    try {
-      
-      // Reload portfolio data
-      await loadPortfolio(0, false);
-      
-    } catch (error) {
-    }
-  }, [address, publicClient, loadPortfolio]);
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen bg-art-off-white flex items-center justify-center">
-        <div className="text-center hand-drawn-card" style={{ maxWidth: '400px' }}>
-          <div className="mx-auto w-24 h-24 hand-drawn-icon-wrapper mb-4 transform rotate-1">
-            <svg className="w-12 h-12 text-art-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ strokeWidth: 2 }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      <div className="min-h-screen bg-art-gray-50 flex items-center justify-center p-4">
+        <div className="hand-drawn-card max-w-md w-full text-center">
+          <div className="hand-drawn-header">
+            <svg
+              className="w-6 h-6"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+              />
             </svg>
+            <h2 className="text-xl">Portfolio</h2>
           </div>
-          <h2 className="text-xl  font-bold text-art-gray-900 mb-2 transform -rotate-1">Connect Your Wallet</h2>
-          <p className="text-art-gray-600 ">Please connect your wallet to view your hand-drawn art portfolio.</p>
+          <p className="text-art-gray-600 mb-6">
+            Connect your wallet to view your portfolio
+          </p>
         </div>
       </div>
     );
@@ -430,327 +294,677 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-art-off-white">
-        <div className="max-w-7xl mx-auto p-4">
-          {/* Loading Skeleton */}
-          <div className="space-y-6">
-            {/* Profile Card Skeleton */}
-            <div className="hand-drawn-card">
-              <div className="flex items-center space-x-4">
-                <div className="w-16 h-16 bg-art-gray-200 rounded-full animate-pulse"></div>
-                <div className="flex-1 space-y-2">
-                  <div className="h-6 bg-art-gray-200 rounded animate-pulse w-1/3"></div>
-                  <div className="h-4 bg-art-gray-200 rounded animate-pulse w-1/2"></div>
-                </div>
-              </div>
-            </div>
-
-            {/* Stats Skeleton */}
-            <div className="hand-drawn-card">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="text-center bg-art-off-white p-3 rounded-art" style={{ borderRadius: '15px 5px 10px 8px' }}>
-                    <div className="h-8 bg-art-gray-200 rounded animate-pulse mb-2"></div>
-                    <div className="h-4 bg-art-gray-200 rounded animate-pulse w-3/4 mx-auto"></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Tabs Skeleton */}
-            <div className="flex space-x-4">
-              <div className="h-10 bg-art-gray-200 rounded animate-pulse w-24"></div>
-              <div className="h-10 bg-art-gray-200 rounded animate-pulse w-24"></div>
-            </div>
-
-            {/* Token Grid Skeleton */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="hand-drawn-card">
-                  <div className="aspect-square bg-art-gray-200 rounded-art-lg mb-3 animate-pulse" style={{ borderRadius: '20px 10px 25px 15px' }}></div>
-                  <div className="space-y-2">
-                    <div className="h-5 bg-art-gray-200 rounded animate-pulse w-3/4"></div>
-                    <div className="h-4 bg-art-gray-200 rounded animate-pulse w-1/2"></div>
-                    <div className="flex justify-between">
-                      <div className="h-6 bg-art-gray-200 rounded animate-pulse w-1/3"></div>
-                      <div className="h-4 bg-art-gray-200 rounded animate-pulse w-1/4"></div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+      <div className="min-h-screen bg-art-gray-50 p-4">
+        <div className="max-w-7xl mx-auto space-y-6">
+          {/* Profile Skeleton */}
+          <HandDrawnSkeleton variant="profile" />
+          
+          {/* Stats Cards Skeleton */}
+          <div className="grid grid-cols-3 gap-2 md:gap-4">
+            <HandDrawnSkeleton variant="stat" count={3} />
           </div>
+          
+          {/* Tabs Skeleton */}
+          <div className="hand-drawn-card p-2">
+            <HandDrawnSkeleton variant="text" className="w-full h-12" />
+          </div>
+          
+          {/* Table Skeleton */}
+          <HandDrawnSkeleton variant="table" count={5} />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-art-off-white">
-      <div className="max-w-7xl mx-auto p-4 ">
-        {/* Page Header with Profile Info */}
-        <div className="mb-2">
-       
-          {/* Profile Card */}
-          {userProfile && (
-            <div className="hand-drawn-card mt-4">
-              <div className="flex items-center space-x-4">
-                {userProfile.avatar?.medium && (
-                  <img 
-                    src={userProfile.avatar.medium} 
-                    alt="Profile" 
-                    className="w-16 h-16 rounded-full border-2 border-art-gray-200"
+    <div className="min-h-screen bg-art-gray-50 p-4">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Profile Card with Zora Data */}
+        <div className="hand-drawn-card">
+          <div className="flex items-center space-x-4">
+            {zoraProfile?.avatar?.medium ? (
+              <img
+                src={zoraProfile.avatar.medium}
+                alt="Profile"
+                className="w-16 h-16 rounded-full border-2 border-art-gray-200"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-art-gray-200 flex items-center justify-center">
+                <svg
+                  className="w-8 h-8 text-art-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                   />
+                </svg>
+              </div>
+            )}
+            <div className="flex-1">
+              <div className="flex items-center space-x-2">
+                <h3 className="text-lg font-semibold text-art-gray-900">
+                  {zoraProfile?.displayName ||
+                    zoraProfile?.handle ||
+                    "Anonymous"}
+                </h3>
+                {zoraProfile?.verified && (
+                  <svg
+                    className="w-5 h-5 text-blue-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
                 )}
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-art-gray-900">
-                    {userProfile.displayName || userProfile.handle || 'Anonymous'}
-                  </h3>
-                  {userProfile.handle && (
-                    <p className="text-sm text-art-gray-600">@{userProfile.handle}</p>
-                  )}
-                  {userProfile.website && (
-                    <a 
-                      href={userProfile.website} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      {userProfile.website}
-                    </a>
-                  )}
-                </div>
+              </div>
+              {zoraProfile?.handle && (
+                <p className="text-sm text-art-gray-600">
+                  @{zoraProfile.handle}
+                </p>
+              )}
+              <div className="flex items-center space-x-2 mt-1">
+                {zoraProfile?.twitterUsername && (
+                  <a
+                    href={`https://twitter.com/${zoraProfile.twitterUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    🐦 Twitter
+                  </a>
+                )}
+                {zoraProfile?.website && (
+                  <a
+                    href={
+                      zoraProfile.website.startsWith("http://") ||
+                      zoraProfile.website.startsWith("https://")
+                        ? zoraProfile.website
+                        : `https://${zoraProfile.website}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    🌐 Website
+                  </a>
+                )}
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Portfolio Stats */}
-        {portfolioStats && (
-          <div className="hand-drawn-card mb-6 md:mb-8">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
-              <div className="text-center bg-art-off-white p-3 rounded-art transform rotate-1" style={{ borderRadius: '15px 5px 10px 8px' }}>
-                <div className="text-lg md:text-2xl font-bold text-art-gray-900 mb-1">
-                  {portfolioStats.totalHoldings}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="hand-drawn-btn text-sm font-bold p-2 md:px-4 md:py-2 transform rotate-1"
+                style={{
+                  borderRadius: "8px 3px 6px 4px",
+                }}
+                title="Share Portfolio"
+              >
+                <div className="flex items-center md:space-x-2">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                    />
+                  </svg>
+                  <span className="hidden md:inline">Share</span>
                 </div>
-                <div className="text-xs md:text-sm text-art-gray-500">Tokens Held</div>
-              </div>
-              <div className="text-center bg-art-off-white p-3 rounded-art transform -rotate-1" style={{ borderRadius: '10px 8px 15px 5px' }}>
-                <div className="text-lg md:text-2xl font-bold text-art-gray-900 mb-1">
-                  {portfolioStats.totalCreated}
-                </div>
-                <div className="text-xs md:text-sm text-art-gray-500">Tokens Created</div>
-              </div>
-              <div className="text-center bg-art-off-white p-3 rounded-art transform -rotate-0.5" style={{ borderRadius: '8px 12px 6px 15px' }}>
-                <div className="text-lg md:text-2xl font-bold text-art-gray-900 mb-1">
-                  {portfolioStats.totalHolders}
-                </div>
-                <div className="text-xs md:text-sm text-art-gray-500">Total Holders</div>
-              </div>
+              </button>
+              <button
+                onClick={() =>
+                  window.open(
+                    `https://zora.co/@${zoraProfile?.handle || 'drawcoin'}`,
+                    "_blank"
+                  )
+                }
+                className="hand-drawn-btn text-sm font-bold p-2 md:px-4 md:py-2 transform -rotate-1 flex items-center md:space-x-2"
+                style={{
+                  borderRadius: "6px 4px 8px 3px",
+                }}
+                title="Zora Profile"
+              >
+                <img 
+                  src="https://pbs.twimg.com/profile_images/1912995896226443264/R9N6BIXd_400x400.jpg" 
+                  alt="Zora" 
+                  className="w-5 h-5 rounded-full"
+                />
+                <span className="hidden md:inline">Zora Profile</span>
+              </button>
             </div>
           </div>
-        )}
+        </div>
 
+        {/* Header Stats */}
+        <div className="grid grid-cols-3 md:grid-cols-3 gap-2 md:gap-4">
+          <div className="hand-drawn-card bg-blue-50 border-blue-200 p-2 md:p-4">
+            <div className="text-[10px] md:text-sm text-blue-800 mb-0.5 md:mb-1 font-bold">
+              Balance
+            </div>
+            <div className="text-base md:text-3xl font-bold text-blue-900">
+              $
+              {formatNumber(
+                portfolio.reduce((sum, item) => {
+                  const token = (item as any).token_details;
+                  const zoraData = token?.zora_data;
+                  const price = parseFloat(
+                    zoraData?.tokenPrice?.priceInUsdc ||
+                      token?.current_price ||
+                      "0"
+                  );
+                  return sum + item.balance * price;
+                }, 0)
+              )}
+            </div>
+            <div className="text-[9px] md:text-xs text-blue-600 mt-0.5 md:mt-1 hidden md:block">Estimated Value</div>
+          </div>
+
+          <div className="hand-drawn-card p-2 md:p-4">
+            <div className="text-[10px] md:text-sm text-art-gray-600 mb-0.5 md:mb-1 font-bold md:font-normal">Trades</div>
+            <div className="text-base md:text-2xl font-bold text-art-gray-900">
+              {userStats?.total_trades || 0}
+            </div>
+            <div className="text-[9px] md:text-xs text-art-gray-500 mt-0.5 md:mt-1 hidden md:block">
+              Volume: ${formatNumber(userStats?.total_volume_usd || 0)}
+            </div>
+          </div>
+
+          <div className="hand-drawn-card p-2 md:p-4">
+            <div className="text-[10px] md:text-sm text-art-gray-600 mb-0.5 md:mb-1 font-bold md:font-normal">Created</div>
+            <div className="text-base md:text-2xl font-bold text-art-gray-900">
+              {createdTokens.length}
+            </div>
+            <div className="text-[9px] md:text-xs text-art-gray-500 mt-0.5 md:mt-1 hidden md:block">
+              Tokens you launched
+            </div>
+          </div>
+        </div>
 
         {/* Tabs */}
-        <div className="mb-6">
-          <div className="hand-drawn-card">
-            <div className="flex space-x-2 p-2">
-              <button
-                onClick={() => setActiveTab('held')}
-                className={`flex-1 py-3 px-4 text-sm font-bold transition-all duration-200 ${
-                  activeTab === 'held'
-                    ? 'bg-art-gray-900 text-art-white shadow-sm'
-                    : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
-                }`}
-                style={{ 
-                  borderRadius: activeTab === 'held' ? '15px 5px 10px 8px' : '12px 3px 8px 6px',
-                  transform: activeTab === 'held' ? 'rotate(-1deg)' : 'rotate(0.5deg)',
-                  border: '2px solid #2d3748',
-                  boxShadow: activeTab === 'held' ? '3px 3px 0 #2d3748' : '2px 2px 0 #2d3748'
-                }}
-              >
-                Held Tokens ({heldTokens.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('created')}
-                className={`flex-1 py-3 px-4 text-sm font-bold transition-all duration-200 ${
-                  activeTab === 'created'
-                    ? 'bg-art-gray-900 text-art-white shadow-sm'
-                    : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
-                }`}
-                style={{ 
-                  borderRadius: activeTab === 'created' ? '10px 8px 15px 5px' : '8px 12px 6px 10px',
-                  transform: activeTab === 'created' ? 'rotate(1deg)' : 'rotate(-0.5deg)',
-                  border: '2px solid #2d3748',
-                  boxShadow: activeTab === 'created' ? '3px 3px 0 #2d3748' : '2px 2px 0 #2d3748'
-                }}
-              >
-                Created Tokens ({createdTokens.length})
-              </button>
-            </div>
+        <div className="hand-drawn-card p-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab("portfolio")}
+              className={`flex-1 px-4 py-2.5 text-sm font-bold transition-all ${
+                activeTab === "portfolio"
+                  ? "hand-drawn-btn bg-blue-500 text-white border-blue-600"
+                  : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"
+              }`}
+            >
+              Holdings ({portfolio.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("created")}
+              className={`flex-1 px-4 py-2.5 text-sm font-bold transition-all ${
+                activeTab === "created"
+                  ? "hand-drawn-btn bg-blue-500 text-white border-blue-600"
+                  : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"
+              }`}
+            >
+              Created Tokens ({createdTokens.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("transactions")}
+              className={`flex-1 px-4 py-2.5 text-sm font-bold transition-all hidden md:block ${
+                activeTab === "transactions"
+                  ? "hand-drawn-btn bg-blue-500 text-white border-blue-600"
+                  : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"
+              }`}
+            >
+              Transactions ({transactions.length})
+            </button>
           </div>
         </div>
 
-        {/* Tokens Grid */}
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="bg-art-white rounded-art-lg shadow-art p-3 md:p-6 border border-art-gray-100 animate-pulse">
-                <div className="aspect-square bg-art-gray-200 rounded-art-lg mb-3 md:mb-4"></div>
-                <div className="space-y-2 md:space-y-3">
-                  <div className="h-4 md:h-5 bg-art-gray-200 rounded w-3/4"></div>
-                  <div className="h-3 md:h-4 bg-art-gray-200 rounded w-1/2"></div>
-                  <div className="flex justify-between">
-                    <div className="h-5 md:h-6 bg-art-gray-200 rounded w-1/3"></div>
-                    <div className="h-3 md:h-4 bg-art-gray-200 rounded w-1/4"></div>
-                  </div>
-                </div>
+        {/* Content */}
+        {activeTab === "portfolio" ? (
+          <div className="hand-drawn-card">
+            <div className="hand-drawn-header">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                />
+              </svg>
+              <h2 className="text-xl">Your Holdings</h2>
+            </div>
+
+            {portfolio.length === 0 ? (
+              <div className="text-center py-12">
+                <svg
+                  className="w-16 h-16 text-art-gray-300 mx-auto mb-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
+                  />
+                </svg>
+                <p className="text-art-gray-600">No holdings yet</p>
+                <p className="text-sm text-art-gray-500 mt-2">
+                  Start trading to build your portfolio
+                </p>
               </div>
-            ))}
-          </div>
-        ) : (
-          <>
-            {activeTab === 'held' ? (
-              heldTokens.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="mx-auto w-24 h-24 bg-art-gray-100 rounded-full flex items-center justify-center mb-4">
-                    <svg className="w-12 h-12 text-art-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-medium text-art-gray-900 mb-2">No tokens held yet</h3>
-                  <p className="text-art-gray-500 mb-4">Start trading to build your collection of hand-drawn art tokens.</p>
-                  <button 
-                    onClick={() => window.location.href = '/market'}
-                    className="bg-art-gray-900 text-art-white px-6 py-3 rounded-art font-medium hover:bg-art-gray-800 transition-colors"
-                  >
-                    Browse Market
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <TokenFilters
-                    categories={[]}
-                    selectedCategory=""
-                    onCategoryChange={() => {}}
-                    searchTerm={searchTerm}
-                    onSearchChange={setSearchTerm}
-                    sortBy={sortBy}
-                    onSortChange={setSortBy}
-                    viewMode={viewMode}
-                    onViewModeChange={setViewMode}
-                  />
-                  <TokenGrid
-                    tokens={filteredTokens}
-                    onTrade={handleTrade}
-                    onView={handleViewDetails}
-                    loading={false}
-                    viewMode={viewMode}
-                    showBalance={false}
-                  />
-                  
-                  {/* Load More Button */}
-                  {hasMoreData && (
-                    <div className="text-center mt-6">
-                      <button
-                        onClick={loadMore}
-                        disabled={isLoadingMore}
-                        className="hand-drawn-btn secondary"
-                      >
-                        {isLoadingMore ? (
-                          <div className="flex items-center">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
-                            Loading more...
-                          </div>
-                        ) : (
-                          'Load More Tokens'
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </>
-              )
             ) : (
-              createdTokens.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="mx-auto w-24 h-24 bg-art-gray-100 rounded-full flex items-center justify-center mb-4">
-                    <svg className="w-12 h-12 text-art-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-medium text-art-gray-900 mb-2">No tokens created yet</h3>
-                  <p className="text-art-gray-500 mb-4">Start creating your first art token to see it here.</p>
-                  <button 
-                    onClick={() => window.location.href = '/create'}
-                    className="bg-art-gray-900 text-art-white px-6 py-3 rounded-art font-medium hover:bg-art-gray-800 transition-colors"
-                  >
-                    Create Your First Token
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <TokenFilters
-                    categories={[]}
-                    selectedCategory=""
-                    onCategoryChange={() => {}}
-                    searchTerm={searchTerm}
-                    onSearchChange={setSearchTerm}
-                    sortBy={sortBy}
-                    onSortChange={setSortBy}
-                    viewMode={viewMode}
-                    onViewModeChange={setViewMode}
-                  />
-                  <TokenGrid
-                    tokens={filteredTokens}
-                    onTrade={handleTrade}
-                    onView={handleViewDetails}
-                    loading={false}
-                    viewMode={viewMode}
-                    showBalance={false}
-                  />
-                  
-                  {/* Load More Button */}
-                  {hasMoreData && (
-                    <div className="text-center mt-6">
-                      <button
-                        onClick={loadMore}
-                        disabled={isLoadingMore}
-                        className="hand-drawn-btn secondary"
+              <div className="overflow-x-auto -mx-4 md:mx-0">
+                <table className="w-full min-w-[400px]">
+                  <thead>
+                    <tr className="border-b-2 border-art-gray-200 bg-art-gray-50">
+                      <th
+                        className="text-left px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handlePortfolioSort("name")}
                       >
-                        {isLoadingMore ? (
-                          <div className="flex items-center">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
-                            Loading more...
-                          </div>
-                        ) : (
-                          'Load More Tokens'
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </>
-              )
+                        Token
+                        <SortIcon
+                          active={portfolioSort.key === "name"}
+                          direction={portfolioSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 hidden lg:table-cell cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handlePortfolioSort("mc")}
+                      >
+                        MC
+                        <SortIcon
+                          active={portfolioSort.key === "mc"}
+                          direction={portfolioSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 hidden lg:table-cell cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handlePortfolioSort("volume")}
+                      >
+                        Vol 24h
+                        <SortIcon
+                          active={portfolioSort.key === "volume"}
+                          direction={portfolioSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 hidden lg:table-cell cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handlePortfolioSort("change")}
+                      >
+                        Change
+                        <SortIcon
+                          active={portfolioSort.key === "change"}
+                          direction={portfolioSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handlePortfolioSort("balance")}
+                      >
+                        Balance
+                        <SortIcon
+                          active={portfolioSort.key === "balance"}
+                          direction={portfolioSort.direction}
+                        />
+                      </th>
+                      <th className="text-center px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getSortedPortfolio().map((item) => {
+                      const token = (item as any).token_details;
+                      const zoraData = token?.zora_data;
+                      const price = parseFloat(
+                        zoraData?.tokenPrice?.priceInUsdc ||
+                          token?.current_price ||
+                          "0"
+                      );
+                      const holdingValue = item.balance * price;
+                      return (
+                        <tr
+                          key={item.token_address}
+                          className="border-b border-art-gray-100 hover:bg-art-gray-50 transition-colors"
+                        >
+                          <td className="px-2 md:px-3 py-3">
+                            <div className="flex items-center space-x-2 md:space-x-3">
+                              {token?.image_url && (
+                                <img
+                                  src={token.image_url}
+                                  alt={token.name}
+                                  className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover flex-shrink-0 border-2 border-art-gray-200"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                  }}
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <div
+                                  className="font-medium text-art-gray-900 text-sm md:text-base truncate max-w-[120px] md:max-w-[200px]"
+                                  title={token?.name || "Unknown"}
+                                >
+                                  {token?.name || "Unknown"}
+                                </div>
+                                <div className="text-xs md:text-sm text-art-gray-500 truncate max-w-[100px] md:max-w-[150px]">
+                                  {token?.symbol || ""}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
+                            {token?.marketCap
+                              ? `$${formatNumber(parseFloat(token.marketCap))}`
+                              : "-"}
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
+                            {token?.volume24h
+                              ? `$${formatNumber(parseFloat(token.volume24h))}`
+                              : "-"}
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right hidden lg:table-cell">
+                            {token?.change24h ? (
+                              <span
+                                className={`text-xs md:text-sm font-semibold ${
+                                  parseFloat(token.change24h) >= 0
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {parseFloat(token.change24h) >= 0 ? "+" : ""}
+                                {parseFloat(token.change24h).toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="text-xs md:text-sm text-art-gray-400">
+                                -
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right">
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="text-xs md:text-sm font-medium text-art-gray-900">
+                                {formatNumber(item.balance)}
+                              </span>
+                              <span className="text-[10px] md:text-xs text-art-gray-500">
+                                ${formatNumber(holdingValue)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-center">
+                            <button
+                              onClick={() =>
+                                onView
+                                  ? onView(item.token_details)
+                                  : (window.location.href = `/coin/${item.token_address}`)
+                              }
+                              className="inline-flex items-center justify-center p-1.5 md:p-2 rounded-lg bg-art-gray-900 text-white hover:bg-art-gray-700 transition-colors"
+                              title="View Token"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                />
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                                />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </>
-        )}
+          </div>
+        ) : activeTab === "created" ? (
+          <div className="hand-drawn-card">
+            <div className="hand-drawn-header">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                />
+              </svg>
+              <h2 className="text-xl">Your Tokens</h2>
+            </div>
+
+            {createdTokens.length === 0 ? (
+              <div className="text-center py-12">
+                <svg
+                  className="w-16 h-16 text-art-gray-300 mx-auto mb-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                  />
+                </svg>
+                <p className="text-art-gray-600">No tokens created yet</p>
+                <p className="text-sm text-art-gray-500 mt-2">
+                  Launch your first token to see it here
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto -mx-4 md:mx-0">
+                <table className="w-full min-w-[400px]">
+                  <thead>
+                    <tr className="border-b-2 border-art-gray-200 bg-art-gray-50">
+                      <th
+                        className="text-left px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handleCreatedSort("name")}
+                      >
+                        Token
+                        <SortIcon
+                          active={createdSort.key === "name"}
+                          direction={createdSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 hidden lg:table-cell cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handleCreatedSort("mc")}
+                      >
+                        MC
+                        <SortIcon
+                          active={createdSort.key === "mc"}
+                          direction={createdSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 hidden lg:table-cell cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handleCreatedSort("volume")}
+                      >
+                        Vol 24h
+                        <SortIcon
+                          active={createdSort.key === "volume"}
+                          direction={createdSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 hidden lg:table-cell cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handleCreatedSort("change")}
+                      >
+                        Change
+                        <SortIcon
+                          active={createdSort.key === "change"}
+                          direction={createdSort.direction}
+                        />
+                      </th>
+                      <th
+                        className="text-right px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700 cursor-pointer hover:bg-art-gray-100"
+                        onClick={() => handleCreatedSort("holders")}
+                      >
+                        Holders
+                        <SortIcon
+                          active={createdSort.key === "holders"}
+                          direction={createdSort.direction}
+                        />
+                      </th>
+                      <th className="text-center px-2 md:px-3 py-2.5 text-xs md:text-sm font-semibold text-art-gray-700"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getSortedCreatedTokens().map((token) => {
+                      return (
+                        <tr
+                          key={token.contract_address}
+                          className="border-b border-art-gray-100 hover:bg-art-gray-50 transition-colors"
+                        >
+                          <td className="px-2 md:px-3 py-3">
+                            <div className="flex items-center space-x-2 md:space-x-3">
+                              {token.image_url && (
+                                <img
+                                  src={token.image_url}
+                                  alt={token.name}
+                                  className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover flex-shrink-0 border-2 border-art-gray-200"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                  }}
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <div
+                                  className="font-medium text-art-gray-900 text-sm md:text-base truncate max-w-[120px] md:max-w-[200px]"
+                                  title={token.name || "Unknown"}
+                                >
+                                  {token.name || "Unknown"}
+                                </div>
+                                <div className="text-xs md:text-sm text-art-gray-500 truncate max-w-[100px] md:max-w-[150px]">
+                                  {token.symbol || ""}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
+                            {token.marketCap
+                              ? `$${formatNumber(parseFloat(token.marketCap))}`
+                              : "-"}
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
+                            {token.volume_24h
+                              ? `$${formatNumber(parseFloat(token.volume_24h))}`
+                              : "-"}
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right hidden lg:table-cell">
+                            {token.change24h ? (
+                              <span
+                                className={`text-xs md:text-sm font-semibold ${
+                                  parseFloat(token.change24h) >= 0
+                                    ? "text-green-600"
+                                    : "text-red-600"
+                                }`}
+                              >
+                                {parseFloat(token.change24h) >= 0 ? "+" : ""}
+                                {parseFloat(token.change24h).toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="text-xs md:text-sm text-art-gray-400">
+                                -
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm">
+                            {token.holders || 1}
+                          </td>
+                          <td className="px-2 md:px-3 py-3 text-center">
+                            <button
+                              onClick={() =>
+                                onView
+                                  ? onView(token)
+                                  : (window.location.href = `/coin/${token.contract_address}`)
+                              }
+                              className="inline-flex items-center justify-center p-1.5 md:p-2 rounded-lg bg-art-gray-900 text-white hover:bg-art-gray-700 transition-colors"
+                              title="View Token"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                />
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                                />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : activeTab === "transactions" ? (
+          <TransactionHistory transactions={transactions} />
+        ) : null}
       </div>
 
-      {/* Trade Modal */}
-      <DetailsModal
-        token={selectedToken}
-        isOpen={tradeModalOpen}
-        onClose={handleCloseTradeModal}
-        onTradeSuccess={refreshBalances}
-      />
-
-      {/* Details Modal */}
-      <DetailsModal
-        token={detailsToken}
-        isOpen={detailsOpen}
-        onClose={handleCloseDetails}
-        onTrade={handleTradeFromDetails}
-        onTradeSuccess={refreshBalances}
+      {/* Share Modal */}
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        portfolioValue={portfolio.reduce((sum, item) => {
+          const token = (item as any).token_details;
+          const zoraData = token?.zora_data;
+          const price = parseFloat(
+            zoraData?.tokenPrice?.priceInUsdc || token?.current_price || "0"
+          );
+          return sum + item.balance * price;
+        }, 0)}
+        totalPnL={userStats?.total_pnl_usd || 0}
+        tokenCount={portfolio.length}
+        userName={zoraProfile?.displayName || zoraProfile?.handle}
+        userAddress={address}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Coin } from '../../lib/supabase';
 import TokenCard from './TokenCard';
+import { WatchlistPriceHint } from '../../hooks/useWatchlist';
 
 interface TokenGridProps {
   tokens: Coin[];
@@ -9,15 +10,19 @@ interface TokenGridProps {
   loading?: boolean;
   viewMode?: 'grid' | 'list';
   showBalance?: boolean; // Optional prop to show user balance
+  watchlistSet?: Set<string>; // Pre-computed watchlist Set for performance
+  onToggleWatchlist?: (tokenAddress: string, priceHint?: WatchlistPriceHint) => void; // Callback from parent
+  watchlistStats?: Record<string, number>; // NEW: Watchlist counts map
+  onCreatorClick?: (creatorAddress: string) => void; // NEW: Callback for creator click
 }
 
-export default function TokenGrid({ tokens, onTrade, onView, loading = false, viewMode = 'grid', showBalance = false }: TokenGridProps) {
+export default function TokenGrid({ tokens, onTrade, onView, loading = false, viewMode = 'grid', showBalance = false, watchlistSet, onToggleWatchlist, watchlistStats, onCreatorClick }: TokenGridProps) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-2">
         {Array.from({ length: 8 }).map((_, index) => (
-          <div key={index} className="bg-art-white rounded-art-lg shadow-art p-6 border border-art-gray-100 animate-pulse">
-            <div className="aspect-square bg-art-gray-200 rounded-art-lg mb-4"></div>
+          <div key={index} className="hand-drawn-card p-4 animate-pulse" style={{ transform: `rotate(${index % 2 === 0 ? '-0.5deg' : '0.5deg'})` }}>
+            <div className="aspect-square bg-art-gray-200 rounded-art-lg mb-4" style={{ borderRadius: '15px 5px 10px 8px' }}></div>
             <div className="space-y-3">
               <div className="h-5 bg-art-gray-200 rounded w-3/4"></div>
               <div className="h-4 bg-art-gray-200 rounded w-1/2"></div>
@@ -26,9 +31,6 @@ export default function TokenGrid({ tokens, onTrade, onView, loading = false, vi
                 <div className="h-4 bg-art-gray-200 rounded w-1/4"></div>
               </div>
               <div className="h-4 bg-art-gray-200 rounded w-1/2"></div>
-            </div>
-            <div className="mt-6 pt-4 border-t border-art-gray-100">
-              <div className="h-10 bg-art-gray-200 rounded"></div>
             </div>
           </div>
         ))}
@@ -52,159 +54,186 @@ export default function TokenGrid({ tokens, onTrade, onView, loading = false, vi
 
   if (viewMode === 'list') {
     return (
-      <div className="space-y-4">
+      <div className="space-y-2 md:space-y-3">
         {tokens.map((token, index) => {
+          const isFavorite = watchlistSet?.has(token.contract_address.toLowerCase()) || false;
+          const watchlistCount = watchlistStats?.[token.contract_address] || 0;
+          
+          // Helper for price hint
+          const resolvePriceNumber = (value: any) => {
+            if (value === null || value === undefined) return undefined;
+            const parsed = typeof value === 'number' ? value : parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : undefined;
+          };
+          const watchlistPriceHint = {
+            priceUsd: resolvePriceNumber(
+              (token as any).tokenPrice?.priceInUsdc ??
+              (token as any).tokenPrice?.priceInUsd ??
+              token.current_price ??
+              (token as any).current_price
+            ),
+            priceEth: resolvePriceNumber(
+              (token as any).tokenPrice?.priceInPoolToken ??
+              (token as any).tokenPrice?.priceInEth
+            ),
+          };
+
           return (
            <div 
              key={token.id} 
-             className="hand-drawn-card relative p-3 md:p-4 cursor-pointer group"
+             className="hand-drawn-card relative p-2 md:p-3 cursor-pointer group flex items-center gap-3"
              onClick={() => window.location.href = `/coin/${token.contract_address}`}
-             style={{ transform: `rotate(${index % 2 === 0 ? '-0.5deg' : '0.5deg'})` }}
+             style={{ transform: `rotate(${index % 2 === 0 ? '-0.2deg' : '0.2deg'})` }}
            >
              {/* NEW Badge */}
              {(token as any).isNew && (
-               <div className="absolute -top-3 -right-3 z-50 bg-yellow-500 text-white text-xs font-bold px-2 py-1 rounded-full transform rotate-12 shadow-lg border-2 border-white" style={{ 
-                 borderRadius: '10px 3px 8px 5px',
-                 fontSize: '10px',
-                 lineHeight: '1',
-                 zIndex: 50,
-                 top: '-12px',
-                 right: '-12px'
-               }}>
+               <div className="absolute -top-2 -right-2 z-50 bg-yellow-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full transform rotate-12 shadow-sm border border-white">
                  NEW
                </div>
              )}
 
-             {/* Hover Overlay with Buttons */}
-             <div className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 overflow-hidden rounded-art">
-               <div className="flex gap-2 md:gap-4">
-                 <button
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     window.location.href = `/coin/${token.contract_address}`;
-                   }}
-                   className="hand-drawn-btn text-xs md:text-sm font-bold py-2 md:py-3 px-3 md:px-6 transform -rotate-1 hover:scale-105 transition-transform duration-200"
-                   style={{ 
-                     borderRadius: '12px 4px 8px 6px',
-                     backgroundColor: '#4299e1',
-                     minWidth: '70px'
-                   }}
-                 >
-                   View
-                 </button>
-                 <button
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     onTrade(token);
-                   }}
-                   className="hand-drawn-btn text-xs md:text-sm font-bold py-2 md:py-3 px-3 md:px-6 transform rotate-1 hover:scale-105 transition-transform duration-200"
-                   style={{ 
-                     borderRadius: '8px 6px 12px 4px',
-                     backgroundColor: '#22c55e',
-                     minWidth: '70px'
-                   }}
-                 >
-                   Trade
-                 </button>
-               </div>
-             </div>
-            <div className="flex items-center gap-3 md:gap-4">
-              {/* Token Logo */}
-              <div className="w-16 h-16 md:w-20 md:h-20 bg-art-gray-50 overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ 
-                border: '2px solid #2d3748',
-                borderRadius: '15px 5px 10px 8px',
-                transform: 'rotate(1deg)',
-                aspectRatio: '1/1'
-              }}>
+             {/* Token Logo */}
+             <div className="w-16 h-16 md:w-20 md:h-20 bg-art-gray-50 overflow-hidden flex-shrink-0 flex items-center justify-center relative" style={{ 
+               border: '2px solid #2d3748',
+               borderRadius: '15px 5px 10px 8px',
+               transform: 'rotate(0.5deg)',
+             }}>
                 {(() => {
                   const imageUrl = (token as any).mediaContent?.previewImage?.small || token.image_url;
                   return imageUrl ? (
                     <img 
                       src={imageUrl} 
                       alt={(token as any).name || token.name}
-                      className="w-auto h-auto max-w-[85%] max-h-[85%] object-contain bg-white"
-                      style={{ borderRadius: '13px 3px 8px 6px' }}
+                      className="w-auto h-auto max-w-[90%] max-h-[90%] object-contain"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
                         const nextElement = e.currentTarget.nextElementSibling as HTMLElement;
-                        if (nextElement) {
-                          nextElement.style.display = 'flex';
-                        }
+                        if (nextElement) { nextElement.style.display = 'flex'; }
                       }}
                     />
                   ) : null;
                 })()}
-                {/* Default Image */}
-                <div 
-                  className="w-full h-full flex items-center justify-center text-art-gray-400 text-xl md:text-2xl font-bold"
-                  style={{ 
-                    borderRadius: '13px 3px 8px 6px',
-                    display: 'none'
-                  }}
-                >
-                  🎨
-                </div>
-              </div>
-
-              {/* Token Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between mb-2 md:mb-3">
-                  <div className="min-w-0 pr-2">
-                    <h3 className="font-bold text-art-gray-900 text-sm md:text-lg truncate transform -rotate-0.5">
-                      {(token as any).name || token.name}
-                    </h3>
-                    <p className="text-xs md:text-sm text-art-gray-500 font-mono bg-art-gray-100 px-1 md:px-2 py-0.5 md:py-1 rounded-art transform rotate-1 inline-block">
-                      {(token as any).symbol || token.symbol}
-                    </p>
+                <div className="w-full h-full hidden items-center justify-center text-art-gray-400 text-lg">🎨</div>
+                
+                {/* Creation Type Badge (Overlaid on Image for List View) */}
+                {token.creation_type && (
+                  <div className="absolute -bottom-1 -right-1 bg-white border border-art-gray-900 text-[8px] px-1.5 py-0.5 rounded-sm font-bold shadow-sm z-10 whitespace-nowrap">
+                    {token.creation_type === 'ai' ? 'AI Generated' : 'Hand Drawn'}
                   </div>
-                  <div className="text-right">
-                    <div className={`text-sm md:text-lg font-bold ${(() => {
-                      const priceChange = (token as any).marketCapDelta24h;
-                      if (priceChange && parseFloat(priceChange) > 0) return 'text-green-600';
-                      if (priceChange && parseFloat(priceChange) < 0) return 'text-red-600';
-                      return 'text-art-gray-900';
-                    })()}`}>
-                      {(() => {
-                        const priceChange = (token as any).marketCapDelta24h;
-                        return priceChange ? `${parseFloat(priceChange) >= 0 ? '+' : ''}${parseFloat(priceChange).toFixed(2)}%` : '0.00%';
-                      })()}
-                    </div>
-                    <div className="text-xs text-art-gray-500">24h Change</div>
-                  </div>
-                </div>
+                )}
+             </div>
 
-                {/* Market Data */}
-                <div className="grid grid-cols-3 gap-1 md:gap-2">
-                  <div className="bg-art-gray-50 p-1 md:p-2 rounded-art text-center transform rotate-1" style={{ borderRadius: '10px 3px 8px 5px' }}>
-                    <div className="text-xs md:text-sm font-bold text-art-gray-900">
+             {/* Token Info */}
+             <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+               <div className="flex items-center gap-2">
+                 <h3 className="font-bold text-art-gray-900 text-sm md:text-base truncate transform -rotate-0.5">
+                   {(token as any).name || token.name}
+                 </h3>
+                 <span className="text-[10px] text-art-gray-500 font-mono bg-art-gray-100 px-1 rounded transform rotate-1">
+                   {(token as any).symbol || token.symbol}
+                 </span>
+               </div>
+               
+               {/* Creator Info */}
+               {(token as any).creatorProfile?.handle && (
+                 <p 
+                   className="text-[10px] text-art-gray-500 truncate transform -rotate-0.5 hover:text-blue-500 hover:underline cursor-pointer"
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     if (onCreatorClick && token.creator_address) {
+                       onCreatorClick(token.creator_address);
+                     }
+                   }}
+                 >
+                   by {(token as any).creatorProfile.handle}
+                 </p>
+               )}
+
+               {/* Market Data Grid (Mini Version) */}
+               <div className="flex gap-2 mt-1">
+                  <div className="bg-art-gray-50 px-2 py-0.5 rounded-art text-center transform -rotate-1 border border-art-gray-100" style={{ borderRadius: '8px 4px 6px 3px' }}>
+                    <div className="text-[10px] font-bold text-art-gray-900">
                       {(() => {
                         const mc = (token as any).marketCap;
-                        return mc ? `$${parseFloat(mc).toFixed(2)}` : '—';
+                        if (!mc) return '-';
+                        const num = parseFloat(mc);
+                        return num >= 1000000 ? `$${(num/1000000).toFixed(1)}M` : num >= 1000 ? `$${(num/1000).toFixed(1)}K` : `$${num.toFixed(0)}`;
                       })()}
                     </div>
-                    <div className="text-xs text-art-gray-500">MC</div>
+                    <div className="text-[8px] text-art-gray-400">MC</div>
                   </div>
-                  <div className="bg-art-gray-50 p-1 md:p-2 rounded-art text-center transform -rotate-1" style={{ borderRadius: '8px 5px 10px 3px' }}>
-                    <div className="text-xs md:text-sm font-bold text-art-gray-900">
+                  <div className="bg-art-gray-50 px-2 py-0.5 rounded-art text-center transform rotate-1 border border-art-gray-100" style={{ borderRadius: '6px 8px 3px 5px' }}>
+                    <div className="text-[10px] font-bold text-art-gray-900">
                       {(() => {
                         const vol = (token as any).volume24h;
-                        return vol ? `$${parseFloat(vol).toFixed(2)}` : '—';
+                        if (!vol) return '-';
+                        const num = parseFloat(vol);
+                        return num >= 1000000 ? `$${(num/1000000).toFixed(1)}M` : num >= 1000 ? `$${(num/1000).toFixed(1)}K` : `$${num.toFixed(0)}`;
                       })()}
                     </div>
-                    <div className="text-xs text-art-gray-500">VOL</div>
+                    <div className="text-[8px] text-art-gray-400">VOL</div>
                   </div>
-                  <div className="bg-art-gray-50 p-1 md:p-2 rounded-art text-center transform rotate-0.5" style={{ borderRadius: '12px 4px 6px 8px' }}>
-                    <div className="text-xs md:text-sm font-bold text-art-gray-900">
+                  <div className="bg-art-gray-50 px-2 py-0.5 rounded-art text-center transform rotate-0.5 border border-art-gray-100" style={{ borderRadius: '5px 7px 4px 6px' }}>
+                    <div className="text-[10px] font-bold text-art-gray-900">
                       {(token as any).uniqueHolders || 0}
                     </div>
-                    <div className="text-xs text-art-gray-500">HOLDERS</div>
+                    <div className="text-[8px] text-art-gray-400">HOLDERS</div>
                   </div>
+               </div>
+             </div>
+
+             {/* Right Side: Price Change & Actions */}
+             <div className="flex flex-col items-end gap-2">
+                <div className={`text-sm font-bold ${(() => {
+                    const priceChange = (token as any).marketCapDelta24h;
+                    if (priceChange && parseFloat(priceChange) > 0) return 'text-green-600';
+                    if (priceChange && parseFloat(priceChange) < 0) return 'text-red-600';
+                    return 'text-art-gray-500';
+                  })()}`}>
+                   {(() => {
+                     const priceChange = (token as any).marketCapDelta24h;
+                     return priceChange ? `${parseFloat(priceChange) >= 0 ? '+' : ''}${parseFloat(priceChange).toFixed(1)}%` : '0%';
+                   })()}
                 </div>
-              </div>
 
+                <div className="flex items-center gap-2">
+                  {/* Watchlist Button */}
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onToggleWatchlist) {
+                        onToggleWatchlist(token.contract_address, watchlistPriceHint);
+                      }
+                    }}
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded-full border-2 transition-colors shadow-sm ${
+                      isFavorite ? 'bg-red-50 text-red-500 border-art-gray-900' : 'bg-white text-art-gray-400 border-art-gray-900 hover:text-red-400'
+                    }`}
+                    style={{ borderRadius: '20px 15px 20px 15px' }}
+                  >
+                    <svg className={`w-3 h-3 ${isFavorite ? 'fill-current' : 'fill-none'}`} stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                    {watchlistCount > 0 && <span className="text-[10px] font-bold">{watchlistCount}</span>}
+                  </button>
 
-            </div>
-          </div>
+                  {/* Trade Button (Hand Drawn Style) */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTrade(token);
+                    }}
+                    className="hand-drawn-btn text-xs font-bold py-1.5 px-3 transform rotate-1 hover:scale-105 transition-transform duration-200"
+                    style={{ 
+                      borderRadius: '8px 6px 12px 4px',
+                      backgroundColor: '#48bb78',
+                      minWidth: '60px'
+                    }}
+                  >
+                    Trade
+                  </button>
+                </div>
+             </div>
+           </div>
           );
         })}
       </div>
@@ -220,6 +249,10 @@ export default function TokenGrid({ tokens, onTrade, onView, loading = false, vi
           onTrade={onTrade}
           onView={onView}
           showBalance={showBalance}
+          watchlistSet={watchlistSet}
+          onToggleWatchlist={onToggleWatchlist}
+          watchlistCount={watchlistStats?.[token.contract_address] || 0}
+          onCreatorClick={onCreatorClick}
         />
       ))}
     </div>

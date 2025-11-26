@@ -1,15 +1,5 @@
-function withValidProperties(
-  properties: Record<string, undefined | string | string[]>
-) {
-  return Object.fromEntries(
-    Object.entries(properties).filter(([_, value]) =>
-      Array.isArray(value) ? value.length > 0 : !!value
-    )
-  );
-}
-
 export async function GET() {
-  const URL = process.env.NEXT_PUBLIC_URL as string;
+  const URL = "https://drawcoin.app";
 
   const manifest = {
     accountAssociation: {
@@ -26,24 +16,22 @@ export async function GET() {
       version: "1",
       name: "DrawCoin",
       description: "Create and trade hand-drawn art tokens on Base.",
-      iconUrl: "https://drawcoin-mini.vercel.app/logo.png",
-      homeUrl: "https://drawcoin-mini.vercel.app",
-      webhookUrl: "https://drawcoin-mini.vercel.app/api/webhook",
-      imageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
-      screenshotUrls: [
-        "https://drawcoin-mini.vercel.app/images/screenshot1.png",
-      ],
+      iconUrl: `${URL}/logo.png`,
+      homeUrl: URL,
+      webhookUrl: `${URL}/api/webhook`,
+      imageUrl: `${URL}/opengraph-image.png`,
+      screenshotUrls: [`${URL}/images/screenshot1.png`],
       tags: ["nft", "tokens", "web3", "draw", "art"],
       primaryCategory: "art-creativity",
       buttonTitle: "Create Token",
-      splashImageUrl: "https://drawcoin-mini.vercel.app/logo.png",
+      splashImageUrl: `${URL}/logo.png`,
       splashBackgroundColor: "#fff",
       subtitle: "Hand-drawn art tokens on Base",
-      heroImageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
+      heroImageUrl: `${URL}/opengraph-image.png`,
       tagline: "Create and trade draw tokens",
       ogTitle: "DrawCoin",
       ogDescription: "Create and trade hand-drawn art tokens on the Base",
-      ogImageUrl: "https://drawcoin-mini.vercel.app/opengraph-image.png",
+      ogImageUrl: `${URL}/opengraph-image.png`,
       noindex: false,
     },
   };

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Coin } from "../../lib/supabase";
-import { getOnchainTokenDetails } from "../../services/sdk/getOnchainData";
+import { getCoinDetails } from "../../services/sdk/getCoins";
 import {
   useAccount,
   usePublicClient,
@@ -11,7 +11,7 @@ import {
   executeTrade,
   executeERC20Trade,
 } from "../../services/sdk/getTradeCoin";
-import { getETHPrice } from "../../services/ethPrice.js";
+import { getETHPrice } from "../../services/cryptoPrice";
 import { toast } from "react-hot-toast";
 import TradeSuccessModal from "./TradeSuccessModal";
 
@@ -27,11 +27,8 @@ export default function DetailsModal({
   token,
   isOpen,
   onClose,
-  onTrade,
   onTradeSuccess,
 }: DetailsModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   // Tabs: trade | details (info + image)
   const [activeTab, setActiveTab] = useState<"trade" | "details">("trade");
@@ -92,30 +89,19 @@ export default function DetailsModal({
     let mounted = true;
     const load = async () => {
       if (!isOpen || !token?.contract_address) return;
-      setLoading(true);
-      setError(null);
       try {
-        const details = await getOnchainTokenDetails(
-          token.contract_address,
-          address
-        );
+        const response: any = await getCoinDetails(token.contract_address);
+        const details = response?.zora20Token || response;
+
         if (!mounted) return;
-        if (details && !(details as any).hasError) {
+        if (details) {
           setData(details);
         } else {
           setData(null);
-          setError(
-            (details as any)?.rateLimited
-              ? "Rate limited. Try again shortly."
-              : (details as any)?.error || "Failed to load details"
-          );
         }
       } catch (e: any) {
         if (!mounted) return;
         setData(null);
-        setError(e?.message || "Failed to load details");
-      } finally {
-        if (mounted) setLoading(false);
       }
     };
     load();
@@ -221,11 +207,7 @@ export default function DetailsModal({
           setIsCreator(userIsCreator);
 
           if (userIsCreator) {
-            const totalSupply = parseFloat(
-              (token as any).totalSupply ||
-                (token as any).total_supply ||
-                "10000000000"
-            );
+           
             const initialSupply = 10000000; // 10M tokens
             const availableBalance = Math.max(
               0,
@@ -341,7 +323,7 @@ export default function DetailsModal({
     const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
     const toastId = toast.loading(
-      tradeType === "buy" 
+      tradeType === "buy"
         ? `Preparing to buy ${token.symbol} with ${selectedCurrency}...`
         : `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
       {
@@ -398,7 +380,7 @@ export default function DetailsModal({
         }
       } else {
         // Selling token for ETH
-        
+
         // Update toast message for sell operations
         toast.loading(
           `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
@@ -407,7 +389,7 @@ export default function DetailsModal({
             duration: 0,
           }
         );
-        
+
         await executeTrade({
           direction: "sell",
           coinAddress: token.contract_address,
@@ -439,7 +421,7 @@ export default function DetailsModal({
 
       // Refresh balances after successful trade
       await refreshBalances();
-      
+
       // Notify parent component about successful trade
       if (onTradeSuccess) {
         onTradeSuccess();
@@ -447,10 +429,8 @@ export default function DetailsModal({
 
       // Refresh balances after successful trade
       try {
-        const refreshed = await getOnchainTokenDetails(
-          token.contract_address,
-          address
-        );
+        const response: any = await getCoinDetails(token.contract_address);
+        const refreshed = response?.zora20Token || response;
         setData(refreshed);
 
         // Refresh ETH balance
@@ -867,8 +847,11 @@ export default function DetailsModal({
                               })()
                             : parseFloat(tokenBalance);
                         // For 100%, use 99.9% to avoid precision issues
-                        const adjustedPercentage = percentage === 1 ? 0.999 : percentage;
-                        const newAmount = (maxBalance * adjustedPercentage).toFixed(4);
+                        const adjustedPercentage =
+                          percentage === 1 ? 0.999 : percentage;
+                        const newAmount = (
+                          maxBalance * adjustedPercentage
+                        ).toFixed(4);
                         setAmount(newAmount);
                       }}
                       className="hand-drawn-input w-full h-3"
@@ -927,7 +910,9 @@ export default function DetailsModal({
                                 : parseFloat(tokenBalance);
                             // For 100%, use 99.9% to avoid precision issues
                             const percentage = p === 1 ? 0.999 : p;
-                            const newAmount = (maxBalance * percentage).toFixed(4);
+                            const newAmount = (maxBalance * percentage).toFixed(
+                              4
+                            );
                             setAmount(newAmount);
                           }}
                           className="hand-drawn-btn text-xs font-bold"

@@ -16,6 +16,7 @@ export interface CreateCoinData {
   chain_id?: number
   currency?: string
   platform_referrer?: string
+  creation_type?: 'ai' | 'hand-drawn'
 }
 
 export class CoinService {
@@ -41,6 +42,7 @@ export class CoinService {
           chain_id: coinData.chain_id || 8453, // Default to Base mainnet
           currency: coinData.currency || 'ETH',
           platform_referrer: coinData.platform_referrer,
+          creation_type: coinData.creation_type || 'hand-drawn', // Default to hand-drawn
           holders: 1, // Creator is the first holder
         })
         .select()
@@ -68,12 +70,38 @@ export class CoinService {
     limit?: number
     offset?: number
     search?: string
+    sort?: string
+    creation_type?: string
   }): Promise<Coin[]> {
     try {
       let query = supabase
         .from('drawcoins')
         .select('*')
-        .order('created_at', { ascending: false })
+
+      // Apply sorting
+      switch (params?.sort) {
+        case 'oldest':
+          query = query.order('created_at', { ascending: true })
+          break
+        case 'price-high':
+          // Note: This assumes current_price is updated in DB. 
+          // If not, this might not be accurate without Zora data, but we sort by what we have.
+          query = query.order('current_price', { ascending: false })
+          break
+        case 'price-low':
+          query = query.order('current_price', { ascending: true })
+          break
+        case 'holders-high':
+          query = query.order('holders', { ascending: false })
+          break
+        case 'volume-high':
+           query = query.order('volume_24h', { ascending: false })
+           break
+        case 'newest':
+        default:
+          query = query.order('created_at', { ascending: false })
+          break
+      }
 
       // Apply filters
       if (params?.category) {
@@ -82,6 +110,10 @@ export class CoinService {
 
       if (params?.creator_address) {
         query = query.eq('creator_address', params.creator_address)
+      }
+
+      if (params?.creation_type) {
+        query = query.eq('creation_type', params.creation_type)
       }
 
       if (params?.search) {

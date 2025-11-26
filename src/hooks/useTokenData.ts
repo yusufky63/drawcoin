@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { getOnchainTokenDetails } from '../services/sdk/getOnchainData';
-import { Coin } from '../lib/supabase';
+import { useState, useEffect } from "react";
+import { getCoinDetails } from "../services/sdk/getCoins";
+import { Coin } from "../lib/supabase";
+import { formatEther } from "viem";
 
 interface TokenData {
   holders: number;
@@ -39,11 +40,14 @@ function runLimited<T>(task: () => Promise<T>): Promise<T> {
   });
 }
 
-export function useTokenData(token: Coin | null, userAddress?: string): TokenData {
+export function useTokenData(
+  token: Coin | null,
+  userAddress?: string
+): TokenData {
   const [data, setData] = useState<TokenData>({
     holders: 0,
-    liquidity: '0',
-    marketCap: '0',
+    liquidity: "0",
+    marketCap: "0",
     loading: false,
     error: null,
   });
@@ -52,8 +56,8 @@ export function useTokenData(token: Coin | null, userAddress?: string): TokenDat
     if (!token?.contract_address) {
       setData({
         holders: 0,
-        liquidity: '0',
-        marketCap: '0',
+        liquidity: "0",
+        marketCap: "0",
         loading: false,
         error: null,
       });
@@ -73,55 +77,106 @@ export function useTokenData(token: Coin | null, userAddress?: string): TokenDat
 
       // Respect global rate-limit window
       if (globalRateLimitUntil > now) {
-        setData({ holders: 0, liquidity: '0', marketCap: '0', loading: false, error: 'Rate limited. Try again shortly.' });
+        setData({
+          holders: 0,
+          liquidity: "0",
+          marketCap: "0",
+          loading: false,
+          error: "Rate limited. Try again shortly.",
+        });
         return;
       }
 
-      setData(prev => ({ ...prev, loading: true, error: null }));
-      
+      setData((prev) => ({ ...prev, loading: true, error: null }));
+
       try {
         // De-duplicate concurrent requests per address + limit concurrency
         let p = pending.get(address);
         if (!p) {
-          p = runLimited(() => getOnchainTokenDetails(token.contract_address, userAddress));
+          p = runLimited(() => getCoinDetails(token.contract_address));
           pending.set(address, p);
         }
-        const details = await p;
+        const response = await p;
         pending.delete(address);
-        
-        if (details && !details.hasError) {
+
+        if (response) {
+          const details = response.zora20Token || response;
+
+          let formattedLiquidity = "0";
+          if (details.liquidity) {
+            try {
+              formattedLiquidity = parseFloat(
+                formatEther(BigInt(details.liquidity))
+              ).toFixed(4);
+            } catch {
+              formattedLiquidity = details.liquidity;
+            }
+          }
+
+          let formattedMarketCap = "0";
+          if (details.marketCap) {
+            try {
+              formattedMarketCap = parseFloat(details.marketCap).toFixed(2); // Market cap usually already in USD or formatted?
+              // Wait, Zora API marketCap is usually USD string.
+              // Let's check CoinInfoSection logic: `parseFloat(marketData.marketCap).toLocaleString()`.
+              // So it's likely a number string (USD).
+              // But `getOnchainData` returned `{ formatted: string }`.
+              // If `details.marketCap` is "1000.50", then `parseFloat` works.
+              formattedMarketCap = parseFloat(
+                details.marketCap
+              ).toLocaleString();
+            } catch {
+              formattedMarketCap = details.marketCap;
+            }
+          }
+
           const mapped: TokenData = {
-            holders: details.ownersCount || 0,
-            liquidity: details.liquidity?.formatted || '0',
-            marketCap: details.marketCap?.formatted || '0',
+            holders: details.uniqueHolders || 0,
+            liquidity: formattedLiquidity,
+            marketCap: formattedMarketCap,
             loading: false,
             error: null,
           };
           cache.set(address, { data: mapped, ts: Date.now() });
           setData(mapped);
         } else {
-          if (details?.rateLimited || details?.error === 'RATE_LIMIT') {
-            globalRateLimitUntil = Date.now() + 30_000; // 30s cooldown
-            const mapped: TokenData = { holders: 0, liquidity: '0', marketCap: '0', loading: false, error: 'Rate limited. Try again shortly.' };
-            cache.set(address, { data: mapped, ts: Date.now() });
-            setData(mapped);
-          } else {
-            const mapped: TokenData = { holders: 0, liquidity: '0', marketCap: '0', loading: false, error: 'Failed to load token data' };
-            cache.set(address, { data: mapped, ts: Date.now() });
-            setData(mapped);
-          }
+          const mapped: TokenData = {
+            holders: 0,
+            liquidity: "0",
+            marketCap: "0",
+            loading: false,
+            error: "Failed to load token data",
+          };
+          cache.set(address, { data: mapped, ts: Date.now() });
+          setData(mapped);
         }
       } catch (error: any) {
-        console.error('Error fetching token data:', error);
+        console.error("Error fetching token data:", error);
         const address = token.contract_address.toLowerCase();
-        const msg = String(error?.message || '').toLowerCase();
-        if (msg.includes('429') || msg.includes('rate limit') || msg.includes('too many requests')) {
+        const msg = String(error?.message || "").toLowerCase();
+        if (
+          msg.includes("429") ||
+          msg.includes("rate limit") ||
+          msg.includes("too many requests")
+        ) {
           globalRateLimitUntil = Date.now() + 30_000;
-          const mapped: TokenData = { holders: 0, liquidity: '0', marketCap: '0', loading: false, error: 'Rate limited. Try again shortly.' };
+          const mapped: TokenData = {
+            holders: 0,
+            liquidity: "0",
+            marketCap: "0",
+            loading: false,
+            error: "Rate limited. Try again shortly.",
+          };
           cache.set(address, { data: mapped, ts: Date.now() });
           setData(mapped);
         } else {
-          const mapped: TokenData = { holders: 0, liquidity: '0', marketCap: '0', loading: false, error: error.message || 'Failed to load token data' };
+          const mapped: TokenData = {
+            holders: 0,
+            liquidity: "0",
+            marketCap: "0",
+            loading: false,
+            error: error.message || "Failed to load token data",
+          };
           cache.set(address, { data: mapped, ts: Date.now() });
           setData(mapped);
         }
@@ -133,4 +188,3 @@ export function useTokenData(token: Coin | null, userAddress?: string): TokenDat
 
   return data;
 }
-

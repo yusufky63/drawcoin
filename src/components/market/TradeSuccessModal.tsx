@@ -1,5 +1,4 @@
 import React from 'react';
-import { useRouter } from 'next/navigation';
 import { sdk as miniAppSdk } from '@farcaster/miniapp-sdk';
 import { Coin } from '../../lib/supabase';
 
@@ -20,7 +19,6 @@ export default function TradeSuccessModal({
   token,
   tokenPrice
 }: TradeSuccessModalProps) {
-  const router = useRouter();
 
   const handleShare = async () => {
     try {
@@ -30,7 +28,7 @@ export default function TradeSuccessModal({
 
       await miniAppSdk.actions.composeCast({
         text: shareText,
-        embeds: [`https://drawcoin-mini.vercel.app/coin/${token.contract_address}`]
+        embeds: [`https://drawcoin.app/coin/${token.contract_address}`]
       });
     } catch (error) {
       console.error('Error sharing trade:', error);

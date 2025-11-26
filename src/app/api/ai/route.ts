@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  generateImageWithAI,
-} from "../../../services/aiService";
+import { generateImageWithAI } from "../../../services/aiService";
 
-// Rate limiting variables
-const apiCalls = new Map<string, { count: number; lastReset: number }>();
-const MAX_CALLS_PER_MINUTE = 10; // Increase rate limit
-const MINUTE = 60 * 1000;
-
-// Timeout for API requests
-const API_TIMEOUT = 60000; // 60 seconds (1 dakika)
 
 // CORS headers - izin verilen kaynaklar
 const corsHeaders = {
@@ -18,54 +9,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Content-Type": "application/json",
 };
-
-// Helper function to handle timeouts
-const withTimeout = <T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  errorMessage: string
-): Promise<T> => {
-  let timeoutHandle: NodeJS.Timeout;
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      reject(new Error(errorMessage));
-    }, timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    clearTimeout(timeoutHandle);
-  }) as Promise<T>;
-};
-
-// Rate limiting function
-function isRateLimited(action: string): boolean {
-  const now = Date.now();
-  const key = action;
-
-  if (!apiCalls.has(key)) {
-    apiCalls.set(key, { count: 1, lastReset: now });
-    return false;
-  }
-
-  const record = apiCalls.get(key)!;
-
-  // Reset counter if a minute has passed
-  if (now - record.lastReset > MINUTE) {
-    record.count = 1;
-    record.lastReset = now;
-    return false;
-  }
-
-  // Check if rate limit exceeded
-  if (record.count >= MAX_CALLS_PER_MINUTE) {
-    return true;
-  }
-
-  // Increment count
-  record.count++;
-  return false;
-}
 
 
 // OPTIONS method handler for CORS preflight requests
@@ -85,7 +28,7 @@ export async function POST(request: NextRequest) {
     const baseHeaders = { ...corsHeaders };
 
     // Get API key
-    const TOGETHER_API_KEY = process.env.NEXT_PUBLIC_TOGETHER_API_KEY;
+    const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
     console.log("API key exists:", !!TOGETHER_API_KEY);
     console.log(
       "API key first few chars:",
@@ -94,17 +37,9 @@ export async function POST(request: NextRequest) {
 
     if (!TOGETHER_API_KEY) {
       console.error("❌ Missing API key in environment variables");
-
-      // Attempt to use fallback mockup data
       return NextResponse.json(
-        {
-          error: "API key missing. Using fallback data.",
-          name: "RetroToken",
-          symbol: "RTK",
-          description:
-            "A throwback token with retro styling features for the cryptocurrency enthusiasts who appreciate classic aesthetics.",
-        },
-        { status: 200, headers: baseHeaders }
+        { error: "Missing API key in environment variables" },
+        { status: 500, headers: baseHeaders }
       );
     }
 
@@ -128,7 +63,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { action, description } = body;
+    const { action, description, userAddress } = body;
 
     if (!action) {
       return NextResponse.json(
@@ -139,17 +74,88 @@ export async function POST(request: NextRequest) {
 
     console.log(`🎬 Processing ${action} action`);
 
-    // Rate limiting kaldırıldı - daha esnek istek yönetimi için
-    // if (isRateLimited(action)) {
-    //   console.warn("⚠️ Rate limit exceeded for action:", action);
-    //   return NextResponse.json(
-    //     { error: "Rate limit exceeded. Please try again later." },
-    //     { status: 429, headers: baseHeaders }
-    //   );
-    // }
-
     if (action === "image") {
       console.log("🖼️ Image generation requested");
+
+      // Check AI limits if userAddress is provided
+      if (userAddress) {
+        try {
+          const { supabaseAdmin } = await import("../../../lib/supabase");
+
+          if (supabaseAdmin) {
+            const { data: user } = await supabaseAdmin
+              .from("users")
+              .select("daily_ai_usage, last_reset_date")
+              .eq("address", userAddress)
+              .single();
+
+            const now = new Date();
+            const DAILY_LIMIT = 3; // ✅ Changed from 5 to 3
+
+            if (user && user.last_reset_date) {
+              const lastReset = new Date(user.last_reset_date);
+
+              // Check if we need to reset (different day)
+              const isDifferentDay =
+                lastReset.getDate() !== now.getDate() ||
+                lastReset.getMonth() !== now.getMonth() ||
+                lastReset.getFullYear() !== now.getFullYear();
+
+              if (isDifferentDay) {
+                // ✅ Reset: Start fresh with usage = 1 and update reset date
+                await supabaseAdmin
+                  .from("users")
+                  .update({
+                    daily_ai_usage: 1,
+                    last_reset_date: now.toISOString(),
+                  })
+                  .eq("address", userAddress);
+              } else {
+                // Same day - check limit
+                const currentUsage = user.daily_ai_usage || 0;
+
+                if (currentUsage >= DAILY_LIMIT) {
+                  // Calculate time until next reset (midnight)
+                  const tomorrow = new Date(now);
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  tomorrow.setHours(0, 0, 0, 0);
+                  const hoursUntilReset = Math.ceil(
+                    (tomorrow.getTime() - now.getTime()) / (1000 * 60 * 60)
+                  );
+
+                  return NextResponse.json(
+                    {
+                      error: `Daily AI draw limit reached (${DAILY_LIMIT}/${DAILY_LIMIT}). Please try again in ${hoursUntilReset} hours.`,
+                      resetTime: tomorrow.toISOString(),
+                      hoursUntilReset,
+                    },
+                    { status: 429, headers: baseHeaders }
+                  );
+                }
+
+                // ✅ Increment usage - DO NOT update last_reset_date
+                await supabaseAdmin
+                  .from("users")
+                  .update({
+                    daily_ai_usage: currentUsage + 1,
+                  })
+                  .eq("address", userAddress);
+              }
+            } else {
+              // Create user record if not exists
+              await supabaseAdmin.from("users").upsert({
+                address: userAddress,
+                daily_ai_usage: 1,
+                last_reset_date: now.toISOString(),
+              });
+            }
+          }
+        } catch (limitError) {
+          console.error("Error checking AI limits:", limitError);
+          // Continue even if limit check fails, to avoid blocking users due to DB errors
+        }
+      }
+
       try {
         if (!description) {
           return NextResponse.json(

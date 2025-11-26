@@ -1,15 +1,30 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from "wagmi";
+import {
+  useAccount,
+  useWalletClient,
+  usePublicClient,
+  useSwitchChain,
+} from "wagmi";
+import { formatEther, erc20Abi } from "viem";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { Coin } from "../../lib/supabase";
-import { getOnchainTokenDetails } from "../../services/sdk/getOnchainData";
 import { getCoinDetails } from "../../services/sdk/getCoins";
-import { executeTrade, executeERC20Trade, getZORATokenAddress } from "../../services/sdk/getTradeCoin";
-import { getETHPrice } from "../../services/ethPrice";
+import { getGeckoTerminalPool } from "../../services/sdk/getGeckoData";
+import { getETHPrice } from "../../services/cryptoPrice";
 import TradeSuccessModal from "../market/TradeSuccessModal";
+import { useWatchlist } from "../../hooks/useWatchlist";
+import CoinShareModal from "./CoinShareModal";
+import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
+
+// New Components
+import { CoinHeader } from "./details/CoinHeader";
+import { CoinVisuals } from "./details/CoinVisuals";
+import { CoinSummaryCard } from "./details/CoinSummaryCard";
+import { CoinTradeCard } from "./details/CoinTradeCard";
+import { CoinInfoSection } from "./details/CoinInfoSection";
 
 interface CoinDetailPageProps {
   token: Coin;
@@ -22,1007 +37,510 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
+  const { isWatchlisted, toggleWatchlist } = useWatchlist();
 
   // State
   const [loading, setLoading] = useState(false);
-  const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
-  const [amount, setAmount] = useState<string>('');
-  const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 30%)
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
+  const [amount, setAmount] = useState<string>("");
+  const [slippage, setSlippage] = useState(0.05); // 5% default slippage
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
-  const [ethBalance, setEthBalance] = useState<string>('0');
-  const [tokenBalance, setTokenBalance] = useState<string>('0');
+  const [ethBalance, setEthBalance] = useState<string>("0");
+  const [tokenBalance, setTokenBalance] = useState<string>("0");
   const [ethPrice, setEthPrice] = useState<number>(0);
-  const [selectedCurrency, setSelectedCurrency] = useState<'ETH' | 'USDC'>('ETH');
-  const [usdcBalance, setUsdcBalance] = useState<string>('0');
+  const [selectedCurrency, setSelectedCurrency] = useState<"ETH" | "USDC">(
+    "ETH"
+  );
+  const [usdcBalance, setUsdcBalance] = useState<string>("0");
   const [showTokenSelect, setShowTokenSelect] = useState(false);
-  const [availableTokens, setAvailableTokens] = useState<Array<{symbol: string, address: string, balance: string}>>([]);
-  const [onchainData, setOnchainData] = useState<any>(null);
+  const [availableTokens, setAvailableTokens] = useState<
+    Array<{ symbol: string; address: string; balance: string }>
+  >([]);
   const [marketData, setMarketData] = useState<any>(null);
+  const [poolAddress, setPoolAddress] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [isCreator, setIsCreator] = useState<boolean>(false);
 
-  // Token addresses on Base
-  const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+  // Helper function to resolve price numbers
+  const resolvePriceNumber = (value: any) => {
+    if (value === null || value === undefined) return undefined;
+    const parsed = typeof value === "number" ? value : parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
 
-  // Fetch ETH price
+  // Calculate watchlist price hint from state
+  const watchlistPriceHint = {
+    priceUsd: resolvePriceNumber(
+      marketData?.tokenPrice?.priceInUsdc ??
+        marketData?.tokenPrice?.priceInUsd ??
+        token.current_price
+    ),
+    priceEth: resolvePriceNumber(
+      marketData?.tokenPrice?.priceInPoolToken ??
+        marketData?.tokenPrice?.priceInEth
+    ),
+  };
+
+  const isFavorite = isWatchlisted(token.contract_address);
+
+  // Token addresses on Base
+  const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+  // Initial loading
   useEffect(() => {
-    const fetchETHPrice = async () => {
-      try {
-        const price = await getETHPrice();
-        setEthPrice(price);
-      } catch (error) {
-        console.error('Error fetching ETH price:', error);
-      }
-    };
-    fetchETHPrice();
+    const timer = setTimeout(() => {
+      setInitialLoading(false);
+    }, 1000);
+    return () => clearTimeout(timer);
   }, []);
 
-
-  // Fetch market data from Zora API (always fetch, regardless of user connection)
+  // Fetch pool address from GeckoTerminal
   useEffect(() => {
-    const fetchMarketData = async () => {
-      try {
-        const details = await getCoinDetails(token.contract_address);
-        setMarketData(details);
-      } catch (error) {
-        console.error('Error fetching market data:', error);
-      }
-    };
-
-    fetchMarketData();
-  }, [token.contract_address]);
-
-  // Fetch onchain data (always fetch, regardless of user connection)
-  useEffect(() => {
-    const fetchOnchainData = async () => {
-      try {
-        const details = await getOnchainTokenDetails(token.contract_address);
-        setOnchainData(details);
-      } catch (error) {
-        console.error('Error fetching onchain data:', error);
-      }
-    };
-
-    fetchOnchainData();
-  }, [token.contract_address]);
-
-  // Fetch balances (only when user is connected)
-  useEffect(() => {
-    const fetchBalances = async () => {
-      if (!address || !publicClient) return;
-
-      try {
-        // Fetch ETH balance
-        const ethBalance = await publicClient.getBalance({ address });
-        setEthBalance((Number(ethBalance) / 1e18).toFixed(4));
-
-        // Fetch USDC balance
-        const usdcBalance = await publicClient.readContract({
-          address: USDC_ADDRESS as `0x${string}`,
-          abi: [{
-            "constant": true,
-            "inputs": [{"name": "_owner", "type": "address"}],
-            "name": "balanceOf",
-            "outputs": [{"name": "balance", "type": "uint256"}],
-            "type": "function"
-          }],
-          functionName: "balanceOf",
-          args: [address as `0x${string}`]
-        });
-        setUsdcBalance((Number(usdcBalance) / 10**6).toFixed(2));
-
-        // Fetch token balance
-        const tokenBalance = await publicClient.readContract({
-          address: token.contract_address as `0x${string}`,
-          abi: [
-            {
-              "constant": true,
-              "inputs": [{"name": "_owner", "type": "address"}],
-              "name": "balanceOf",
-              "outputs": [{"name": "balance", "type": "uint256"}],
-              "type": "function"
-            }
-          ],
-          functionName: 'balanceOf',
-          args: [address]
-        });
-        
-        let balance = (Number(tokenBalance) / 1e18).toFixed(4);
-        
-        // If user is the creator, filter out the 10M initial supply
-        const creatorAddress = (token as any).creatorAddress || (token as any).creator_address;
-        const userIsCreator = creatorAddress && address.toLowerCase() === creatorAddress.toLowerCase();
-        setIsCreator(userIsCreator);
-        
-        if (userIsCreator) {
-          const totalSupply = parseFloat((token as any).totalSupply || (token as any).total_supply || '10000000000');
-          const initialSupply = 10000000; // 10M tokens
-          const availableBalance = Math.max(0, parseFloat(balance) - initialSupply);
-          balance = availableBalance.toFixed(4);
-          console.log("Creator detected - filtered 10M initial supply. Available balance:", balance);
-        }
-        
-        setTokenBalance(balance);
-      } catch (error) {
-        console.error('Error fetching balances:', error);
-      }
-    };
-
-    fetchBalances();
-  }, [address, publicClient, token.contract_address]);
-
-  // Fetch available tokens for selection
-  useEffect(() => {
-    const fetchAvailableTokens = async () => {
-      if (address && publicClient) {
+    const fetchPool = async () => {
+      if (token.contract_address) {
         try {
-          const tokens = [
-            { symbol: 'ETH', address: 'ETH', balance: ethBalance },
-            { symbol: 'USDC', address: USDC_ADDRESS, balance: usdcBalance }
-          ];
-          setAvailableTokens(tokens);
+          const poolAddress = await getGeckoTerminalPool(
+            token.contract_address
+          );
+          if (poolAddress) {
+            setPoolAddress(poolAddress);
+          }
         } catch (error) {
-          console.error("Failed to fetch available tokens:", error);
+          console.error("Error fetching pool:", error);
         }
       }
     };
-    fetchAvailableTokens();
-  }, [address, publicClient, ethBalance, usdcBalance]);
+    fetchPool();
+  }, [token.contract_address]);
 
+  // Fetch Onchain Data
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchData = async () => {
+      try {
+        const market = await getCoinDetails(token.contract_address);
+
+        if (mounted) {
+          if (market) setMarketData(market);
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [token.contract_address]);
+
+  // Fetch ETH Price
+  useEffect(() => {
+    const fetchEthPrice = async () => {
+      const price = await getETHPrice();
+      if (price) setEthPrice(price);
+    };
+    fetchEthPrice();
+  }, []);
+
+  // Fetch Balances
+  const fetchBalances = async () => {
+    if (!address || !publicClient) return;
+
+    try {
+      // ETH Balance
+      const ethBal = await publicClient.getBalance({ address });
+      setEthBalance(parseFloat(formatEther(ethBal)).toFixed(4));
+
+      // Token Balance
+      const tokenBal = await publicClient.readContract({
+        address: token.contract_address as `0x${string}`,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      });
+      setTokenBalance(parseFloat(formatEther(tokenBal as bigint)).toFixed(4));
+
+      // USDC Balance
+      const usdcBal = await publicClient.readContract({
+        address: USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      });
+      setUsdcBalance(parseFloat(formatEther(usdcBal as bigint)).toFixed(4));
+
+      // Update available tokens list
+      setAvailableTokens([
+        {
+          symbol: "ETH",
+          address: "0x0000000000000000000000000000000000000000",
+          balance: parseFloat(formatEther(ethBal)).toFixed(4),
+        },
+        {
+          symbol: "USDC",
+          address: USDC_ADDRESS,
+          balance: parseFloat(formatEther(usdcBal as bigint)).toFixed(4),
+        },
+      ]);
+
+      // Check Creator Status
+      if (token.creatorAddress) {
+        setIsCreator(
+          address.toLowerCase() === token.creatorAddress.toLowerCase()
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching balances:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (isConnected) {
+      fetchBalances();
+      const interval = setInterval(fetchBalances, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isConnected, address, token.contract_address]);
+
+  // Handle Trade
   const handleTrade = async () => {
-    if (!isConnected || !walletClient || !publicClient || !address) {
-      toast.error("Please connect your wallet first");
+    if (!isConnected) {
+      toast.error("Please connect your wallet");
       return;
     }
-    
-    // Token addresses on Base
-    const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
     if (!amount || parseFloat(amount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
     }
 
-    const loadingToast = toast.loading(`${tradeType === 'buy' ? 'Processing buy...' : 'Processing sell...'}`);
-
+    setLoading(true);
     try {
-      if (tradeType === 'buy') {
-        // Buying with different currencies
-        if (selectedCurrency === 'ETH') {
-          // ETH to Token - pass amount as string, let executeTrade handle conversion
-          await executeTrade({
-            direction: 'buy',
-            coinAddress: token.contract_address,
-            amountIn: amount, // Pass as string, not BigInt
-            recipient: address,
-            slippage: slippage,
-            walletClient,
-            publicClient,
-            account: address,
-            switchChain,
-            creatorAddress: (token as any).creatorAddress || (token as any).creator_address
-          } as any);
-        } else {
-          // USDC to Token
-          const sellTokenAddress = USDC_ADDRESS;
-          const decimals = 6;
-          const amountInBigInt = BigInt(Math.floor(parseFloat(amount) * Math.pow(10, decimals)));
-          
-          // Update loading message for ERC20 trades
-          toast.loading(
-            `Approving ${selectedCurrency} for trading... This may require 2 transactions.`,
-            { 
-              id: loadingToast,
-              duration: 0
-            }
-          );
-          
-          await executeERC20Trade({
-            sellTokenAddress,
-            buyTokenAddress: token.contract_address,
-            amountIn: amountInBigInt,
-            recipient: address,
-            slippage: slippage,
-            walletClient,
-            publicClient,
-            account: address,
-            switchChain,
-            creatorAddress: (token as any).creatorAddress || (token as any).creator_address
-          } as any);
+      // Check wallet and public clients
+      if (!publicClient || !walletClient) {
+        toast.error("Wallet client not available");
+        return;
+      }
+      const chainId = await publicClient.getChainId();
+
+      // Check if we're on Base mainnet (8453)
+      if (chainId !== 8453) {
+        try {
+          await switchChain({ chainId: 8453 });
+        } catch (switchError) {
+          toast.error("Please switch to Base network");
+          return;
         }
-      } else {
-        // Selling token for ETH - pass amount as string, let executeTrade handle conversion
-        
-        // Update loading message for sell operations
-        toast.loading(
-          `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
-          { 
-            id: loadingToast,
-            duration: 0
-          }
+      }
+
+      // Import trade execution function
+      const { executeTrade } = await import("../../services/sdk/getTradeCoin");
+
+      const tradeParams = {
+        direction: tradeType, // 'buy' or 'sell'
+        coinAddress: token.contract_address,
+        amountIn: amount, // Keep as string
+        recipient: address!,
+        slippage,
+        walletClient,
+        publicClient,
+        account: address!,
+        switchChain,
+        creatorAddress: token.creator_address || null,
+      };
+
+      console.log("Executing trade with params:", tradeParams);
+
+      const result = (await executeTrade(tradeParams)) as any;
+
+      // executeTrade returns transaction receipt, check for hash
+      if (result && (result.transactionHash || result.hash)) {
+        const txHash = result.transactionHash || result.hash;
+        toast.success(
+          `${
+            tradeType === "buy" ? "Purchase" : "Sale"
+          } successful! Tx: ${txHash.substring(0, 10)}...`
         );
-        
-        await executeTrade({
-          direction: 'sell',
-          coinAddress: token.contract_address,
-          amountIn: amount, // Pass as string, not BigInt
-          recipient: address,
-          slippage: slippage,
-          walletClient,
-          publicClient,
-          account: address,
-          switchChain,
-          creatorAddress: (token as any).creatorAddress || (token as any).creator_address
-        } as any);
+
+        // Analytics is already handled in getTradeCoin.js executeUniversalTrade
+        console.log("✅ Trade completed, analytics handled by SDK");
+
+        setShowSuccessModal(true);
+        setAmount(""); // Clear amount
+
+        // Refresh balances after a short delay
+        setTimeout(() => {
+          fetchBalances();
+        }, 2000);
+      } else {
+        console.error("Trade result:", result);
+        toast.error("Trade failed - no transaction hash received");
       }
-
-      toast.success(`${tradeType === 'buy' ? 'Buy' : 'Sell'} successful!`);
-      
-      // Show success modal
-      setShowSuccessModal(true);
-      
-      // Refresh balances
-      await refreshBalances();
-
-      setAmount('');
     } catch (error: any) {
-      console.error('Trade error:', error);
-      
-      // User-friendly error messages
-      let errorMessage = 'Transaction failed';
-      
-      if (error?.message?.includes('User rejected') || error?.message?.includes('denied transaction')) {
-        errorMessage = 'Transaction cancelled by user';
-      } else if (error?.message?.includes('insufficient funds')) {
-        errorMessage = 'Insufficient funds';
-      } else if (error?.message?.includes('gas')) {
-        errorMessage = 'Transaction failed - try again';
-      } else if (error?.message?.includes('Quote failed') || error?.message?.includes('500')) {
-        errorMessage = 'Token not ready for trading yet';
-      } else if (error?.message?.includes('Internal Server Error')) {
-        errorMessage = 'Service temporarily unavailable';
-      } else if (error?.message) {
-        // Keep original message but make it shorter
-        errorMessage = error.message.length > 50 ? error.message.substring(0, 50) + '...' : error.message;
+      console.error("Trade error:", error);
+
+      // Handle specific error types
+      if (error.message?.includes("User rejected")) {
+        toast.error("Transaction cancelled by user");
+      } else if (error.message?.includes("insufficient funds")) {
+        toast.error("Insufficient balance for this trade");
+      } else if (error.message?.includes("slippage")) {
+        toast.error("Price moved too much. Try increasing slippage tolerance.");
+      } else {
+        toast.error(error.message || "Trade failed. Please try again.");
       }
-      
-      toast.error(`❌ ${tradeType === 'buy' ? 'Buy' : 'Sell'} failed: ${errorMessage}`);
     } finally {
-      toast.dismiss(loadingToast);
+      setLoading(false);
     }
   };
 
-  const handleQuickPercent = (percent: number) => {
-    const balance = tradeType === 'buy' 
-      ? (() => {
-          switch (selectedCurrency) {
-            case 'ETH': return ethBalance;
-            case 'USDC': return usdcBalance;
-            default: return ethBalance;
-          }
-        })()
-      : tokenBalance;
-    const newAmount = (parseFloat(balance) * percent / 100).toFixed(4);
-    setAmount(newAmount);
-  };
+  // Calculate USD Value
+  const usdValue = amount
+    ? parseFloat(amount) *
+      (tradeType === "buy"
+        ? selectedCurrency === "ETH"
+          ? ethPrice
+          : 1 // USDC is approx $1
+        : parseFloat(marketData?.tokenPrice?.priceInUsdc || "0"))
+    : 0;
 
-  // Refresh balances function
-  const refreshBalances = async () => {
-    if (!address || !publicClient || !token?.contract_address) return;
-    
-    try {
-      // Refresh ETH balance
-      const ethBalance = await publicClient.getBalance({ address });
-      setEthBalance((Number(ethBalance) / 1e18).toFixed(4));
-
-      // Refresh USDC balance
-      const usdcBalance = await publicClient.readContract({
-        address: USDC_ADDRESS as `0x${string}`,
-        abi: [{
-          "constant": true,
-          "inputs": [{"name": "_owner", "type": "address"}],
-          "name": "balanceOf",
-          "outputs": [{"name": "balance", "type": "uint256"}],
-          "type": "function"
-        }],
-        functionName: "balanceOf",
-        args: [address as `0x${string}`]
-      });
-      setUsdcBalance((Number(usdcBalance) / 10**6).toFixed(2));
-
-      // Refresh token balance
-      const tokenBalance = await publicClient.readContract({
-        address: token.contract_address as `0x${string}`,
-        abi: [
-          {
-            "constant": true,
-            "inputs": [{"name": "_owner", "type": "address"}],
-            "name": "balanceOf",
-            "outputs": [{"name": "balance", "type": "uint256"}],
-            "type": "function"
-          }
-        ],
-        functionName: 'balanceOf',
-        args: [address]
-      });
-      
-      let balance = (Number(tokenBalance) / 1e18).toFixed(4);
-      
-      // If user is the creator, filter out the 10M initial supply
-      const creatorAddress = (token as any).creatorAddress || (token as any).creator_address;
-      const userIsCreator = creatorAddress && address.toLowerCase() === creatorAddress.toLowerCase();
-      setIsCreator(userIsCreator);
-      
-      if (userIsCreator) {
-        const totalSupply = parseFloat((token as any).totalSupply || (token as any).total_supply || '10000000000');
-        const initialSupply = 10000000; // 10M tokens
-        const availableBalance = Math.max(0, parseFloat(balance) - initialSupply);
-        balance = availableBalance.toFixed(4);
-        console.log("Creator detected - filtered 10M initial supply. Available balance:", balance);
-      }
-      
-      setTokenBalance(balance);
-    } catch (error) {
-      console.error('Error refreshing balances:', error);
-    }
-  };
-
-  const maxBalance = tradeType === 'buy' 
-    ? (() => {
-        switch (selectedCurrency) {
-          case 'ETH': return parseFloat(ethBalance);
-          case 'USDC': return parseFloat(usdcBalance);
-          default: return parseFloat(ethBalance);
-        }
-      })()
-    : parseFloat(tokenBalance);
-  const usdValue = (() => {
-    if (!amount) return 0;
-    if (tradeType === 'buy') {
-      if (selectedCurrency === 'USDC') {
-        // USDC is already in USD
-        return parseFloat(amount);
-      } else if (selectedCurrency === 'ETH') {
-        // ETH to USD conversion
-        return parseFloat(amount) * ethPrice;
-      }
+  // Max Balance for Slider - with Creator restrictions
+  const maxBalance = (() => {
+    if (tradeType === "buy") {
+      return selectedCurrency === "ETH"
+        ? parseFloat(ethBalance)
+        : parseFloat(usdcBalance);
     } else {
-      // Token to USD conversion
-      const tokenPrice = (token as any).tokenPrice?.priceInUsdc;
-      return tokenPrice ? parseFloat(amount) * parseFloat(tokenPrice) : 0;
+      // Sell case
+      const currentTokenBalance = parseFloat(tokenBalance);
+
+      if (isCreator) {
+        // Creator restriction: 10M tokens are reserved (locked)
+        const CREATOR_RESERVED_TOKENS = 10_000_000;
+        const availableTokens = Math.max(
+          0,
+          currentTokenBalance - CREATOR_RESERVED_TOKENS
+        );
+
+        // Use 99.5% of available tokens to prevent precision errors
+        return availableTokens * 0.995;
+      } else {
+        // Regular user: use 99.9% to prevent precision errors
+        return currentTokenBalance * 0.999;
+      }
     }
   })();
 
-  return (
-    <div className="min-h-screen bg-art-gray-50">
+  // Show skeleton on initial load
+  if (initialLoading) {
+    return (
       <div className="max-w-7xl mx-auto p-4">
-        {/* Header */}
-        <div className="mb-6">
+        <div className="space-y-6">
+          {/* Header Skeleton */}
+          <div className="flex justify-between items-center">
+            <HandDrawnSkeleton variant="circle" className="w-10 h-10" />
+            <div className="flex gap-2">
+              <HandDrawnSkeleton variant="circle" className="w-10 h-10" />
+              <HandDrawnSkeleton variant="circle" className="w-10 h-10" />
+            </div>
+          </div>
+
+          {/* Content Grid Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-10 gap-4">
+            {/* Left Side - Visual Skeleton */}
+            <div className="lg:col-span-6 space-y-4">
+              <div className="hand-drawn-card p-4 animate-pulse">
+                <div className="w-full h-96 bg-art-gray-200 rounded-art" />
+              </div>
+              <div className="hand-drawn-card p-4 animate-pulse">
+                <div className="w-full h-64 bg-art-gray-200 rounded-art" />
+              </div>
+            </div>
+
+            {/* Right Side - Trade Card Skeleton */}
+            <div className="lg:col-span-4">
+              <div className="hand-drawn-card p-4 animate-pulse space-y-4">
+                <HandDrawnSkeleton variant="text" className="w-3/4 h-8" />
+                <HandDrawnSkeleton variant="text" className="w-1/2 h-6" />
+                <div className="space-y-2">
+                  <HandDrawnSkeleton variant="text" className="w-full h-12" />
+                  <HandDrawnSkeleton variant="text" className="w-full h-12" />
+                  <HandDrawnSkeleton variant="text" className="w-full h-16" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Section Skeleton */}
+          <HandDrawnSkeleton variant="table" count={3} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto p-4">
+      {/* Header Actions (Top of Page) */}
+      <div className="flex justify-between items-center mb-4">
+        {/* Back Button */}
+        <button
+          onClick={onBack || (() => router.back())}
+          className="p-2 transform -rotate-1 hover:scale-105 transition-transform bg-white border-2 border-art-gray-900 shadow-[3px_3px_0px_#2d3748] hover:shadow-[4px_4px_0px_#2d3748] active:shadow-[1px_1px_0px_#2d3748] active:translate-y-[1px]"
+          style={{
+            borderRadius: "50%",
+            width: "40px",
+            height: "40px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <svg
+            className="w-5 h-5 text-art-gray-900"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.5}
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+        </button>
+
+        {/* Right Actions */}
+        <div className="flex gap-2">
           <button
-            onClick={onBack}
-            className="hand-drawn-btn text-sm font-bold px-3 py-1 transform rotate-1 mb-2"
-            style={{ 
-              padding: '0.25rem 0.75rem',
-              borderRadius: '6px 2px 4px 3px'
+            onClick={() =>
+              toggleWatchlist(token.contract_address, watchlistPriceHint)
+            }
+            className={`p-2 transform rotate-1 hover:scale-105 transition-transform bg-white border-2 border-art-gray-900 shadow-[3px_3px_0px_#2d3748] hover:shadow-[4px_4px_0px_#2d3748] active:shadow-[1px_1px_0px_#2d3748] active:translate-y-[1px] ${
+              isFavorite
+                ? "text-red-500"
+                : "text-art-gray-400 hover:text-red-400"
+            }`}
+            style={{
+              borderRadius: "50%",
+              width: "40px",
+              height: "40px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            ← Back
+            <svg
+              className="w-5 h-5"
+              fill={isFavorite ? "currentColor" : "none"}
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+              />
+            </svg>
           </button>
-          <h1 className="text-2xl font-bold text-art-gray-900 transform -rotate-1">
-            {token.name} ({token.symbol})
-          </h1>
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="p-2 transform -rotate-1 hover:scale-105 transition-transform bg-white border-2 border-art-gray-900 shadow-[3px_3px_0px_#2d3748] hover:shadow-[4px_4px_0px_#2d3748] active:shadow-[1px_1px_0px_#2d3748] active:translate-y-[1px] text-art-gray-400 hover:text-blue-500"
+            style={{
+              borderRadius: "50%",
+              width: "40px",
+              height: "40px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+              />
+            </svg>
+          </button>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Side - Image */}
-          <div className="hand-drawn-card">
-            <div className="bg-art-gray-100 rounded-art-lg overflow-hidden p-4" style={{ borderRadius: '20px 10px 25px 15px' }}>
-              {token.image_url ? (
-                <img
-                  src={token.image_url}
-                  alt={token.name}
-                  className="w-full h-auto object-contain"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    const nextElement = target.nextElementSibling as HTMLElement;
-                    if (nextElement) {
-                      nextElement.style.display = 'flex';
-                    }
-                  }}
-                />
-              ) : null}
-              <div 
-                className="w-full h-64 flex items-center justify-center text-6xl font-bold text-art-gray-400"
-                style={{ display: token.image_url ? 'none' : 'flex' }}
-              >
-                🎨
-              </div>
-            </div>
-          </div>
+      </div>
 
-          {/* Right Side - Trading */}
-          <div className="hand-drawn-card">
-            <div className="p-4">
-              {/* Trade Type Toggle */}
-              <div className="flex space-x-2 mb-4">
-                <button
-                  onClick={() => setTradeType('buy')}
-                  className={`hand-drawn-btn flex-1 text-sm font-bold ${
-                    tradeType === 'buy' ? 'secondary' : ''
-                  }`}
-                  style={{ 
-                    transform: tradeType === 'buy' ? 'rotate(-1deg)' : 'rotate(0.5deg)',
-                    backgroundColor: tradeType === 'buy' ? undefined : 'transparent',
-                    color: tradeType === 'buy' ? undefined : '#2d3748'
-                  }}
-                >
-                  Buy
-                </button>
-                <button
-                  onClick={() => setTradeType('sell')}
-                  className={`hand-drawn-btn flex-1 text-sm font-bold ${
-                    tradeType === 'sell' ? 'danger' : ''
-                  }`}
-                  style={{ 
-                    transform: tradeType === 'sell' ? 'rotate(1deg)' : 'rotate(-0.5deg)',
-                    backgroundColor: tradeType === 'sell' ? undefined : 'transparent',
-                    color: tradeType === 'sell' ? undefined : '#2d3748'
-                  }}
-                >
-                  Sell
-                </button>
-              </div>
-
-              {/* Slippage Setting - Toggle */}
-              <div className="mb-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-art-gray-500">
-                    Slippage: {Math.round(slippage * 100)}%
-                  </div>
-                  <button
-                    onClick={() => setShowSlippageSettings(!showSlippageSettings)}
-                    className="text-xs text-art-gray-600 hover:text-art-gray-800 transform rotate-1"
-                  >
-                    {showSlippageSettings ? 'Hide' : 'Custom'}
-                  </button>
-                </div>
-                
-                {showSlippageSettings && (
-                  <div className="mt-2 p-3 bg-art-gray-50 rounded-art transform -rotate-0.5" style={{ borderRadius: '10px 5px 8px 6px' }}>
-                    <div className="space-y-2">
-                      <div className="text-xs text-art-gray-600 font-bold">Slippage Tolerance</div>
-                      
-                      {/* Quick Slippage Options */}
-                      <div className="flex gap-2">
-                        {[0.01, 0.05, 0.1, 0.5].map((value) => (
-                          <button
-                            key={value}
-                            onClick={() => setSlippage(value)}
-                            className={`px-2 py-1 text-xs font-bold transition-all duration-200 ${
-                              slippage === value
-                                ? 'bg-art-gray-900 text-white'
-                                : 'bg-white text-art-gray-700 hover:bg-art-gray-100'
-                            }`}
-                            style={{
-                              borderRadius: '6px 2px 4px 3px',
-                              transform: slippage === value ? 'rotate(-1deg)' : 'rotate(0.5deg)',
-                              border: '1px solid #2d3748'
-                            }}
-                          >
-                            {Math.round(value * 100)}%
-                          </button>
-                        ))}
-                      </div>
-                      
-                      {/* Custom Slippage Input */}
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min="0.1"
-                          max="50"
-                          step="0.1"
-                          value={slippage * 100}
-                          onChange={(e) => {
-                            const value = parseFloat(e.target.value);
-                            if (!isNaN(value) && value >= 0.1 && value <= 50) {
-                              setSlippage(value / 100);
-                            }
-                          }}
-                          className="hand-drawn-input flex-1 text-xs"
-                          style={{ padding: '0.5rem' }}
-                          placeholder="Custom %"
-                        />
-                        <span className="text-xs text-art-gray-500">%</span>
-                      </div>
-                      
-                      <div className="text-xs text-art-gray-500">
-                        {slippage < 0.01 && '⚠️ Very low slippage may cause failed transactions'}
-                        {slippage > 0.1 && '⚠️ High slippage may result in unfavorable prices'}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Amount Input with Currency Selection */}
-              <div className="mb-4">
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-bold text-art-gray-600 transform -rotate-0.5">
-                    Amount
-                  </label>
-                  <div className="text-xs text-art-gray-500">
-                    {tradeType === 'buy' 
-                      ? `Your ${selectedCurrency}: ${(() => {
-                          switch (selectedCurrency) {
-                            case 'ETH': return `${ethBalance} ETH`;
-                            case 'USDC': return `${usdcBalance} USDC`;
-                            default: return `${ethBalance} ETH`;
-                          }
-                        })()}`
-                      : `Your ${token.symbol}: ${tokenBalance} ${token.symbol}`
-                    }
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  {/* Amount Input */}
-                  <input
-                    type="number"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.0"
-                    className="hand-drawn-input flex-1 p-2 font-mono text-lg"
-                  />
-                  {/* Currency Selection */}
-                  {tradeType === 'buy' && (
-                    <button
-                      onClick={() => setShowTokenSelect(true)}
-                      className="hand-drawn-btn text-sm font-bold py-2 px-3 transform rotate-1 flex-shrink-0"
-                      style={{
-                        padding: '0.5rem 0.75rem',
-                        borderRadius: '8px 3px 6px 4px',
-                        minWidth: '80px'
-                      }}
-                    >
-                      {selectedCurrency}
-                    </button>
-                  )}
-                </div>
-                {amount && (
-                  <div className="mt-1 text-xs text-art-gray-500">
-                    ≈ ${usdValue?.toFixed(2) || '0.00'} USD
-                  </div>
-                )}
-              </div>
-
-              {/* Amount Slider */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-art-gray-600 mb-2 transform rotate-0.5">
-                  Amount Slider
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={(() => {
-                    if (!amount || !maxBalance) return 0;
-                    return (parseFloat(amount) / maxBalance) * 100;
-                  })()}
-                  onChange={(e) => {
-                    const percentage = parseFloat(e.target.value) / 100;
-                    // For 100%, use 99.9% to avoid precision issues
-                    const adjustedPercentage = percentage === 1 ? 0.999 : percentage;
-                    const newAmount = (maxBalance * adjustedPercentage).toFixed(4);
-                    setAmount(newAmount);
-                  }}
-                  className="hand-drawn-input w-full h-3"
-                  style={{ 
-                    background: (() => {
-                      if (!amount || !maxBalance) return 'linear-gradient(to right, #e2e8f0 0%, #e2e8f0 100%)';
-                      const percentage = (parseFloat(amount) / maxBalance) * 100;
-                      return `linear-gradient(to right, #4299e1 0%, #4299e1 ${percentage}%, #e2e8f0 ${percentage}%, #e2e8f0 100%)`;
-                    })()
-                  }}
-                />
-                <div className="flex justify-between text-xs text-art-gray-500 mt-1">
-                  <span>0%</span>
-                  <span>50%</span>
-                  <span>100%</span>
-                </div>
-              </div>
-
-              {/* Quick Percentage Buttons */}
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-art-gray-600 mb-2 transform -rotate-0.5">
-                  Quick Amount
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[0.25,0.5,0.75,1].map((p, index) => (
-                    <button 
-                      key={p} 
-                      onClick={()=>{
-                        // For 100%, use 99.9% to avoid precision issues
-                        const percentage = p === 1 ? 0.999 : p;
-                        const newAmount = (maxBalance * percentage).toFixed(4);
-                        setAmount(newAmount);
-                      }} 
-                      className="hand-drawn-btn text-xs font-bold"
-                      style={{ 
-                        padding: '0.5rem 0.75rem',
-                        transform: `rotate(${index % 2 === 0 ? '1deg' : '-1deg'})`
-                      }}
-                    >
-                      {Math.round(p*100)}%
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Creator Restriction Notice */}
-              {tradeType === 'sell' && isCreator && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-art p-3 mb-4">
-                  <div className="flex items-center">
-                    <svg className="w-4 h-4 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                    <div>
-                      <p className="text-sm text-yellow-800 font-medium">
-                        Creator Restriction
-                      </p>
-                      <p className="text-xs text-yellow-600 mt-1">
-                        Only <strong>{parseFloat(tokenBalance).toLocaleString()}</strong> tokens can be sold right now. The initial 10M tokens are locked.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Trade Summary */}
-              {amount && (
-                <div className="bg-art-gray-50 p-2 rounded-art transform rotate-0.3 mb-4" style={{ borderRadius: '8px 6px 10px 4px' }}>
-                  <div className="text-xs text-art-gray-600">
-                    {tradeType === 'buy' ? 'Buy' : 'Sell'} {parseFloat(amount).toFixed(4)} {tradeType === 'buy' ? 'ETH' : token.symbol}
-                    <span className="text-art-gray-500 ml-2">
-                      ≈ ${usdValue?.toFixed(2) || '0.00'} USD
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* ERC20 Token Info */}
-              {tradeType === 'buy' && selectedCurrency !== 'ETH' && (
-                <div className="border rounded-art p-3 mb-4 bg-blue-50 border-blue-200">
-                  <div className="flex items-center">
-                    <svg
-                      className="w-4 h-4 mr-2 text-blue-600"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <p className="text-xs text-blue-800">
-                      {selectedCurrency} trading may require 2 transactions: approval + trade
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Wallet Connection Status */}
-              {!isConnected && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-art p-3 mb-4">
-                  <div className="flex items-center">
-                    <svg
-                      className="w-4 h-4 text-yellow-600 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
-                      />
-                    </svg>
-                    <p className="text-xs text-yellow-800">
-                      Please connect your wallet to trade
-                    </p>
-                  </div>
-                </div>
-              )}
-
-
-              {/* Trade Button */}
-              <div className="pt-2">
-                <button 
-                  onClick={handleTrade}
-                  disabled={loading || !amount || parseFloat(amount) <= 0}
-                  className={`w-full hand-drawn-btn text-sm font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed ${
-                    tradeType === 'buy' ? 'secondary' : 'danger'
-                  }`}
-                  style={{ 
-                    padding: '0.75rem 1rem',
-                    transform: 'rotate(-0.5deg)'
-                  }}
-                >
-                  {loading ? 'Processing...' : `${tradeType === 'buy' ? 'Buy' : 'Sell'} ${token.symbol}`}
-                </button>
-              </div>
-            </div>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-12 gap-4">
+        {/* Left Side - Visuals (Image, Chart, Trades) - Larger on desktop */}
+        <div className="lg:col-span-2 xl:col-span-7">
+          <CoinVisuals
+            token={token}
+            poolAddress={poolAddress}
+            totalSupply={marketData?.totalSupply || token.totalSupply}
+          />
         </div>
 
-        {/* Bottom Section - Coin Details */}
-        <div className="mt-2">
-          <div className="hand-drawn-card">
-            <div className="p-4">
-              <h2 className="text-xl font-bold text-art-gray-900 mb-4 transform -rotate-1">
-                Token Details
-              </h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Basic Info */}
-                <div className="space-y-3">
-                  <h3 className="text-lg font-bold text-art-gray-900">Basic Information</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Name:</span>
-                      <span className="text-sm font-bold text-art-gray-900">{token.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Symbol:</span>
-                      <span className="text-sm font-bold text-art-gray-900">{token.symbol}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Contract:</span>
-                      <span className="text-sm font-mono text-art-gray-700">
-                        {token.contract_address?.substring(0, 6)}...{token.contract_address?.substring(token.contract_address.length - 4)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Creator:</span>
-                      <div className="flex items-center space-x-2">
-                        {token.creator?.avatar?.previewImage?.small && (
-                          <img 
-                            src={token.creator.avatar.previewImage.small} 
-                            alt="Creator" 
-                            className="w-6 h-6 rounded-full"
-                          />
-                        )}
-                        <span className="text-sm font-mono text-art-gray-700">
-                          {token.creator?.handle || token.creatorAddress?.substring(0, 6)}...{token.creatorAddress?.substring(token.creatorAddress.length - 4)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Created:</span>
-                      <span className="text-sm font-bold text-art-gray-900">
-                        {marketData?.createdAt ? new Date(marketData.createdAt).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        }) : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        {/* Right Side - Merged Interaction Panel - Smaller but adequate */}
+        <div className="lg:col-span-1 xl:col-span-5">
+          <div className="hand-drawn-card p-4 sticky top-4">
+            {/* Header Section (Title Inside) */}
+            <CoinHeader token={token} />
+            {/* Mini Summary Section */}
+            <CoinSummaryCard token={token} marketData={marketData} />
 
-                {/* Market Data */}
-                <div className="space-y-3">
-                  <h3 className="text-lg font-bold text-art-gray-900">Market Data</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Price:</span>
-                      <span className="text-sm font-bold text-art-gray-900">
-                        {marketData?.tokenPrice?.priceInUsdc ? `$${parseFloat(marketData.tokenPrice.priceInUsdc).toFixed(8)}` : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Market Cap:</span>
-                      <span className="text-sm font-bold text-art-gray-900">
-                        {marketData?.marketCap ? `$${parseFloat(marketData.marketCap).toLocaleString()}` : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">24h Volume:</span>
-                      <span className="text-sm font-bold text-art-gray-900">
-                        {marketData?.volume24h ? `$${parseFloat(marketData.volume24h).toLocaleString()}` : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Total Volume:</span>
-                      <span className="text-sm font-bold text-art-gray-900">
-                        {marketData?.totalVolume ? `$${parseFloat(marketData.totalVolume).toLocaleString()}` : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">Holders:</span>
-                      <span className="text-sm font-bold text-art-gray-900">
-                        {marketData?.uniqueHolders ? marketData.uniqueHolders.toLocaleString() : 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-art-gray-600">24h Change:</span>
-                      <span className={`text-sm font-bold ${
-                        (() => {
-                          const marketCap = parseFloat(marketData?.marketCap);
-                          const delta24h = parseFloat(marketData?.marketCapDelta24h);
-                          if (marketCap && delta24h) {
-                            // If delta24h equals marketCap, it means it's a new token (100% change)
-                            if (marketCap === delta24h) {
-                              return 'text-green-600'; // New token, positive
-                            }
-                            // Calculate percentage change
-                            const previousMC = marketCap - delta24h;
-                            if (previousMC > 0) {
-                              const changePct = (delta24h / previousMC) * 100;
-                              return changePct > 0 ? 'text-green-600' : 'text-red-600';
-                            }
-                          }
-                          return 'text-gray-600';
-                        })()
-                      }`}>
-                        {(() => {
-                          const marketCap = parseFloat(marketData?.marketCap);
-                          const delta24h = parseFloat(marketData?.marketCapDelta24h);
-                          if (marketCap && delta24h) {
-                            // If delta24h equals marketCap, it's a new token
-                            if (marketCap === delta24h) {
-                              return '+100.00%'; // New token
-                            }
-                            // Calculate percentage change
-                            const previousMC = marketCap - delta24h;
-                            if (previousMC > 0) {
-                              const changePct = (delta24h / previousMC) * 100;
-                              return `${changePct > 0 ? '+' : ''}${changePct.toFixed(2)}%`;
-                            }
-                          }
-                          return 'N/A';
-                        })()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+            {/* Divider */}
+            <div className="border-t-2 border-dashed border-art-gray-200 my-4 mx-2" />
 
-                {/* Onchain Data */}
-                {onchainData && (
-                  <div className="space-y-3">
-                    <h3 className="text-lg font-bold text-art-gray-900">Onchain Data</h3>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-art-gray-600">Total Supply:</span>
-                        <span className="text-sm font-bold text-art-gray-900">
-                          {onchainData.totalSupply?.formatted || (token as any).totalSupply || 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-art-gray-600">Liquidity:</span>
-                        <span className="text-sm font-bold text-art-gray-900">
-                          {onchainData.liquidity?.formatted ? `${onchainData.liquidity.formatted} ETH` : 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-art-gray-600">Pool Address:</span>
-                        <span className="text-sm font-bold text-art-gray-900">
-                          {onchainData.poolAddress ? `${onchainData.poolAddress.slice(0, 6)}...${onchainData.poolAddress.slice(-4)}` : 'N/A'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Description */}
-              {token.description && (
-                <div className="mt-6">
-                  <h3 className="text-lg font-bold text-art-gray-900 mb-2">Description</h3>
-                  <p className="text-sm text-art-gray-700 leading-relaxed">
-                    {token.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Links */}
-              <div className="mt-6 flex space-x-4">
-                <a
-                  href={`https://zora.co/coin/base:${token.contract_address}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hand-drawn-btn text-sm font-bold px-4 py-2 transform rotate-1"
-                  style={{ 
-                    padding: '0.5rem 1rem',
-                    borderRadius: '8px 3px 6px 4px'
-                  }}
-                >
-                  View on Zora
-                </a>
-                <a
-                  href={`https://dexscreener.com/base/${token.contract_address}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hand-drawn-btn text-sm font-bold px-4 py-2 transform -rotate-1"
-                  style={{ 
-                    padding: '0.5rem 1rem',
-                    borderRadius: '6px 4px 8px 3px'
-                  }}
-                >
-                  View on DexScreener
-                </a>
-              </div>
-            </div>
+            {/* Trade Section */}
+            <CoinTradeCard
+              token={token}
+              tradeType={tradeType}
+              setTradeType={setTradeType}
+              amount={amount}
+              setAmount={setAmount}
+              slippage={slippage}
+              setSlippage={setSlippage}
+              showSlippageSettings={showSlippageSettings}
+              setShowSlippageSettings={setShowSlippageSettings}
+              ethBalance={ethBalance}
+              tokenBalance={tokenBalance}
+              usdcBalance={usdcBalance}
+              selectedCurrency={selectedCurrency}
+              setSelectedCurrency={setSelectedCurrency}
+              showTokenSelect={showTokenSelect}
+              setShowTokenSelect={setShowTokenSelect}
+              availableTokens={availableTokens}
+              handleTrade={handleTrade}
+              loading={loading}
+              isConnected={isConnected}
+              isCreator={isCreator}
+              usdValue={usdValue}
+              maxBalance={maxBalance}
+            />
           </div>
         </div>
       </div>
 
-      {/* Token Select Modal */}
-      {showTokenSelect && (
-        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4">
-          <div className="hand-drawn-card w-full max-w-md" style={{ transform: 'rotate(0.5deg)' }}>
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-art-gray-900 transform -rotate-1">
-                  Select Token
-                </h3>
-                <button
-                  onClick={() => setShowTokenSelect(false)}
-                  className="text-art-gray-400 hover:text-art-gray-600 transform rotate-1"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              
-              <div className="space-y-2">
-                {availableTokens.map((token) => (
-                  <button
-                    key={token.symbol}
-                    onClick={() => {
-                      setSelectedCurrency(token.symbol as 'ETH' | 'USDC');
-                      setShowTokenSelect(false);
-                    }}
-                    className={`w-full p-3 text-left rounded-art transition-all duration-200 ${
-                      selectedCurrency === token.symbol
-                        ? 'bg-art-gray-900 text-art-white'
-                        : 'bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200'
-                    }`}
-                    style={{
-                      borderRadius: selectedCurrency === token.symbol ? '12px 3px 8px 6px' : '8px 12px 6px 10px',
-                      transform: selectedCurrency === token.symbol ? 'rotate(-1deg)' : 'rotate(0.5deg)',
-                      border: '2px solid #2d3748',
-                      boxShadow: selectedCurrency === token.symbol ? '2px 2px 0 #2d3748' : '1px 1px 0 #2d3748'
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-bold">{token.symbol}</div>
-                        <div className="text-xs opacity-75">
-                          {token.symbol === 'ETH' ? 'Ethereum' : 
-                           token.symbol === 'USDC' ? 'USD Coin' : 'ZORA Token'}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold">{token.balance}</div>
-                        <div className="text-xs opacity-75">{token.symbol}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Token Details Section - Full Width */}
+      <div className="mt-2">
+        <CoinInfoSection
+          token={token}
+          marketData={marketData}
+          poolAddress={poolAddress}
+        />
+      </div>
 
-      {/* Trade Success Modal */}
+      {/* Modals */}
       <TradeSuccessModal
         isOpen={showSuccessModal}
         onClose={() => setShowSuccessModal(false)}
@@ -1030,6 +548,42 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
         amount={amount}
         token={token}
         tokenPrice={marketData?.tokenPrice?.priceInUsdc}
+      />
+
+      <CoinShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        tokenName={token.name}
+        tokenSymbol={token.symbol}
+        tokenAddress={token.contract_address}
+        tokenImage={token.image_url}
+        marketCap={
+          marketData?.marketCap
+            ? parseFloat(marketData.marketCap).toLocaleString()
+            : "0"
+        }
+        price={
+          marketData?.tokenPrice?.priceInUsdc
+            ? parseFloat(marketData.tokenPrice.priceInUsdc).toFixed(8)
+            : "0"
+        }
+        volume24h={
+          marketData?.volume24h
+            ? parseFloat(marketData.volume24h).toLocaleString()
+            : "0"
+        }
+        priceChange24h={(() => {
+          const marketCap = parseFloat(marketData?.marketCap);
+          const delta24h = parseFloat(marketData?.marketCapDelta24h);
+          if (marketCap && delta24h) {
+            if (marketCap === delta24h) return 100;
+            const previousMC = marketCap - delta24h;
+            if (previousMC > 0) {
+              return (delta24h / previousMC) * 100;
+            }
+          }
+          return 0;
+        })()}
       />
     </div>
   );
