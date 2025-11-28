@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useWatchlist } from "../../hooks/useWatchlist";
 import { CoinService, Coin } from "../../services/coinService";
 import { useAccount } from "wagmi";
@@ -21,6 +22,7 @@ export default function WatchlistPage() {
     loading: watchlistLoading,
     toggleWatchlist,
   } = useWatchlist();
+  const router = useRouter();
   const [tokens, setTokens] = useState<WatchlistTokenData[]>([]);
   const [loading, setLoading] = useState(true);
   const { isConnected } = useAccount();
@@ -168,7 +170,6 @@ export default function WatchlistPage() {
     }
   }, [watchlist, watchlistItems, watchlistLoading]);
 
-
   const formatNumber = (num: string | number | undefined) => {
     if (!num) return "0";
     const value = typeof num === "string" ? parseFloat(num) : num;
@@ -253,7 +254,7 @@ export default function WatchlistPage() {
               Heart tokens from the market to track them here!
             </p>
             <button
-              onClick={() => (window.location.href = "/")}
+              onClick={() => router.push("/")}
               className="mt-4 hand-drawn-btn px-6 py-2"
             >
               Browse Tokens
@@ -270,10 +271,13 @@ export default function WatchlistPage() {
                       Token
                     </th>
                     <th className="text-right p-3 text-sm font-bold text-art-gray-900">
-                      Market Cap
+                      MC
                     </th>
                     <th className="text-right p-3 text-sm font-bold text-art-gray-900">
-                      24h Change
+                      VOL
+                    </th>
+                    <th className="text-right p-3 text-sm font-bold text-art-gray-900">
+                      24h %
                     </th>
                     <th className="text-right p-3 text-sm font-bold text-art-gray-900">
                       Since Added
@@ -291,7 +295,7 @@ export default function WatchlistPage() {
                         key={token.contract_address}
                         className="border-b border-art-gray-200 hover:bg-art-gray-50 transition-colors cursor-pointer"
                         onClick={() =>
-                          (window.location.href = `/coin/${token.contract_address}`)
+                          router.push(`/coin/${token.contract_address}`)
                         }
                       >
                         <td className="p-3">
@@ -325,22 +329,35 @@ export default function WatchlistPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="p-3 text-right font-mono text-sm">
-                          ${formatNumber((token as any).marketCap)}
+                        <td className="p-3 text-right text-sm">
+                          ${formatNumber(token.marketCap)}
+                        </td>
+                        <td className="p-3 text-right text-sm">
+                          $
+                          {formatNumber(
+                            token.volume_24h || (token as any).totalVolume
+                          )}
                         </td>
                         <td
-                          className={`p-3 text-right font-mono text-sm font-bold ${
-                            parseFloat(
-                              (token as any).marketCapDelta24h || "0"
-                            ) >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
+                          className={`p-3 text-right text-sm font-bold ${(() => {
+                            const val =
+                              typeof (token as any).marketCapDelta24h ===
+                              "number"
+                                ? (token as any).marketCapDelta24h
+                                : parseFloat(
+                                    (token as any).marketCapDelta24h || "0"
+                                  );
+                            return val >= 0 ? "text-green-600" : "text-red-600";
+                          })()}`}
                         >
                           {(() => {
-                            const change = parseFloat(
-                              (token as any).marketCapDelta24h || "0"
-                            );
+                            const change =
+                              typeof (token as any).marketCapDelta24h ===
+                              "number"
+                                ? (token as any).marketCapDelta24h
+                                : parseFloat(
+                                    (token as any).marketCapDelta24h || "0"
+                                  );
                             return change >= 0
                               ? `+${change.toFixed(2)}%`
                               : `${change.toFixed(2)}%`;
@@ -350,7 +367,7 @@ export default function WatchlistPage() {
                           {changeMeta.diffPct !== null ? (
                             <>
                               <div
-                                className={`font-mono text-sm font-bold ${
+                                className={` text-sm font-bold ${
                                   changeMeta.diffPct >= 0
                                     ? "text-green-600"
                                     : "text-red-600"
@@ -360,14 +377,11 @@ export default function WatchlistPage() {
                                 {changeMeta.diffPct.toFixed(2)}%
                               </div>
                               <div className="text-xs text-art-gray-500">
-                                Added @{" "}
-                                {formatPriceLabel(changeMeta.addedPrice)}
+                                @ {formatPriceLabel(changeMeta.addedPrice)}
                               </div>
                             </>
                           ) : (
-                            <span className="text-xs text-art-gray-400">
-                              No snapshot
-                            </span>
+                            <span className="text-xs text-art-gray-400">-</span>
                           )}
                         </td>
                         <td className="p-3 text-center">
@@ -404,7 +418,7 @@ export default function WatchlistPage() {
                     key={token.contract_address}
                     className="hand-drawn-card p-3 cursor-pointer hover:scale-[1.02] transition-transform"
                     onClick={() =>
-                      (window.location.href = `/coin/${token.contract_address}`)
+                      router.push(`/coin/${token.contract_address}`)
                     }
                   >
                     <div className="flex items-start gap-3 mb-3">
@@ -457,49 +471,67 @@ export default function WatchlistPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 text-sm bg-art-gray-50 p-3 rounded-lg border border-art-gray-200 border-dashed">
-                      <div>
-                        <div className="text-xs text-art-gray-500 mb-1">
-                          Market Cap
+                    <div className="grid grid-cols-3 gap-2 text-sm bg-art-gray-50 p-2 rounded-lg border border-art-gray-200 border-dashed">
+                      <div className="text-center">
+                        <div className="text-[10px] text-art-gray-500 mb-1">
+                          MC
                         </div>
-                        <div className="font-mono font-bold text-art-gray-900">
-                          ${formatNumber((token as any).marketCap)}
+                        <div className="font-bold text-art-gray-900 text-xs">
+                          ${formatNumber(token.marketCap)}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-xs text-art-gray-500 mb-1">
-                          24h Change
+                      <div className="text-center border-l border-r border-art-gray-200 border-dashed px-1">
+                        <div className="text-[10px] text-art-gray-500 mb-1">
+                          VOL
+                        </div>
+                        <div className="font-bold text-art-gray-900 text-xs">
+                          $
+                          {formatNumber(
+                            token.volume_24h || (token as any).totalVolume
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-[10px] text-art-gray-500 mb-1">
+                          24h %
                         </div>
                         <div
-                          className={`font-mono font-bold ${
-                            parseFloat(
-                              (token as any).marketCapDelta24h || "0"
-                            ) >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}
+                          className={`font-bold text-xs ${(() => {
+                            const val =
+                              typeof (token as any).marketCapDelta24h ===
+                              "number"
+                                ? (token as any).marketCapDelta24h
+                                : parseFloat(
+                                    (token as any).marketCapDelta24h || "0"
+                                  );
+                            return val >= 0 ? "text-green-600" : "text-red-600";
+                          })()}`}
                         >
                           {(() => {
-                            const change = parseFloat(
-                              (token as any).marketCapDelta24h || "0"
-                            );
+                            const change =
+                              typeof (token as any).marketCapDelta24h ===
+                              "number"
+                                ? (token as any).marketCapDelta24h
+                                : parseFloat(
+                                    (token as any).marketCapDelta24h || "0"
+                                  );
                             return change >= 0
-                              ? `+${change.toFixed(2)}%`
-                              : `${change.toFixed(2)}%`;
+                              ? `+${change.toFixed(1)}%`
+                              : `${change.toFixed(1)}%`;
                           })()}
                         </div>
                       </div>
                     </div>
 
                     {changeMeta.diffPct !== null && (
-                      <div className="mt-3 pt-2 border-t-2 border-dashed border-art-gray-200">
+                      <div className="mt-2 pt-2 border-t-2 border-dashed border-art-gray-200">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-art-gray-500 font-medium">
                             Since Added:
                           </span>
-                          <div className="text-right">
+                          <div className="text-right flex items-center gap-2">
                             <div
-                              className={`font-mono font-bold text-sm ${
+                              className={`font-bold ${
                                 changeMeta.diffPct >= 0
                                   ? "text-green-600"
                                   : "text-red-600"
@@ -509,7 +541,7 @@ export default function WatchlistPage() {
                               {changeMeta.diffPct.toFixed(2)}%
                             </div>
                             <div className="text-art-gray-400 text-[10px]">
-                              @ {formatPriceLabel(changeMeta.addedPrice)}
+                              (@ {formatPriceLabel(changeMeta.addedPrice)})
                             </div>
                           </div>
                         </div>

@@ -63,53 +63,73 @@ const nextConfig = {
         hostname: "pbs.twimg.com",
         pathname: "/**",
       },
-    ],
+      {
+        protocol: "https",
+        hostname: "gateway.pinata.cloud",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "cloudflare-ipfs.com",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "dweb.link",
+        pathname: "/**",
+      },
 
+      {
+        protocol: "https",
+        hostname: "scontent-iad4-1.choicecdn.com",
+        pathname: "/**",
+      },
+    ],
   },
   // Minimalize configurations to avoid conflicts
   async headers() {
     return [
       {
-        source: '/.well-known/farcaster.json',
+        source: "/.well-known/farcaster.json",
         headers: [
           {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
+            key: "Access-Control-Allow-Origin",
+            value: "*",
           },
           {
-            key: 'Content-Type',
-            value: 'application/json',
+            key: "Content-Type",
+            value: "application/json",
           },
           {
-            key: 'Cache-Control',
-            value: 'public, max-age=3600',
+            key: "Cache-Control",
+            value: "public, max-age=3600",
           },
         ],
       },
       {
-        source: '/.well-known/(.*)',
+        source: "/.well-known/(.*)",
         headers: [
           {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
-          }
+            key: "Access-Control-Allow-Origin",
+            value: "*",
+          },
         ],
       },
       {
-        source: '/(.*)',
+        source: "/(.*)",
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
+            key: "X-Frame-Options",
+            value: "ALLOWALL",
           },
           {
-            key: 'Content-Security-Policy',
+            key: "Content-Security-Policy",
             value: "frame-ancestors *",
           },
         ],
       },
     ];
-  },  
+  },
 };
 
 export default nextConfig;

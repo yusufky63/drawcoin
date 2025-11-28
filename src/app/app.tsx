@@ -8,6 +8,7 @@ import CreatePage from "../components/create/CreatePage";
 import CoinDetailPage from "../components/coin/CoinDetailPage";
 import DetailsModal from "../components/market/DetailsModal";
 import { Coin } from "../lib/supabase";
+import LiveCanvasPage from "../components/activity/LiveCanvasPage";
 
 // NoSSR wrapper component
 function NoSSR({ children }: { children: React.ReactNode }) {
@@ -151,9 +152,15 @@ export default function App({
       );
     }
 
+    // ... (existing imports)
+
+    // ... (inside App component)
+
     switch (activeTab) {
       case "explore":
         return <MarketPage onTrade={handleTrade} onView={handleView} />;
+      case "live-canvas":
+        return <LiveCanvasPage />;
       case "create":
         return <CreatePage onSuccess={handleCreateSuccess} />;
       case "portfolio":

@@ -1,10 +1,14 @@
-import { createZoraCoin, getCoinAddressFromReceipt, CreateConstants } from '../../services/sdk/getCreateCoin.js';
-import { CoinService, type CreateCoinData } from '../../services/coinService';
-import { base } from 'viem/chains';
-import { showCreateMessages } from '../../utils/toastUtils';
-import { checkAndSwitchNetwork } from '../../services/networkUtils';
-import { toast } from 'react-hot-toast';
-import { AnalyticsService } from '../../services/analyticsService';
+import {
+  createZoraCoin,
+  getCoinAddressFromReceipt,
+  CreateConstants,
+} from "../../services/sdk/getCreateCoin.js";
+import { type CreateCoinData } from "../../services/coinService";
+import { base } from "viem/chains";
+import { showCreateMessages } from "../../utils/toastUtils";
+import { checkAndSwitchNetwork } from "../../services/networkUtils";
+import { toast } from "react-hot-toast";
+import { AnalyticsService } from "../../services/analyticsService";
 
 export interface CreateTokenData {
   name: string;
@@ -12,7 +16,7 @@ export interface CreateTokenData {
   description: string;
   imageUrl: string;
   category: string;
-  creation_type?: 'ai' | 'hand-drawn';
+  creation_type?: "ai" | "hand-drawn";
   // Note: Initial purchase fields removed as not supported in SDK v2
   ownersAddresses: string[];
   selectedCurrency: number;
@@ -41,23 +45,28 @@ export const createToken = async (
     // Check if we're on the Base network and auto-switch if needed
     const chainId = await walletClient.getChainId();
     if (chainId !== base.id) {
-      console.log(`Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Attempting to switch...`);
-      
+      console.log(
+        `Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Attempting to switch...`
+      );
+
       if (switchChain) {
-        const switchSuccess = await checkAndSwitchNetwork({ chainId, switchChain });
+        const switchSuccess = await checkAndSwitchNetwork({
+          chainId,
+          switchChain,
+        });
         if (!switchSuccess) {
-          throw new Error(`Please switch to Base network manually in your wallet.`);
+          throw new Error(
+            `Please switch to Base network manually in your wallet.`
+          );
         }
         // Wait a moment for the network switch to complete
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       } else {
-        throw new Error(`Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Please switch networks.`);
+        throw new Error(
+          `Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Please switch networks.`
+        );
       }
     }
-
-    // Get user's selected purchase amount
-    // Note: Purchase amount calculation removed as initial purchase is not supported in SDK v2
-    // Note: Purchase amount logging removed as initial purchase is not supported in SDK v2
 
     // Show a loading toast for the creation process
     showCreateMessages.loading();
@@ -65,20 +74,21 @@ export const createToken = async (
     // Create Zora coin using updated SDK with the IPFS URI
     console.log("Creating coin with URI:", tokenData.imageUrl);
     // Convert selectedCurrency number to string
-    const currencyString = tokenData.selectedCurrency === 0 
-      ? CreateConstants.ContentCoinCurrencies.ZORA 
-      : CreateConstants.ContentCoinCurrencies.ETH;
-    
+    const currencyString =
+      tokenData.selectedCurrency === 0
+        ? CreateConstants.ContentCoinCurrencies.ZORA
+        : CreateConstants.ContentCoinCurrencies.ETH;
+
     // Convert startingMarketCap number to string
-    const marketCapString = tokenData.startingMarketCap === 0 
-      ? CreateConstants.StartingMarketCaps.LOW 
-      : CreateConstants.StartingMarketCaps.HIGH;
-    
+    const marketCapString =
+      tokenData.startingMarketCap === 0
+        ? CreateConstants.StartingMarketCaps.LOW
+        : CreateConstants.StartingMarketCaps.HIGH;
+
     // Convert smartWalletRouting number to string
-    const smartWalletString = tokenData.smartWalletRouting === 0 
-      ? "AUTO" 
-      : "DISABLE";
-    
+    const smartWalletString =
+      tokenData.smartWalletRouting === 0 ? "AUTO" : "DISABLE";
+
     console.log("Using currency:", currencyString);
     console.log("Using starting market cap:", marketCapString);
     console.log("Using smart wallet routing:", smartWalletString);
@@ -88,15 +98,15 @@ export const createToken = async (
       ...walletClient,
       // Use wallet's optimal gas price instead of manual setting
       request: async (args: any) => {
-        if (args.method === 'eth_sendTransaction') {
+        if (args.method === "eth_sendTransaction") {
           // Let wallet optimize gas automatically
           return walletClient.request(args);
         }
         return walletClient.request(args);
-      }
+      },
     };
 
-    const result = await createZoraCoin(
+    const result = (await createZoraCoin(
       {
         name: tokenData.name,
         symbol: tokenData.symbol,
@@ -107,12 +117,14 @@ export const createToken = async (
         smartWalletRouting: smartWalletString,
         chainId: chainId,
         platformReferrer: tokenData.platformReferrer || undefined,
-        owners: tokenData.ownersAddresses.length > 0 ? tokenData.ownersAddresses : undefined,
-        // Note: initialPurchaseWei removed as not supported in SDK v2
+        owners:
+          tokenData.ownersAddresses.length > 0
+            ? tokenData.ownersAddresses
+            : undefined,
       },
       optimizedWalletClient,
       publicClient
-    ) as CreateTokenResult;
+    )) as CreateTokenResult;
 
     console.log("Token created successfully:", result);
 
@@ -123,7 +135,12 @@ export const createToken = async (
 
     // Set the contract address from the result or extract from receipt
     let contractAddress = "";
-    if (result && typeof result === "object" && "address" in result && result.address) {
+    if (
+      result &&
+      typeof result === "object" &&
+      "address" in result &&
+      result.address
+    ) {
       contractAddress = result.address;
     } else if (result && result.receipt) {
       const extractedAddress = getCoinAddressFromReceipt(result.receipt);
@@ -134,7 +151,10 @@ export const createToken = async (
     }
 
     // Save coin to database after successful creation
-    if (contractAddress && contractAddress !== "Contract created, address unknown") {
+    if (
+      contractAddress &&
+      contractAddress !== "Contract created, address unknown"
+    ) {
       try {
         toast.loading("Saving token to database...", { id: "save-toast" });
 
@@ -151,23 +171,31 @@ export const createToken = async (
           chain_id: chainId,
           currency: currencyString,
           platform_referrer: tokenData.platformReferrer || undefined,
-          creation_type: tokenData.creation_type || 'hand-drawn',
+          creation_type: tokenData.creation_type || "hand-drawn",
         };
 
-        const savedCoin = await CoinService.saveCoin(coinData);
+        // Use secure API route instead of direct client-side insert
+        const response = await fetch("/api/coins/create", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(coinData),
+        });
 
-        if (savedCoin) {
+        if (response.ok) {
+          await response.json();
           toast.success("Token saved to database successfully!", {
             id: "save-toast",
           });
-          
+
           // Record analytics for token creation
           try {
             await AnalyticsService.recordTransaction({
               tx_hash: result.hash,
               user_address: walletAddress,
               token_address: contractAddress,
-              type: 'create',
+              type: "create",
               amount_token: 0,
               amount_eth: 0,
               amount_usd: 0,
@@ -176,14 +204,13 @@ export const createToken = async (
             console.error("Analytics error (non-blocking):", analyticsError);
           }
         } else {
-          toast.error("Failed to save token to database", {
-            id: "save-toast",
-          });
-          console.error("Failed to save token to database");
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to save token");
         }
       } catch (error) {
         console.error("Error saving token to database:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
         toast.error(`Database error: ${errorMessage}`, { id: "save-toast" });
       }
     }
@@ -192,7 +219,7 @@ export const createToken = async (
   } catch (error) {
     console.error("Error creating token:", error);
     const raw = error instanceof Error ? error.message : String(error || "");
-    
+
     // Short, user-friendly messages
     if (
       raw.toLowerCase().includes("user rejected") ||
@@ -217,4 +244,3 @@ export const createToken = async (
     }
   }
 };
-

@@ -88,12 +88,9 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   // Token addresses on Base
   const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
-  // Initial loading
+  // Initial loading - removed artificial delay
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setInitialLoading(false);
-    }, 1000);
-    return () => clearTimeout(timer);
+    setInitialLoading(false);
   }, []);
 
   // Fetch pool address from GeckoTerminal

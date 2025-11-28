@@ -250,10 +250,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
                           strokeLinecap="round"
                         />
                       </svg>
-                      <span
-                        style={{ fontFamily: "'Kalam', cursive" }}
-                        className="relative block text-[#4299e1] font-bold text-xs md:text-sm transform -rotate-6 bg-white/90 px-2 py-0.5 md:px-3 md:py-1 rounded-lg border-2 border-indigo-200 shadow-sm whitespace-nowrap mt-4 md:mt-0"
-                      >
+                      <span className="relative block text-[#4299e1] font-bold text-xs md:text-sm transform -rotate-6 bg-white/90 px-2 py-0.5 md:px-3 md:py-1 rounded-lg border-2 border-indigo-200 shadow-sm whitespace-nowrap mt-4 md:mt-0">
                         Select USDC!
                       </span>
                     </div>

@@ -1,9 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { SafeImage } from "../ui/SafeImage";
 import { supabase } from "@/lib/supabase";
 
 export default function TokenTicker() {
+  const router = useRouter();
   const [tokens, setTokens] = useState<any[]>([]);
 
   useEffect(() => {
@@ -114,7 +116,7 @@ export default function TokenTicker() {
   const duplicatedTokens = [...tokens, ...tokens];
 
   const handleTokenClick = (contractAddress: string) => {
-    window.location.href = `/coin/${contractAddress}`;
+    router.push(`/coin/${contractAddress}`);
   };
 
   const formatNumber = (num: string | number) => {
@@ -157,9 +159,12 @@ export default function TokenTicker() {
           const mc = token.marketCap || "0";
           const vol =
             token.volume24h || token.volume_24h || token.totalVolume || "0";
-          const change = parseFloat(
-            token.marketCapDelta24h || token.change24hPct || "0"
-          );
+
+          // Handle change calculation robustly
+          const changeVal =
+            token.marketCapDelta24h || token.change24hPct || "0";
+          const change =
+            typeof changeVal === "number" ? changeVal : parseFloat(changeVal);
 
           return (
             <div

@@ -52,7 +52,7 @@ export default function HowItWorks() {
           </div>
           
           <h3 className="text-lg md:text-xl font-bold text-blue-900 mb-2 md:mb-3 text-center transform rotate-1">
-            Mint Your Token
+           Create Your Token
           </h3>
           
           <div className="space-y-2 text-sm text-art-gray-700">
@@ -68,7 +68,7 @@ export default function HowItWorks() {
 
             <div className="bg-white/60 p-2 md:p-3 rounded-art transform -rotate-0.5">
               <p className="font-bold text-blue-800 mb-0.5">Instant Deploy</p>
-              <p className="text-xs">Live on Base blockchain in seconds</p>
+              <p className="text-xs">Live on Base in seconds</p>
             </div>
           </div>
         </div>

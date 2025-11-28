@@ -37,10 +37,12 @@ export interface Coin {
   creator_address?: string;
   creator_name?: string;
   tx_hash?: string;
-  current_price?: string;
-  market_cap?: string;
-  volume_24h?: string;
+  current_price?: number;
+  market_cap?: number;
+  volume_24h?: number;
+  total_supply?: number;
   holders?: number;
+  last_synced_at?: string;
   created_at?: string;
   updated_at?: string;
   change24hPct?: string;

@@ -1,22 +1,22 @@
-import { supabase, supabaseAdmin, type Coin } from '../lib/supabase'
+import { supabase, supabaseAdmin, type Coin } from "../lib/supabase";
 
 // Re-export the Coin type for use in other components
-export type { Coin }
+export type { Coin };
 
 export interface CreateCoinData {
-  name: string
-  symbol: string
-  description: string
-  contract_address: string
-  image_url: string
-  category: string
-  creator_address: string
-  creator_name?: string
-  tx_hash: string
-  chain_id?: number
-  currency?: string
-  platform_referrer?: string
-  creation_type?: 'ai' | 'hand-drawn'
+  name: string;
+  symbol: string;
+  description: string;
+  contract_address: string;
+  image_url: string;
+  category: string;
+  creator_address: string;
+  creator_name?: string;
+  tx_hash: string;
+  chain_id?: number;
+  currency?: string;
+  platform_referrer?: string;
+  creation_type?: "ai" | "hand-drawn";
 }
 
 export class CoinService {
@@ -26,9 +26,9 @@ export class CoinService {
   static async saveCoin(coinData: CreateCoinData): Promise<Coin | null> {
     try {
       // Use admin client to bypass RLS for server-side operations
-      const client = supabaseAdmin || supabase
+      const client = supabaseAdmin || supabase;
       const { data, error } = await client
-        .from('drawcoins')
+        .from("drawcoins")
         .insert({
           name: coinData.name,
           symbol: coinData.symbol,
@@ -40,24 +40,29 @@ export class CoinService {
           creator_name: coinData.creator_name,
           tx_hash: coinData.tx_hash,
           chain_id: coinData.chain_id || 8453, // Default to Base mainnet
-          currency: coinData.currency || 'ETH',
+          currency: coinData.currency || "ETH",
           platform_referrer: coinData.platform_referrer,
-          creation_type: coinData.creation_type || 'hand-drawn', // Default to hand-drawn
+          creation_type: coinData.creation_type || "hand-drawn", // Default to hand-drawn
           holders: 1, // Creator is the first holder
+          // Initialize numeric fields
+          current_price: 0,
+          volume_24h: 0,
+          total_supply: 0,
+          last_synced_at: new Date().toISOString(),
         })
         .select()
-        .single()
+        .single();
 
       if (error) {
-        console.error('Error saving coin:', error)
-        throw error
+        console.error("Error saving coin:", error);
+        throw error;
       }
 
-      console.log('✅ Coin saved to database:', data)
-      return data
+      console.log("✅ Coin saved to database:", data);
+      return data;
     } catch (error) {
-      console.error('❌ Failed to save coin:', error)
-      return null
+      console.error("❌ Failed to save coin:", error);
+      return null;
     }
   }
 
@@ -65,80 +70,81 @@ export class CoinService {
    * Get all coins with optional filters
    */
   static async getCoins(params?: {
-    category?: string
-    creator_address?: string
-    limit?: number
-    offset?: number
-    search?: string
-    sort?: string
-    creation_type?: string
+    category?: string;
+    creator_address?: string;
+    limit?: number;
+    offset?: number;
+    search?: string;
+    sort?: string;
+    creation_type?: string;
   }): Promise<Coin[]> {
     try {
-      let query = supabase
-        .from('drawcoins')
-        .select('*')
+      let query = supabase.from("drawcoins").select("*");
 
       // Apply sorting
       switch (params?.sort) {
-        case 'oldest':
-          query = query.order('created_at', { ascending: true })
-          break
-        case 'price-high':
-          // Note: This assumes current_price is updated in DB. 
-          // If not, this might not be accurate without Zora data, but we sort by what we have.
-          query = query.order('current_price', { ascending: false })
-          break
-        case 'price-low':
-          query = query.order('current_price', { ascending: true })
-          break
-        case 'holders-high':
-          query = query.order('holders', { ascending: false })
-          break
-        case 'volume-high':
-           query = query.order('volume_24h', { ascending: false })
-           break
-        case 'newest':
+        case "oldest":
+          query = query.order("created_at", { ascending: true });
+          break;
+        case "price-high":
+          query = query.order("current_price", { ascending: false });
+          break;
+        case "price-low":
+          query = query.order("current_price", { ascending: true });
+          break;
+        case "holders-high":
+          query = query.order("holders", { ascending: false });
+          break;
+        case "volume-high":
+          query = query.order("volume_24h", { ascending: false });
+          break;
+        case "newest":
         default:
-          query = query.order('created_at', { ascending: false })
-          break
+          query = query.order("created_at", { ascending: false });
+          break;
       }
 
       // Apply filters
       if (params?.category) {
-        query = query.eq('category', params.category)
+        query = query.eq("category", params.category);
       }
 
       if (params?.creator_address) {
-        query = query.eq('creator_address', params.creator_address)
+        query = query.eq("creator_address", params.creator_address);
       }
 
       if (params?.creation_type) {
-        query = query.eq('creation_type', params.creation_type)
+        query = query.eq("creation_type", params.creation_type);
       }
 
       if (params?.search) {
-        query = query.or(`name.ilike.%${params.search}%,symbol.ilike.%${params.search}%,description.ilike.%${params.search}%`)
+        query = query.or(
+          `name.ilike.%${params.search}%,symbol.ilike.%${params.search}%,description.ilike.%${params.search}%`
+        );
       }
 
       if (params?.limit) {
-        query = query.limit(params.limit)
+        query = query.limit(params.limit);
       }
 
       if (params?.offset) {
-        query = query.range(params.offset, (params.offset + (params.limit || 10)) - 1)
+        query = query.range(
+          params.offset,
+          params.offset + (params.limit || 10) - 1
+        );
       }
 
-      const { data, error } = await query
+      const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching coins:', error)
-        throw error
+        console.error("Error fetching coins:", error);
+        throw error;
       }
 
-      return data || []
+      return data || [];
     } catch (error) {
-      console.error('❌ Failed to fetch coins:', error)
-      return []
+      console.error("❌ Failed to fetch coins:", error);
+      return [];
     }
   }
 
@@ -148,20 +154,20 @@ export class CoinService {
   static async getCoinByAddress(contractAddress: string): Promise<Coin | null> {
     try {
       const { data, error } = await supabase
-        .from('drawcoins')
-        .select('*')
-        .eq('contract_address', contractAddress)
-        .single()
+        .from("drawcoins")
+        .select("*")
+        .eq("contract_address", contractAddress)
+        .single();
 
       if (error) {
-        console.error('Error fetching coin:', error)
-        return null
+        console.error("Error fetching coin:", error);
+        return null;
       }
 
-      return data
+      return data;
     } catch (error) {
-      console.error('❌ Failed to fetch coin:', error)
-      return null
+      console.error("❌ Failed to fetch coin:", error);
+      return null;
     }
   }
 
@@ -169,65 +175,129 @@ export class CoinService {
    * Get only coin addresses (and created_at) for lightweight pagination
    */
   static async getCoinAddresses(params?: {
-    limit?: number
-    offset?: number
-    search?: string
-  }): Promise<Array<{ contract_address: string; created_at: string; name?: string; symbol?: string; description?: string }>> {
+    limit?: number;
+    offset?: number;
+    search?: string;
+  }): Promise<
+    Array<{
+      contract_address: string;
+      created_at: string;
+      name?: string;
+      symbol?: string;
+      description?: string;
+    }>
+  > {
     try {
       let query = supabase
-        .from('drawcoins')
-        .select('contract_address,created_at,name,symbol,description')
-        .order('created_at', { ascending: false })
+        .from("drawcoins")
+        .select("contract_address,created_at,name,symbol,description")
+        .order("created_at", { ascending: false });
 
       if (params?.search) {
         // Search in name, symbol, and description fields
-        query = query.or(`name.ilike.%${params.search}%,symbol.ilike.%${params.search}%,description.ilike.%${params.search}%,contract_address.ilike.%${params.search}%`)
+        query = query.or(
+          `name.ilike.%${params.search}%,symbol.ilike.%${params.search}%,description.ilike.%${params.search}%,contract_address.ilike.%${params.search}%`
+        );
       }
 
       if (params?.limit) {
-        query = query.limit(params.limit)
+        query = query.limit(params.limit);
       }
 
       if (params?.offset) {
-        query = query.range(params.offset, (params.offset + (params.limit || 10)) - 1)
+        query = query.range(
+          params.offset,
+          params.offset + (params.limit || 10) - 1
+        );
       }
 
-      const { data, error } = await query
+      const { data, error } = await query;
       if (error) {
-        console.error('Error fetching coin addresses:', error)
-        return []
+        console.error("Error fetching coin addresses:", error);
+        return [];
       }
-      return (data || []) as Array<{ contract_address: string; created_at: string; name?: string; symbol?: string; description?: string }>
+      return (data || []) as Array<{
+        contract_address: string;
+        created_at: string;
+        name?: string;
+        symbol?: string;
+        description?: string;
+      }>;
     } catch (err) {
-      console.error('❌ Failed to fetch coin addresses:', err)
-      return []
+      console.error("❌ Failed to fetch coin addresses:", err);
+      return [];
     }
   }
 
   /**
    * Update coin information (price, holders, etc.)
    */
-  static async updateCoin(contractAddress: string, updates: Partial<Coin>): Promise<Coin | null> {
+  static async updateCoin(
+    contractAddress: string,
+    updates: Partial<Coin>
+  ): Promise<Coin | null> {
     try {
       const { data, error } = await supabase
-        .from('drawcoins')
+        .from("drawcoins")
         .update({
           ...updates,
           updated_at: new Date().toISOString(),
         })
-        .eq('contract_address', contractAddress)
+        .eq("contract_address", contractAddress)
         .select()
-        .single()
+        .single();
 
       if (error) {
-        console.error('Error updating coin:', error)
-        return null
+        console.error("Error updating coin:", error);
+        return null;
       }
 
-      return data
+      return data;
     } catch (error) {
-      console.error('❌ Failed to update coin:', error)
-      return null
+      console.error("❌ Failed to update coin:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Update coin price and volume (Specific method for sync/trade)
+   */
+  static async updateCoinPrice(
+    contractAddress: string,
+    price: number,
+    volume: number,
+    supply?: number,
+    holders?: number
+  ): Promise<boolean> {
+    try {
+      const updates: any = {
+        current_price: price,
+        volume_24h: volume,
+        last_synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (supply !== undefined) updates.total_supply = supply;
+      if (holders !== undefined) updates.holders = holders;
+
+      // Use admin client if available (server-side), otherwise normal client (client-side with RLS)
+      // Note: Client-side update might fail if RLS doesn't allow it.
+      // Ideally this is called from a server action or API route.
+      const client = supabaseAdmin || supabase;
+
+      const { error } = await client
+        .from("drawcoins")
+        .update(updates)
+        .eq("contract_address", contractAddress);
+
+      if (error) {
+        console.error("Error updating coin price:", error);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error("❌ Failed to update coin price:", error);
+      return false;
     }
   }
 
@@ -235,28 +305,28 @@ export class CoinService {
    * Get coins by category
    */
   static async getCoinsByCategory(category: string): Promise<Coin[]> {
-    return this.getCoins({ category })
+    return this.getCoins({ category });
   }
 
   /**
    * Get coins by creator
    */
   static async getCoinsByCreator(creatorAddress: string): Promise<Coin[]> {
-    return this.getCoins({ creator_address: creatorAddress })
+    return this.getCoins({ creator_address: creatorAddress });
   }
 
   /**
    * Get latest coins (default 20 per page)
    */
   static async getLatestCoins(limit: number = 20): Promise<Coin[]> {
-    return this.getCoins({ limit })
+    return this.getCoins({ limit });
   }
 
   /**
    * Search coins
    */
   static async searchCoins(searchTerm: string): Promise<Coin[]> {
-    return this.getCoins({ search: searchTerm })
+    return this.getCoins({ search: searchTerm });
   }
 
   /**
@@ -265,14 +335,14 @@ export class CoinService {
   static async coinExists(contractAddress: string): Promise<boolean> {
     try {
       const { data, error } = await supabase
-        .from('drawcoins')
-        .select('id')
-        .eq('contract_address', contractAddress)
-        .single()
+        .from("drawcoins")
+        .select("id")
+        .eq("contract_address", contractAddress)
+        .single();
 
-      return !!data && !error
+      return !!data && !error;
     } catch (error) {
-      return false
+      return false;
     }
   }
 
@@ -282,18 +352,18 @@ export class CoinService {
   static async getTotalCoinsCount(): Promise<number> {
     try {
       const { count, error } = await supabase
-        .from('drawcoins')
-        .select('*', { count: 'exact', head: true })
+        .from("drawcoins")
+        .select("*", { count: "exact", head: true });
 
       if (error) {
-        console.error('Error getting total coins count:', error)
-        return 0
+        console.error("Error getting total coins count:", error);
+        return 0;
       }
 
-      return count || 0
+      return count || 0;
     } catch (error) {
-      console.error('❌ Failed to get total coins count:', error)
-      return 0
+      console.error("❌ Failed to get total coins count:", error);
+      return 0;
     }
   }
 
@@ -301,45 +371,48 @@ export class CoinService {
    * Get coin statistics
    */
   static async getCoinStats(): Promise<{
-    totalCoins: number
-    totalCreators: number
-    categoryCounts: Record<string, number>
+    totalCoins: number;
+    totalCreators: number;
+    categoryCounts: Record<string, number>;
   }> {
     try {
       // Total coins
       const { count: totalCoins } = await supabase
-        .from('drawcoins')
-        .select('*', { count: 'exact', head: true })
+        .from("drawcoins")
+        .select("*", { count: "exact", head: true });
 
       // Unique creators
       const { data: creatorsData } = await supabase
-        .from('drawcoins')
-        .select('creator_address')
+        .from("drawcoins")
+        .select("creator_address");
 
-      const uniqueCreators = new Set(creatorsData?.map(c => c.creator_address) || [])
+      const uniqueCreators = new Set(
+        creatorsData?.map((c) => c.creator_address) || []
+      );
 
       // Category counts
       const { data: categoryData } = await supabase
-        .from('drawcoins')
-        .select('category')
+        .from("drawcoins")
+        .select("category");
 
-      const categoryCounts = categoryData?.reduce((acc, coin) => {
-        acc[coin.category] = (acc[coin.category] || 0) + 1
-        return acc
-      }, {} as Record<string, number>) || {}
+      const categoryCounts =
+        categoryData?.reduce((acc, coin) => {
+          acc[coin.category] = (acc[coin.category] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>) || {};
 
       return {
         totalCoins: totalCoins || 0,
         totalCreators: uniqueCreators.size,
         categoryCounts,
-      }
+      };
     } catch (error) {
-      console.error('❌ Failed to fetch coin stats:', error)
+      console.error("❌ Failed to fetch coin stats:", error);
       return {
         totalCoins: 0,
         totalCreators: 0,
         categoryCounts: {},
-      }
+      };
     }
   }
-} 
+}

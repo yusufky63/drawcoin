@@ -103,11 +103,7 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const isAiLimitReached = aiLimit.usage >= aiLimit.limit;
 
   useEffect(() => {
-    // Simulate initial loading
-    const timer = setTimeout(() => {
-      setInitialLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
+    setInitialLoading(false);
   }, []);
 
   useEffect(() => {

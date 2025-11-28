@@ -263,16 +263,6 @@ export const CoinInfoSection: React.FC<CoinInfoSectionProps> = ({
                     )}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-art-gray-600">
-                    Total Transactions:
-                  </span>
-                  <span className="text-sm font-bold text-art-gray-900">
-                    {marketData?.totalTransactions
-                      ? marketData.totalTransactions.toLocaleString()
-                      : "N/A"}
-                  </span>
-                </div>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-art-gray-600">Pair:</span>

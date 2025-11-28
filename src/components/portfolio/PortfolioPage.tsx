@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import {
   AnalyticsService,
@@ -18,6 +19,7 @@ interface PortfolioPageProps {
 }
 
 export default function PortfolioPage({ onView }: PortfolioPageProps) {
+  const router = useRouter();
   const { address, isConnected } = useAccount();
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [userStats, setUserStats] = useState<any>(null);
@@ -67,16 +69,34 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
           bVal = tokenB?.name?.toLowerCase() || "";
           break;
         case "mc":
-          aVal = parseFloat(tokenA?.marketCap || "0");
-          bVal = parseFloat(tokenB?.marketCap || "0");
+          aVal =
+            typeof tokenA?.marketCap === "number"
+              ? tokenA.marketCap
+              : parseFloat(tokenA?.marketCap || "0");
+          bVal =
+            typeof tokenB?.marketCap === "number"
+              ? tokenB.marketCap
+              : parseFloat(tokenB?.marketCap || "0");
           break;
         case "volume":
-          aVal = parseFloat(tokenA?.volume24h || "0");
-          bVal = parseFloat(tokenB?.volume24h || "0");
+          aVal =
+            typeof tokenA?.volume24h === "number"
+              ? tokenA.volume24h
+              : parseFloat(tokenA?.volume24h || "0");
+          bVal =
+            typeof tokenB?.volume24h === "number"
+              ? tokenB.volume24h
+              : parseFloat(tokenB?.volume24h || "0");
           break;
         case "change":
-          aVal = parseFloat(tokenA?.change24h || "0");
-          bVal = parseFloat(tokenB?.change24h || "0");
+          aVal =
+            typeof tokenA?.change24h === "number"
+              ? tokenA.change24h
+              : parseFloat(tokenA?.change24h || "0");
+          bVal =
+            typeof tokenB?.change24h === "number"
+              ? tokenB.change24h
+              : parseFloat(tokenB?.change24h || "0");
           break;
         case "balance":
           aVal = a.balance || 0;
@@ -103,16 +123,34 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
           bVal = b.name?.toLowerCase() || "";
           break;
         case "mc":
-          aVal = parseFloat(a.marketCap || "0");
-          bVal = parseFloat(b.marketCap || "0");
+          aVal =
+            typeof a.marketCap === "number"
+              ? a.marketCap
+              : parseFloat(a.marketCap || "0");
+          bVal =
+            typeof b.marketCap === "number"
+              ? b.marketCap
+              : parseFloat(b.marketCap || "0");
           break;
         case "volume":
-          aVal = parseFloat(a.volume_24h || "0");
-          bVal = parseFloat(b.volume_24h || "0");
+          aVal =
+            typeof a.volume_24h === "number"
+              ? a.volume_24h
+              : parseFloat(a.volume_24h || "0");
+          bVal =
+            typeof b.volume_24h === "number"
+              ? b.volume_24h
+              : parseFloat(b.volume_24h || "0");
           break;
         case "change":
-          aVal = parseFloat(a.change24h || "0");
-          bVal = parseFloat(b.change24h || "0");
+          aVal =
+            typeof a.change24h === "number"
+              ? a.change24h
+              : parseFloat(a.change24h || "0");
+          bVal =
+            typeof b.change24h === "number"
+              ? b.change24h
+              : parseFloat(b.change24h || "0");
           break;
         case "holders":
           aVal = a.holders || 0;
@@ -262,8 +300,6 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
     fetchPortfolio();
   }, [address]);
 
-
-
   if (!isConnected) {
     return (
       <div className="min-h-screen bg-art-gray-50 flex items-center justify-center p-4">
@@ -298,17 +334,17 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Profile Skeleton */}
           <HandDrawnSkeleton variant="profile" />
-          
+
           {/* Stats Cards Skeleton */}
           <div className="grid grid-cols-3 gap-2 md:gap-4">
             <HandDrawnSkeleton variant="stat" count={3} />
           </div>
-          
+
           {/* Tabs Skeleton */}
           <div className="hand-drawn-card p-2">
             <HandDrawnSkeleton variant="text" className="w-full h-12" />
           </div>
-          
+
           {/* Table Skeleton */}
           <HandDrawnSkeleton variant="table" count={5} />
         </div>
@@ -428,7 +464,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
               <button
                 onClick={() =>
                   window.open(
-                    `https://zora.co/@${zoraProfile?.handle || 'drawcoin'}`,
+                    `https://zora.co/@${zoraProfile?.handle || "drawcoin"}`,
                     "_blank"
                   )
                 }
@@ -438,9 +474,9 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                 }}
                 title="Zora Profile"
               >
-                <img 
-                  src="https://pbs.twimg.com/profile_images/1912995896226443264/R9N6BIXd_400x400.jpg" 
-                  alt="Zora" 
+                <img
+                  src="https://pbs.twimg.com/profile_images/1912995896226443264/R9N6BIXd_400x400.jpg"
+                  alt="Zora"
                   className="w-5 h-5 rounded-full"
                 />
                 <span className="hidden md:inline">Zora Profile</span>
@@ -470,11 +506,15 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                 }, 0)
               )}
             </div>
-            <div className="text-[9px] md:text-xs text-blue-600 mt-0.5 md:mt-1 hidden md:block">Estimated Value</div>
+            <div className="text-[9px] md:text-xs text-blue-600 mt-0.5 md:mt-1 hidden md:block">
+              Estimated Value
+            </div>
           </div>
 
           <div className="hand-drawn-card p-2 md:p-4">
-            <div className="text-[10px] md:text-sm text-art-gray-600 mb-0.5 md:mb-1 font-bold md:font-normal">Trades</div>
+            <div className="text-[10px] md:text-sm text-art-gray-600 mb-0.5 md:mb-1 font-bold md:font-normal">
+              Trades
+            </div>
             <div className="text-base md:text-2xl font-bold text-art-gray-900">
               {userStats?.total_trades || 0}
             </div>
@@ -484,7 +524,9 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
           </div>
 
           <div className="hand-drawn-card p-2 md:p-4">
-            <div className="text-[10px] md:text-sm text-art-gray-600 mb-0.5 md:mb-1 font-bold md:font-normal">Created</div>
+            <div className="text-[10px] md:text-sm text-art-gray-600 mb-0.5 md:mb-1 font-bold md:font-normal">
+              Created
+            </div>
             <div className="text-base md:text-2xl font-bold text-art-gray-900">
               {createdTokens.length}
             </div>
@@ -669,32 +711,44 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                             </div>
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
-                            {token?.marketCap
-                              ? `$${formatNumber(parseFloat(token.marketCap))}`
-                              : "-"}
+                            {(() => {
+                              const val =
+                                typeof token?.marketCap === "number"
+                                  ? token.marketCap
+                                  : parseFloat(token?.marketCap || "0");
+                              return val ? `$${formatNumber(val)}` : "-";
+                            })()}
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
-                            {token?.volume24h
-                              ? `$${formatNumber(parseFloat(token.volume24h))}`
-                              : "-"}
+                            {(() => {
+                              const val =
+                                typeof token?.volume24h === "number"
+                                  ? token.volume24h
+                                  : parseFloat(token?.volume24h || "0");
+                              return val ? `$${formatNumber(val)}` : "-";
+                            })()}
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right hidden lg:table-cell">
-                            {token?.change24h ? (
-                              <span
-                                className={`text-xs md:text-sm font-semibold ${
-                                  parseFloat(token.change24h) >= 0
-                                    ? "text-green-600"
-                                    : "text-red-600"
-                                }`}
-                              >
-                                {parseFloat(token.change24h) >= 0 ? "+" : ""}
-                                {parseFloat(token.change24h).toFixed(1)}%
-                              </span>
-                            ) : (
-                              <span className="text-xs md:text-sm text-art-gray-400">
-                                -
-                              </span>
-                            )}
+                            {(() => {
+                              const val =
+                                typeof token?.change24h === "number"
+                                  ? token.change24h
+                                  : parseFloat(token?.change24h || "0");
+                              return token?.change24h ? (
+                                <span
+                                  className={`text-xs md:text-sm font-semibold ${
+                                    val >= 0 ? "text-green-600" : "text-red-600"
+                                  }`}
+                                >
+                                  {val >= 0 ? "+" : ""}
+                                  {val.toFixed(1)}%
+                                </span>
+                              ) : (
+                                <span className="text-xs md:text-sm text-art-gray-400">
+                                  -
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right">
                             <div className="flex flex-col items-end gap-0.5">
@@ -711,7 +765,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                               onClick={() =>
                                 onView
                                   ? onView(item.token_details)
-                                  : (window.location.href = `/coin/${item.token_address}`)
+                                  : router.push(`/coin/${item.token_address}`)
                               }
                               className="inline-flex items-center justify-center p-1.5 md:p-2 rounded-lg bg-art-gray-900 text-white hover:bg-art-gray-700 transition-colors"
                               title="View Token"
@@ -875,32 +929,44 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                             </div>
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
-                            {token.marketCap
-                              ? `$${formatNumber(parseFloat(token.marketCap))}`
-                              : "-"}
+                            {(() => {
+                              const val =
+                                typeof token.marketCap === "number"
+                                  ? token.marketCap
+                                  : parseFloat(token.marketCap || "0");
+                              return val ? `$${formatNumber(val)}` : "-";
+                            })()}
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm hidden lg:table-cell">
-                            {token.volume_24h
-                              ? `$${formatNumber(parseFloat(token.volume_24h))}`
-                              : "-"}
+                            {(() => {
+                              const val =
+                                typeof token.volume_24h === "number"
+                                  ? token.volume_24h
+                                  : parseFloat(token.volume_24h || "0");
+                              return val ? `$${formatNumber(val)}` : "-";
+                            })()}
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right hidden lg:table-cell">
-                            {token.change24h ? (
-                              <span
-                                className={`text-xs md:text-sm font-semibold ${
-                                  parseFloat(token.change24h) >= 0
-                                    ? "text-green-600"
-                                    : "text-red-600"
-                                }`}
-                              >
-                                {parseFloat(token.change24h) >= 0 ? "+" : ""}
-                                {parseFloat(token.change24h).toFixed(1)}%
-                              </span>
-                            ) : (
-                              <span className="text-xs md:text-sm text-art-gray-400">
-                                -
-                              </span>
-                            )}
+                            {(() => {
+                              const val =
+                                typeof token.change24h === "number"
+                                  ? token.change24h
+                                  : parseFloat(token.change24h || "0");
+                              return token.change24h ? (
+                                <span
+                                  className={`text-xs md:text-sm font-semibold ${
+                                    val >= 0 ? "text-green-600" : "text-red-600"
+                                  }`}
+                                >
+                                  {val >= 0 ? "+" : ""}
+                                  {val.toFixed(1)}%
+                                </span>
+                              ) : (
+                                <span className="text-xs md:text-sm text-art-gray-400">
+                                  -
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="px-2 md:px-3 py-3 text-right text-xs md:text-sm">
                             {token.holders || 1}
@@ -910,7 +976,9 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                               onClick={() =>
                                 onView
                                   ? onView(token)
-                                  : (window.location.href = `/coin/${token.contract_address}`)
+                                  : router.push(
+                                      `/coin/${token.contract_address}`
+                                    )
                               }
                               className="inline-flex items-center justify-center p-1.5 md:p-2 rounded-lg bg-art-gray-900 text-white hover:bg-art-gray-700 transition-colors"
                               title="View Token"

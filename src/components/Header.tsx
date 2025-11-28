@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   detectEnvironment,
@@ -9,7 +9,6 @@ import {
   getFarcasterUserContext,
 } from "../utils/wallet";
 import dynamic from "next/dynamic";
-import HowItWorksModal from "./market/HowItWorksModal";
 
 // Dynamic import for TokenTicker
 const TokenTicker = dynamic(() => import("./market/TokenTicker"), {
@@ -34,10 +33,10 @@ export default function ArtHeader({
   userName,
 }: HeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [currentTab, setCurrentTab] = useState(activeTab);
   const [userInfo, setUserInfo] = useState<UserInfo>({});
   const [showWalletModal, setShowWalletModal] = useState(false);
-  const [showHowItWorksModal, setShowHowItWorksModal] = useState(false);
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
@@ -52,8 +51,12 @@ export default function ArtHeader({
       setCurrentTab("portfolio");
     } else if (pathname === "/watchlist") {
       setCurrentTab("watchlist");
+    } else if (pathname === "/leaderboard") {
+      setCurrentTab("leaderboard");
     } else if (pathname === "/how-it-works") {
       setCurrentTab("info");
+    } else if (pathname === "/live-canvas") {
+      setCurrentTab("live-canvas");
     } else if (pathname.startsWith("/coin/")) {
       setCurrentTab("explore"); // Coin detail pages are part of explore
     }
@@ -142,8 +145,6 @@ export default function ArtHeader({
     fetchUserInfo();
   }, [userName, isConnected, address]);
 
-
-
   return (
     <>
       {/* Sticky Container for Ticker and Header */}
@@ -212,6 +213,7 @@ export default function ArtHeader({
                   >
                     Explore
                   </Link>
+
                   <Link
                     href="/create"
                     className={`text-sm font-medium transition-all duration-200 ${
@@ -239,6 +241,20 @@ export default function ArtHeader({
                     }}
                   >
                     Portfolio
+                  </Link>
+                  <Link
+                    href="/leaderboard"
+                    className={`text-sm font-medium transition-all duration-200 ${
+                      currentTab === "leaderboard"
+                        ? "hand-drawn-btn"
+                        : "hand-drawn-btn-dotted"
+                    }`}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Leaderboard
                   </Link>
                 </nav>
               </div>
@@ -407,6 +423,24 @@ export default function ArtHeader({
               </div>
 
               <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => router.push("/how-it-works")}
+                  className="p-1.5 text-art-gray-500 hover:text-art-gray-900 transition-colors"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </button>
                 {isConnected && address ? (
                   <div className="flex items-center space-x-2">
                     <div
@@ -528,8 +562,14 @@ export default function ArtHeader({
               style={{
                 border: "1.5px solid #2d3748",
                 borderRadius: "10px 3px 8px 5px",
-                transform: currentTab === "explore" ? "rotate(-0.8deg)" : "rotate(0.3deg)",
-                boxShadow: currentTab === "explore" ? "2px 2px 0 #2d3748" : "1.5px 1.5px 0 #2d3748",
+                transform:
+                  currentTab === "explore"
+                    ? "rotate(-0.8deg)"
+                    : "rotate(0.3deg)",
+                boxShadow:
+                  currentTab === "explore"
+                    ? "2px 2px 0 #2d3748"
+                    : "1.5px 1.5px 0 #2d3748",
                 textDecoration: "none",
               }}
             >
@@ -560,8 +600,14 @@ export default function ArtHeader({
               style={{
                 border: "1.5px solid #2d3748",
                 borderRadius: "8px 5px 10px 3px",
-                transform: currentTab === "watchlist" ? "rotate(0.8deg)" : "rotate(-0.3deg)",
-                boxShadow: currentTab === "watchlist" ? "2px 2px 0 #2d3748" : "1.5px 1.5px 0 #2d3748",
+                transform:
+                  currentTab === "watchlist"
+                    ? "rotate(0.8deg)"
+                    : "rotate(-0.3deg)",
+                boxShadow:
+                  currentTab === "watchlist"
+                    ? "2px 2px 0 #2d3748"
+                    : "1.5px 1.5px 0 #2d3748",
                 textDecoration: "none",
               }}
             >
@@ -592,8 +638,14 @@ export default function ArtHeader({
               style={{
                 border: "1.5px solid #2d3748",
                 borderRadius: "10px 3px 8px 5px",
-                transform: currentTab === "portfolio" ? "rotate(-0.8deg)" : "rotate(0.3deg)",
-                boxShadow: currentTab === "portfolio" ? "2px 2px 0 #2d3748" : "1.5px 1.5px 0 #2d3748",
+                transform:
+                  currentTab === "portfolio"
+                    ? "rotate(-0.8deg)"
+                    : "rotate(0.3deg)",
+                boxShadow:
+                  currentTab === "portfolio"
+                    ? "2px 2px 0 #2d3748"
+                    : "1.5px 1.5px 0 #2d3748",
                 textDecoration: "none",
               }}
             >
@@ -613,19 +665,25 @@ export default function ArtHeader({
               <span className="text-[10px] font-bold">Portfolio</span>
             </Link>
 
-            {/* Info */}
+            {/* Leaderboard */}
             <Link
-              href="/how-it-works"
+              href="/leaderboard"
               className={`flex flex-col items-center py-1.5 px-2 rounded-lg transition-all duration-200 ${
-                currentTab === "info"
+                currentTab === "leaderboard"
                   ? "bg-art-gray-900 text-white"
                   : "bg-white text-art-gray-600"
               }`}
               style={{
                 border: "1.5px solid #2d3748",
                 borderRadius: "8px 5px 10px 3px",
-                transform: currentTab === "info" ? "rotate(-0.8deg)" : "rotate(-0.3deg)",
-                boxShadow: currentTab === "info" ? "2px 2px 0 #2d3748" : "1.5px 1.5px 0 #2d3748",
+                transform:
+                  currentTab === "leaderboard"
+                    ? "rotate(-0.8deg)"
+                    : "rotate(-0.3deg)",
+                boxShadow:
+                  currentTab === "leaderboard"
+                    ? "2px 2px 0 #2d3748"
+                    : "1.5px 1.5px 0 #2d3748",
                 textDecoration: "none",
               }}
             >
@@ -639,10 +697,10 @@ export default function ArtHeader({
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
                 />
               </svg>
-              <span className="text-[10px] font-bold">Info</span>
+              <span className="text-[10px] font-bold">Top</span>
             </Link>
           </div>
 
@@ -664,7 +722,10 @@ export default function ArtHeader({
               style={{
                 border: "2.5px solid #2d3748",
                 borderRadius: "50% 40% 50% 40%",
-                transform: currentTab === "create" ? "rotate(-1.5deg) scale(1.03)" : "rotate(0.8deg)",
+                transform:
+                  currentTab === "create"
+                    ? "rotate(-1.5deg) scale(1.03)"
+                    : "rotate(0.8deg)",
                 boxShadow: "3px 3px 0 #2d3748",
               }}
             >
@@ -762,12 +823,6 @@ export default function ArtHeader({
           </div>
         </div>
       )}
-
-      {/* How It Works Modal */}
-      <HowItWorksModal
-        isOpen={showHowItWorksModal}
-        onClose={() => setShowHowItWorksModal(false)}
-      />
     </>
   );
 }

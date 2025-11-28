@@ -13,6 +13,8 @@ import DetailsModal from "./DetailsModal";
 import { useWatchlist } from "../../hooks/useWatchlist";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
+import ExploreSection from "./ExploreSection";
+
 interface MarketPageProps {
   onTrade: (token: Coin) => void;
   onView: (token: Coin) => void;
@@ -36,6 +38,21 @@ export default function MarketPage({ onView }: MarketPageProps) {
   const [allTokens, setAllTokens] = useState<Coin[]>([]);
   const [visibleCount, setVisibleCount] = useState(20); // Start with only 20 for faster initial load
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Explore Data State
+  const [exploreData, setExploreData] = useState<{
+    mostWatchlisted: any[];
+    topAI: any[];
+    topHandDrawn: any[];
+  } | null>(null);
+
+  // Fetch Explore Data
+  useEffect(() => {
+    fetch("/api/explore")
+      .then((res) => res.json())
+      .then((data) => setExploreData(data))
+      .catch((err) => console.error("Failed to fetch explore data", err));
+  }, []);
 
   // Fetch more tokens for client-side filtering, but render progressively
   // Start with 500 tokens which covers most use cases without overwhelming the API
@@ -99,19 +116,11 @@ export default function MarketPage({ onView }: MarketPageProps) {
             new Date(b.created_at || 0).getTime()
           );
         case "price-high":
-          return (
-            parseFloat(b.current_price || "0") -
-            parseFloat(a.current_price || "0")
-          );
+          return (b.current_price || 0) - (a.current_price || 0);
         case "price-low":
-          return (
-            parseFloat(a.current_price || "0") -
-            parseFloat(b.current_price || "0")
-          );
+          return (a.current_price || 0) - (b.current_price || 0);
         case "volume-high":
-          return (
-            parseFloat(b.volume_24h || "0") - parseFloat(a.volume_24h || "0")
-          );
+          return (b.volume_24h || 0) - (a.volume_24h || 0);
         case "holders-high":
           return (b.holders || 0) - (a.holders || 0);
         default:
@@ -212,10 +221,6 @@ export default function MarketPage({ onView }: MarketPageProps) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const clearCreatorFilter = () => {
-    setSelectedCreator(null);
-  };
-
   // Watchlist Hook
   const { watchlist, toggleWatchlist } = useWatchlist();
   const watchlistSet = useMemo(
@@ -233,8 +238,8 @@ export default function MarketPage({ onView }: MarketPageProps) {
 
   if (showLoading) {
     return (
-      <div className="min-h-screen bg-art-off-white pt-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-4">
+      <div className="min-h-screen bg-art-off-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-4 pt-6">
           {/* Hand-Drawn Loading Skeleton */}
           <div className="space-y-6 mt-8">
             {/* Header Skeleton */}
@@ -254,31 +259,8 @@ export default function MarketPage({ onView }: MarketPageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-art-off-white pt-6">
-      <div className="max-w-7xl mx-auto px-4 sm:px-4">
-        {/* Profile Filter Banner */}
-        {selectedCreator && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">👤</span>
-              <div>
-                <p className="text-sm text-blue-600 font-bold">
-                  Viewing Profile
-                </p>
-                <p className="text-xs text-blue-500 font-mono">
-                  {selectedCreator}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={clearCreatorFilter}
-              className="text-sm bg-white border border-blue-200 px-3 py-1 rounded-full hover:bg-blue-100 transition-colors"
-            >
-              Clear Filter ✕
-            </button>
-          </div>
-        )}
-
+    <div className="min-h-screen bg-art-off-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-4 pt-6">
         {/* Filters */}
         <TokenFilters
           selectedCategory=""
@@ -294,18 +276,29 @@ export default function MarketPage({ onView }: MarketPageProps) {
         />
 
         {/* Results Count */}
-        <div className="mb-4 md:mb-6 flex justify-between items-end">
-          <p className="text-xs md:text-sm text-art-gray-600">
+        <div className="mb-2 flex justify-between items-end">
+          <p className="text-xs text-art-gray-500">
             {selectedCreator
               ? `Found ${filteredTokens.length} tokens by this creator`
               : `Showing ${visibleTokens.length} of ${filteredTokens.length} tokens`}
-            {allTokens.length > 1000 && (
-              <span className="ml-2 text-xs text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">
-                Large Dataset Loaded ({allTokens.length})
-              </span>
-            )}
           </p>
         </div>
+
+        {/* Explore Sections (Only show if no search/filter active) */}
+        {!searchTerm &&
+          !selectedCreator &&
+          creationType === "all" &&
+          exploreData && (
+            <div className="mb-8">
+              <ExploreSection
+                title="Most Watchlisted"
+                tokens={exploreData.mostWatchlisted}
+                type="watchlist"
+              />
+            </div>
+          )}
+
+        {/* Profile Filter Banner */}
 
         {/* Token Grid */}
         <TokenGrid

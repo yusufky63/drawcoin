@@ -472,3 +472,39 @@ export async function verifyAddressType(address) {
     `Failed to verify address type after ${maxRetries} attempts. Try again later.`
   );
 }
+
+/**
+ * Fetches multiple Zora profiles concurrently with rate limiting
+ * @param {string[]} addresses - Array of wallet addresses
+ * @param {number} concurrency - Number of concurrent requests (default: 5)
+ * @returns {Promise<Object>} Map of address -> profile data
+ */
+export const getZoraProfilesBulk = async (addresses, concurrency = 5) => {
+  const results = {};
+  const uniqueAddresses = [...new Set(addresses.map((a) => a.toLowerCase()))];
+
+  // Process in chunks to limit concurrency
+  for (let i = 0; i < uniqueAddresses.length; i += concurrency) {
+    const chunk = uniqueAddresses.slice(i, i + concurrency);
+    const promises = chunk.map(async (address) => {
+      try {
+        const profile = await getZoraProfile(address);
+        if (profile) {
+          results[address] = profile;
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch profile for ${address}:`, error.message);
+        // Continue even if one fails
+      }
+    });
+
+    await Promise.all(promises);
+
+    // Add a small delay between chunks to be nice to the API
+    if (i + concurrency < uniqueAddresses.length) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  return results;
+};

@@ -3,6 +3,7 @@ import {
   useAccount,
   useWalletClient,
   usePublicClient,
+  useSwitchChain,
 } from "wagmi";
 import { formatEther } from "viem";
 import { getCoinDetails } from "../../services/sdk/getCoins";
@@ -143,15 +144,12 @@ export default function TradeModal({
     }
   };
 
+  const { switchChain } = useSwitchChain();
+
   const handleTrade = async () => {
-    if (
-      !isConnected ||
-      !address ||
-      !walletClient ||
-      !publicClient ||
-      !token ||
-      !tokenDetails
-    ) {
+    if (!token) return;
+
+    if (!isConnected) {
       showError("Please connect your wallet", "wallet connection");
       return;
     }
@@ -161,63 +159,91 @@ export default function TradeModal({
       return;
     }
 
-    // Set trading state immediately to show loading UI
     setTrading(true);
 
-    // Show initial loading message
-    const loadingToast = toast.loading(
-      tradeType === "buy"
-        ? `Preparing to buy ${token.symbol}...`
-        : `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
-      { duration: 0 }
-    );
-
     try {
-      // Pass human-readable amount; executeTrade will convert based on direction
+      // Check wallet and public clients
+      if (!publicClient || !walletClient) {
+        showError("Wallet client not available", "wallet connection");
+        return;
+      }
+      const chainId = await publicClient.getChainId();
 
-      // If no error thrown, treat as success
-      toast.success(`${tradeType === "buy" ? "Buy" : "Sell"} successful!`, {
-        id: loadingToast,
-      });
+      // Check if we're on Base mainnet (8453)
+      if (chainId !== 8453) {
+        try {
+          await switchChain({ chainId: 8453 });
+        } catch (switchError) {
+          showError("Please switch to Base network", "network switch");
+          return;
+        }
+      }
 
-      // Show success modal instead of auto-sharing
-      setShowSuccessModal(true);
+      // Import trade execution function
+      const { executeTrade } = await import("../../services/sdk/getTradeCoin");
 
-      // Refresh balances after successful trade
-      await refreshBalances();
+      const tradeParams = {
+        direction: tradeType, // 'buy' or 'sell'
+        coinAddress: token.contract_address,
+        amountIn: amount, // Keep as string
+        recipient: address!,
+        slippage,
+        walletClient,
+        publicClient,
+        account: address!,
+        switchChain,
+        creatorAddress: token.creator_address || null,
+      };
+
+      console.log("Executing trade with params:", tradeParams);
+
+      const result = (await executeTrade(tradeParams)) as any;
+
+      // executeTrade returns transaction receipt, check for hash
+      if (result && (result.transactionHash || result.hash)) {
+        const txHash = result.transactionHash || result.hash;
+        toast.success(
+          `${
+            tradeType === "buy" ? "Purchase" : "Sale"
+          } successful! Tx: ${txHash.substring(0, 10)}...`
+        );
+
+        // Analytics is already handled in getTradeCoin.js executeUniversalTrade
+        console.log("✅ Trade completed, analytics handled by SDK");
+
+        setShowSuccessModal(true);
+        setAmount(""); // Clear amount
+
+        // Refresh balances after a short delay
+        setTimeout(() => {
+          refreshBalances();
+        }, 2000);
+      } else {
+        console.error("Trade result:", result);
+        showError(
+          "Trade failed - no transaction hash received",
+          "trade execution"
+        );
+      }
     } catch (error: any) {
       console.error("Trade error:", error);
 
-      // User-friendly error messages
-      let errorMessage = "Transaction failed";
-
-      if (
-        error?.message?.includes("User rejected") ||
-        error?.message?.includes("denied transaction")
-      ) {
-        errorMessage = "Transaction cancelled by user";
-      } else if (error?.message?.includes("insufficient funds")) {
-        errorMessage = "Insufficient funds";
-      } else if (error?.message?.includes("gas")) {
-        errorMessage = "Transaction failed - try again";
-      } else if (
-        error?.message?.includes("Quote failed") ||
-        error?.message?.includes("500")
-      ) {
-        errorMessage = "Token not ready for trading yet";
-      } else if (error?.message?.includes("Internal Server Error")) {
-        errorMessage = "Service temporarily unavailable";
-      } else if (error?.message) {
-        errorMessage =
-          error.message.length > 50
-            ? error.message.substring(0, 50) + "..."
-            : error.message;
+      // Handle specific error types
+      if (error.message?.includes("User rejected")) {
+        showError("Transaction cancelled by user", "user cancellation");
+      } else if (error.message?.includes("insufficient funds")) {
+        showError("Insufficient balance for this trade", "insufficient funds");
+      } else if (error.message?.includes("slippage")) {
+        showError(
+          "Price moved too much. Try increasing slippage tolerance.",
+          "slippage error"
+        );
+      } else {
+        showError(
+          error.message || "Trade failed. Please try again.",
+          "trade execution"
+        );
       }
-
-      toast.error(
-        `❌ ${tradeType === "buy" ? "Buy" : "Sell"} failed: ${errorMessage}`,
-        { id: loadingToast }
-      );
     } finally {
       setTrading(false);
     }

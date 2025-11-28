@@ -277,10 +277,7 @@ export function PriceChart({
         className="w-full overflow-hidden rounded-lg border-2 border-art-gray-900 flex items-center justify-center bg-art-gray-50"
         style={{ height: `${height}px` }}
       >
-        <p
-          className="text-art-gray-500 font-bold"
-          style={{ fontFamily: "'Kalam', cursive" }}
-        >
+        <p className="text-art-gray-500 font-bold">
           Chart unavailable (Pool not found)
         </p>
       </div>
@@ -303,7 +300,6 @@ export function PriceChart({
                 ? "bg-art-gray-100 text-art-gray-900"
                 : "text-art-gray-500 hover:bg-gray-50"
             }`}
-            style={{ fontFamily: "'Kalam', cursive" }}
           >
             Custom
           </button>
@@ -315,7 +311,6 @@ export function PriceChart({
                 ? "bg-art-gray-100 text-art-gray-900"
                 : "text-art-gray-500 hover:bg-gray-50"
             }`}
-            style={{ fontFamily: "'Kalam', cursive" }}
           >
             Embed
           </button>
@@ -335,7 +330,6 @@ export function PriceChart({
                       ? "bg-blue-100 border-blue-500 text-blue-700 transform -rotate-1"
                       : "bg-white border-art-gray-300 text-art-gray-600 hover:bg-gray-50"
                   }`}
-                  style={{ fontFamily: "'Kalam', cursive" }}
                 >
                   {tf.label}
                 </button>
@@ -352,7 +346,6 @@ export function PriceChart({
                       ? "bg-green-100 text-green-800"
                       : "text-art-gray-500 hover:bg-gray-50"
                   }`}
-                  style={{ fontFamily: "'Kalam', cursive" }}
                 >
                   Price
                 </button>
@@ -364,7 +357,6 @@ export function PriceChart({
                       ? "bg-purple-100 text-purple-800"
                       : "text-art-gray-500 hover:bg-gray-50"
                   }`}
-                  style={{ fontFamily: "'Kalam', cursive" }}
                 >
                   MC
                 </button>
@@ -385,7 +377,6 @@ export function PriceChart({
       <div
         ref={tooltipRef}
         className="absolute z-20 bg-white/90 border-2 border-art-gray-200 rounded-lg p-2 pointer-events-none shadow-lg hidden"
-        style={{ fontFamily: "'Kalam', cursive" }}
       />
 
       {/* Chart Content */}
