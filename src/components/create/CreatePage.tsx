@@ -23,15 +23,13 @@ interface CreatePageProps {
 }
 
 export default function CreatePage({ onSuccess }: CreatePageProps) {
-  const { address, isConnected, connector } = useAccount();
+  const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
   const customCanvasRef = React.useRef<CustomCanvasRef>(null);
 
   // Form state
-  const [canSponsor, setCanSponsor] = useState(false);
-
   const [formData, setFormData] = useState({
     name: "",
     symbol: "",
@@ -41,7 +39,8 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
   // Note: Initial purchase is no longer supported in SDK v2
   // Users will need to purchase tokens separately after creation
-  const [ownersAddresses] = useState<string[]>([]);
+  const [ownersAddresses, setOwnersAddresses] = useState<string[]>([]);
+  const [ownerInputValue, setOwnerInputValue] = useState<string>("");
   const [selectedCurrency] = useState<number>(0); // ZORA currency
   const [startingMarketCap, setStartingMarketCap] = useState<number>(0); // LOW = 0, HIGH = 1
   const [smartWalletRouting] = useState<number>(0); // AUTO = 0, DISABLE = 1 (default AUTO)
@@ -149,66 +148,6 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     };
     fetchAiLimit();
   }, [address]);
-
-  // Check for Paymaster Capabilities (EIP-5792)
-  useEffect(() => {
-    const checkSponsorship = async () => {
-      // 1. Env check first
-      if (!process.env.NEXT_PUBLIC_PAYMASTER_URL || !walletClient || !address) {
-        setCanSponsor(false);
-        return;
-      }
-
-      try {
-        // 2. Connector check (Smart Wallet optimization)
-        // If it's explicitly Coinbase Smart Wallet, we almost certainly support it
-        if (connector?.id === "coinbaseWalletSDK") {
-          // We can still try to verify via capabilities, but default to true roughly
-        }
-
-        // 3. Capability Check (EIP-5792)
-        // This is the standard way to ask "Do you support Paymasters?"
-        const capabilities: any = await walletClient
-          .request({
-            method: "wallet_getCapabilities" as any,
-            params: [address],
-          })
-          .catch(() => {
-            // Silently fail if method not supported
-            return null;
-          });
-
-        if (capabilities) {
-          const chainId = await walletClient.getChainId();
-          const chainCaps =
-            capabilities[chainId] || capabilities[`0x${chainId.toString(16)}`];
-
-          if (chainCaps?.paymasterService?.supported) {
-            console.log("✅ Wallet supports Paymaster Service via EIP-5792");
-            setCanSponsor(true);
-            return;
-          }
-        }
-
-        // Fallback: If Coinbase Smart Wallet, assume YES (unless capabilities explicitly said no, but strict check above covers it)
-        if (connector?.id === "coinbaseWalletSDK") {
-          console.log(
-            "✅ Coinbase Wallet detected, assuming Paymaster support"
-          );
-          setCanSponsor(true);
-        } else {
-          console.log("❌ Wallet likely does not support Paymaster");
-          setCanSponsor(false);
-        }
-      } catch (error) {
-        console.warn("Failed to check wallet capabilities:", error);
-        // Fallback logic
-        setCanSponsor(connector?.id === "coinbaseWalletSDK");
-      }
-    };
-
-    checkSponsorship();
-  }, [walletClient, address, connector]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -1162,20 +1101,90 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                           discovery for your token.
                         </div>
                       </div>
-                    </div>
-                  )}
 
-                  {/* Gas Status Badge */}
-                  {canSponsor ? (
-                    <div className="flex items-center justify-center mb-4">
-                      <div className="flex items-center space-x-2 bg-green-100 border-2 border-green-300 px-3 py-1.5 rounded-full transform -rotate-1 shadow-sm">
-                        <span className="text-lg">⛽</span>
-                        <span className="text-green-700 font-bold text-sm">
-                          Gas Sponsored
-                        </span>
+                      {/* Co-Owners Section */}
+                      <div className="mb-4">
+                        <label className="hand-drawn-label mb-3">
+                          Co-Owners (Optional)
+                        </label>
+                        <div className="text-xs text-art-gray-500 mb-3">
+                          Add Ethereum addresses as additional owners. Co-owners
+                          will have full administrative control over the token
+                          contract, including the ability to manage token
+                          settings and parameters.
+                        </div>
+
+                        {/* Owner Input */}
+                        <div className="flex items-center space-x-2 mb-3">
+                          <input
+                            type="text"
+                            value={ownerInputValue}
+                            onChange={(e) => setOwnerInputValue(e.target.value)}
+                            placeholder="0x..."
+                            className="hand-drawn-input flex-1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const trimmed = ownerInputValue.trim();
+                              if (
+                                trimmed &&
+                                trimmed.startsWith("0x") &&
+                                trimmed.length === 42
+                              ) {
+                                if (!ownersAddresses.includes(trimmed)) {
+                                  setOwnersAddresses([
+                                    ...ownersAddresses,
+                                    trimmed,
+                                  ]);
+                                  setOwnerInputValue("");
+                                } else {
+                                  alert("This address is already added");
+                                }
+                              } else {
+                                alert("Please enter a valid Ethereum address");
+                              }
+                            }}
+                            className="hand-drawn-btn px-4 py-2"
+                          >
+                            Add
+                          </button>
+                        </div>
+
+                        {/* Owners List */}
+                        {ownersAddresses.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="text-xs font-bold text-art-gray-700 mb-2">
+                              Co-Owners ({ownersAddresses.length}):
+                            </div>
+                            {ownersAddresses.map((addr, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between bg-gray-100 px-3 py-2 rounded-art border border-gray-300"
+                              >
+                                <span className="text-xs font-mono text-art-gray-700 truncate">
+                                  {addr}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOwnersAddresses(
+                                      ownersAddresses.filter(
+                                        (_, i) => i !== idx
+                                      )
+                                    );
+                                  }}
+                                  className="text-red-500 hover:text-red-700 ml-2 font-bold"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ) : null}
+                  )}
 
                   <button
                     onClick={() => handleCreateToken(false)}

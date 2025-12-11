@@ -139,57 +139,6 @@ export async function createZoraCoin(
     console.log("Note: Initial purchase is no longer supported in SDK v2");
     console.log("Final coinParams:", coinParams);
 
-    // Fee optimization and Paymaster injection
-    const optimizedWalletClient = {
-      ...walletClient,
-      request: async (args) => {
-        // Use local proxy instead of direct URL
-        const paymasterUrl = "/api/paymaster";
-
-        // Prepare capabilities object if Paymaster URL is present
-        const capabilities = {
-          paymasterService: {
-            url: window.location.origin + paymasterUrl,
-          },
-        };
-
-        // 1. Handle EIP-5792 wallet_sendCalls (Primary for Smart Wallets)
-        if (args.method === "wallet_sendCalls") {
-          const [calls] = args.params;
-
-          if (capabilities) {
-            console.log("⛽ [Paymaster] Sponsoring wallet_sendCalls via Proxy");
-            const safeCalls = Array.isArray(calls) ? calls : [calls];
-            const newParams = [safeCalls, capabilities];
-            return walletClient.request({
-              ...args,
-              params: newParams,
-            });
-          }
-        }
-
-        // 2. Handle standard eth_sendTransaction (Fallback for some setups)
-        if (args.method === "eth_sendTransaction" && args.params?.[0]) {
-          const txParams = args.params[0];
-
-          if (capabilities) {
-            console.log("⛽ [Paymaster] Sponsoring eth_sendTransaction");
-            const newParams = {
-              ...txParams,
-              capabilities, // Inject root-level capabilities field for some bundlers
-            };
-
-            return walletClient.request({
-              ...args,
-              params: [newParams],
-            });
-          }
-        }
-
-        return walletClient.request(args);
-      },
-    };
-
     // Get current gas price for optimization
     const currentGasPrice = await publicClient.getGasPrice();
     console.log("Current gas price:", currentGasPrice.toString(), "wei");
@@ -202,7 +151,7 @@ export async function createZoraCoin(
     // Use the SDK's createCoin function with new parameter structure
     const result = await createCoin({
       call: coinParams,
-      walletClient: optimizedWalletClient,
+      walletClient: walletClient,
       publicClient: publicClient,
       options: {
         skipValidateTransaction: false, // Enable validation to get proper gas estimate
