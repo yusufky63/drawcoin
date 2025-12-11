@@ -69,7 +69,7 @@ export async function createZoraCoin(
     if (targetChainId === base.id && walletChainId !== base.id) {
       showError(
         `You're connected to network ID ${walletChainId}, but Base network (${base.id}) is required. Please switch networks.`,
-        'network validation'
+        "network validation"
       );
 
       throw new Error(
@@ -81,14 +81,17 @@ export async function createZoraCoin(
     let selectedCurrency = currency;
     if (selectedCurrency === undefined || selectedCurrency === null) {
       // Follow SDK defaults strictly: Base mainnet defaults to ZORA currency
-      selectedCurrency = (targetChainId === base.id)
-        ? CreateConstants.ContentCoinCurrencies.ZORA
-        : CreateConstants.ContentCoinCurrencies.ETH;
+      selectedCurrency =
+        targetChainId === base.id
+          ? CreateConstants.ContentCoinCurrencies.ZORA
+          : CreateConstants.ContentCoinCurrencies.ETH;
     }
 
     console.log(
       "Selected currency:",
-      selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA ? "ZORA" : "ETH"
+      selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA
+        ? "ZORA"
+        : "ETH"
     );
 
     // Prepare coin parameters according to new SDK v2 format
@@ -117,38 +120,84 @@ export async function createZoraCoin(
     console.log("Name:", name);
     console.log("Symbol:", symbol);
     console.log("Metadata URI:", uri);
-    console.log("Currency:", selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA ? "ZORA" : "ETH");
+    console.log(
+      "Currency:",
+      selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA
+        ? "ZORA"
+        : "ETH"
+    );
     console.log("Starting Market Cap:", startingMarketCap || "Not specified");
     console.log("Smart Wallet Routing:", smartWalletRouting || "Not specified");
     console.log("Platform Referrer:", platformReferrer);
     console.log("Additional Owners:", owners);
     console.log("Chain ID:", chainId);
-    console.log("Skip Metadata Validation:", true, "(Already uploaded to IPFS)");
+    console.log(
+      "Skip Metadata Validation:",
+      true,
+      "(Already uploaded to IPFS)"
+    );
     console.log("Note: Initial purchase is no longer supported in SDK v2");
     console.log("Final coinParams:", coinParams);
 
-    // Fee optimization: Create optimized wallet client for lower gas costs
+    // Fee optimization and Paymaster injection
     const optimizedWalletClient = {
       ...walletClient,
       request: async (args) => {
-        if (args.method === 'eth_sendTransaction' && args.params?.[0]) {
-          // Remove manual gas settings to let wallet optimize
-          const { gasPrice, maxFeePerGas, maxPriorityFeePerGas, ...optimizedParams } = args.params[0];
-          
-          // Use wallet's optimal gas estimation
-          return walletClient.request({
-            ...args,
-            params: [optimizedParams]
-          });
+        // Use local proxy instead of direct URL
+        const paymasterUrl = "/api/paymaster";
+
+        // Prepare capabilities object if Paymaster URL is present
+        const capabilities = {
+          paymasterService: {
+            url: window.location.origin + paymasterUrl,
+          },
+        };
+
+        // 1. Handle EIP-5792 wallet_sendCalls (Primary for Smart Wallets)
+        if (args.method === "wallet_sendCalls") {
+          const [calls] = args.params;
+
+          if (capabilities) {
+            console.log("⛽ [Paymaster] Sponsoring wallet_sendCalls via Proxy");
+            const safeCalls = Array.isArray(calls) ? calls : [calls];
+            const newParams = [safeCalls, capabilities];
+            return walletClient.request({
+              ...args,
+              params: newParams,
+            });
+          }
         }
+
+        // 2. Handle standard eth_sendTransaction (Fallback for some setups)
+        if (args.method === "eth_sendTransaction" && args.params?.[0]) {
+          const txParams = args.params[0];
+
+          if (capabilities) {
+            console.log("⛽ [Paymaster] Sponsoring eth_sendTransaction");
+            const newParams = {
+              ...txParams,
+              capabilities, // Inject root-level capabilities field for some bundlers
+            };
+
+            return walletClient.request({
+              ...args,
+              params: [newParams],
+            });
+          }
+        }
+
         return walletClient.request(args);
-      }
+      },
     };
 
     // Get current gas price for optimization
     const currentGasPrice = await publicClient.getGasPrice();
     console.log("Current gas price:", currentGasPrice.toString(), "wei");
-    console.log("Current gas price:", (Number(currentGasPrice) / 1e9).toFixed(2), "gwei");
+    console.log(
+      "Current gas price:",
+      (Number(currentGasPrice) / 1e9).toFixed(2),
+      "gwei"
+    );
 
     // Use the SDK's createCoin function with new parameter structure
     const result = await createCoin({
@@ -158,7 +207,7 @@ export async function createZoraCoin(
       options: {
         skipValidateTransaction: false, // Enable validation to get proper gas estimate
         gasMultiplier: 1.1, // Use 10% buffer instead of default
-      }
+      },
     });
 
     console.log("=== COIN CREATION SUCCESS ===");
@@ -166,9 +215,6 @@ export async function createZoraCoin(
     console.log("Coin Address:", result.address);
     console.log("Deployment Details:", result.deployment);
     console.log("Full Result:", result);
-    
-    // Note: Initial purchase handling removed as not supported in SDK v2
-    console.log("ℹ️ Initial purchase is no longer supported in SDK v2. Users can purchase tokens separately after creation.");
 
     return result;
   } catch (error) {
@@ -181,9 +227,15 @@ export async function createZoraCoin(
       );
     } else if (error.message && error.message.includes("user rejected")) {
       throw new Error("Token creation was rejected");
-    } else if (error.message && error.message.includes("rejected") || error.message?.includes("denied")) {
+    } else if (
+      (error.message && error.message.includes("rejected")) ||
+      error.message?.includes("denied")
+    ) {
       throw new Error("Token creation was rejected");
-    } else if (error.message && error.message.includes("cancelled") || error.message?.includes("canceled")) {
+    } else if (
+      (error.message && error.message.includes("cancelled")) ||
+      error.message?.includes("canceled")
+    ) {
       throw new Error("Token creation was cancelled");
     } else if (error.message && error.message.includes("insufficient funds")) {
       throw new Error("Insufficient funds for transaction including gas fees");

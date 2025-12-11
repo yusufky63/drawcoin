@@ -10,6 +10,8 @@ import DetailsModal from "../components/market/DetailsModal";
 import { Coin } from "../lib/supabase";
 import LiveCanvasPage from "../components/activity/LiveCanvasPage";
 
+import WelcomeModal from "../components/onboarding/WelcomeModal";
+
 // NoSSR wrapper component
 function NoSSR({ children }: { children: React.ReactNode }) {
   return (
@@ -60,6 +62,7 @@ export default function App({
   const [selectedToken, setSelectedToken] = useState<Coin | null>(null);
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [tradeToken, setTradeToken] = useState<Coin | null>(null);
+  const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
 
   // Initialize client-side state
   useEffect(() => {
@@ -70,6 +73,15 @@ export default function App({
       console.log(
         `[APP] Running in Farcaster Mini App context for user: ${userName} (FID: ${userFid})`
       );
+    }
+
+    // Check for welcome modal
+    if (typeof window !== "undefined") {
+      const seen = localStorage.getItem("welcome_modal_seen");
+      if (!seen) {
+        // Show after a brief delay for better UX
+        setTimeout(() => setWelcomeModalOpen(true), 1500);
+      }
     }
 
     // No loading delay needed
@@ -254,6 +266,12 @@ export default function App({
             }}
           />
         )}
+
+        {/* Onboarding Modal */}
+        <WelcomeModal
+          isOpen={welcomeModalOpen}
+          onClose={() => setWelcomeModalOpen(false)}
+        />
       </div>
     </NoSSR>
   );

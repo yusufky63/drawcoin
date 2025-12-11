@@ -201,7 +201,7 @@ Hand-drawn art token on Base! 🎨✨`;
               }}
             >
               <div className="flex items-center justify-center">
-                Share on Farcaster
+                Share
               </div>
             </button>
 

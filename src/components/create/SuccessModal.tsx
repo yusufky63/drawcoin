@@ -231,7 +231,7 @@ export default function SuccessModal({
               }}
             >
               <div className="flex items-center justify-center">
-                Share on Farcaster
+                Share
               </div>
             </button>
 
