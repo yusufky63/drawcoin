@@ -1,37 +1,44 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Playfair_Display, Crimson_Text, Poppins } from 'next/font/google';
+import { Playfair_Display, Crimson_Text, Poppins } from "next/font/google";
 import Providers from "./providers";
 import ArtHeader from "../components/Header";
 import Footer from "../components/Footer";
 
 const playfair = Playfair_Display({
-  subsets: ['latin'],
-  variable: '--font-playfair',
-  display: 'swap',
+  subsets: ["latin"],
+  variable: "--font-playfair",
+  display: "swap",
 });
 
 const crimson = Crimson_Text({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  variable: '--font-crimson',
-  display: 'swap',
+  subsets: ["latin"],
+  weight: ["400", "600", "700"],
+  variable: "--font-crimson",
+  display: "swap",
 });
 
 const poppins = Poppins({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
-  variable: '--font-poppins',
-  display: 'swap',
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-poppins",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    "https://drawcoin.app"
-  ),
+  metadataBase: new URL("https://drawcoin.app"),
   title: "DrawCoin",
   description: "Create and trade hand-drawn art tokens on Base.",
-  keywords: ["Base", "tokens", "drawcoin", "web3", "art", "draw", "drawing", "trading"],
+  keywords: [
+    "Base",
+    "tokens",
+    "drawcoin",
+    "web3",
+    "art",
+    "draw",
+    "drawing",
+    "trading",
+  ],
   authors: [{ name: "DrawCoin" }],
   manifest: "/manifest.json",
   icons: {
@@ -59,6 +66,7 @@ export const metadata: Metadata = {
     images: ["https://drawcoin.app/opengraph-image.png"],
   },
   other: {
+    "base:app_id": "68ed631a346a76766395203c",
     "fc:miniapp": JSON.stringify({
       version: "next",
       imageUrl: "https://drawcoin.app/opengraph-image.png",
@@ -69,10 +77,10 @@ export const metadata: Metadata = {
           name: "DrawCoin",
           url: "https://drawcoin.app",
           splashImageUrl: "https://drawcoin.app/logo.png",
-          splashBackgroundColor: "#fff"
-        }
-      }
-    })
+          splashBackgroundColor: "#ffffff",
+        },
+      },
+    }),
   },
 };
 
@@ -85,14 +93,17 @@ export const viewport: Viewport = {
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${crimson.variable} ${poppins.variable}`}>
+    <html
+      lang="en"
+      className={`${playfair.variable} ${crimson.variable} ${poppins.variable}`}
+    >
       <head>
         {/* Farcaster manifest */}
         <link rel="farcaster-app-config" href="/.well-known/farcaster.json" />
-        
+
         {/* Allow embedding from anywhere */}
         <meta httpEquiv="X-Frame-Options" content="ALLOWALL" />
         <meta httpEquiv="Content-Security-Policy" content="frame-ancestors *" />
@@ -100,9 +111,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <ArtHeader />
-          <main className="min-h-screen">
-            {children}
-          </main>
+          <main className="min-h-screen">{children}</main>
           <Footer />
         </Providers>
       </body>

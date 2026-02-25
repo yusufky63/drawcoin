@@ -6,6 +6,7 @@
 import { tradeCoin, setApiKey } from "@zoralabs/coins-sdk";
 import { parseEther, parseUnits } from "viem";
 import { checkAndSwitchNetwork } from "../networkUtils";
+import { getBuilderCodeSuffix } from "../../lib/builderCode";
 import {
   getZORATokenAddress,
   validateCoinForTrade,
@@ -126,14 +127,14 @@ export async function executeUniversalTrade({
           });
           if (!switchSuccess) {
             throw new Error(
-              "Please switch to Base network manually in your wallet."
+              "Please switch to Base network manually in your wallet.",
             );
           }
           // Wait a moment for the network switch to complete
           await new Promise((resolve) => setTimeout(resolve, 1000));
         } else {
           throw new Error(
-            "Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network."
+            "Zora coins trading only supported on Base network (Chain ID: 8453). Please switch to Base network.",
           );
         }
       }
@@ -157,7 +158,7 @@ export async function executeUniversalTrade({
           tradeType,
           amountIn,
           publicClient,
-          creatorAddress
+          creatorAddress,
         );
 
         if (!validation.isValid) {
@@ -166,10 +167,26 @@ export async function executeUniversalTrade({
       }
 
       // Execute the trade using Zora SDK tradeCoin function
+      // Append ERC-8021 Builder Code suffix for Base attribution
+      const builderSuffix = getBuilderCodeSuffix();
+      const walletClientWithSuffix = builderSuffix
+        ? new Proxy(walletClient, {
+            get(target, prop) {
+              if (prop === "sendTransaction") {
+                return async (args) => {
+                  const data = args.data || "0x";
+                  const newData = data + builderSuffix.slice(2);
+                  return target.sendTransaction({ ...args, data: newData });
+                };
+              }
+              return target[prop];
+            },
+          })
+        : walletClient;
 
       const result = await tradeCoin({
         tradeParameters,
-        walletClient,
+        walletClient: walletClientWithSuffix,
         account: walletClient.account || account,
         publicClient,
         validateTransaction,
@@ -277,7 +294,7 @@ export async function executeUniversalTrade({
           } catch (priceError) {
             console.warn(
               "[Analytics] Could not fetch ETH price, using fallback:",
-              priceError
+              priceError,
             );
           }
 
@@ -293,19 +310,19 @@ export async function executeUniversalTrade({
 
               if (tokenData?.tokenPrice?.priceInUsdc) {
                 const tokenPriceUsd = parseFloat(
-                  tokenData.tokenPrice.priceInUsdc
+                  tokenData.tokenPrice.priceInUsdc,
                 );
                 amountUsd = amountToken * tokenPriceUsd;
                 amountEth = amountUsd / ethPriceUSD;
               } else {
                 console.warn(
-                  `[Analytics] Sell - Could not get token price, using 0`
+                  `[Analytics] Sell - Could not get token price, using 0`,
                 );
               }
             } catch (priceError) {
               console.warn(
                 `[Analytics] Sell - Error getting token price:`,
-                priceError
+                priceError,
               );
             }
           } else {
@@ -318,7 +335,7 @@ export async function executeUniversalTrade({
             result.receipt?.transactionHash;
           if (!txHash) {
             console.warn(
-              "[Analytics] No transaction hash found, skipping analytics"
+              "[Analytics] No transaction hash found, skipping analytics",
             );
             console.warn("[Analytics] Result keys:", Object.keys(result));
             return result;
@@ -336,12 +353,11 @@ export async function executeUniversalTrade({
             price_usd: ethPriceUSD,
           };
 
-          const recordResult = await AnalyticsService.recordTransaction(
-            transactionData
-          );
+          const recordResult =
+            await AnalyticsService.recordTransaction(transactionData);
         } else {
           console.warn(
-            "[Analytics] Trade type not recognized, skipping analytics"
+            "[Analytics] Trade type not recognized, skipping analytics",
           );
         }
       } catch (analyticsError) {
@@ -351,7 +367,7 @@ export async function executeUniversalTrade({
       return result;
     },
     3,
-    2000
+    2000,
   ); // 3 retries with 2 second base delay
 }
 
@@ -501,7 +517,7 @@ export function createETHToTokenTrade(
   ethAmount,
   sender,
   recipient,
-  slippage = 0.05
+  slippage = 0.05,
 ) {
   return {
     sellToken: { type: "eth" },
@@ -529,7 +545,7 @@ export function createTokenToETHTrade(
   tokenDecimals,
   sender,
   recipient,
-  slippage = 0.05
+  slippage = 0.05,
 ) {
   return {
     sellToken: { type: "erc20", address: tokenAddress },
@@ -557,7 +573,7 @@ export function createTokenToTokenTrade(
   amountIn,
   sender,
   recipient,
-  slippage = 0.05
+  slippage = 0.05,
 ) {
   return {
     sellToken: { type: "erc20", address: sellTokenAddress },
@@ -582,7 +598,7 @@ export async function executeTradeWithParams(
   clients,
   account,
   switchChain,
-  creatorAddress = null
+  creatorAddress = null,
 ) {
   return await executeUniversalTrade({
     ...tradeParams,

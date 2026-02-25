@@ -10,6 +10,7 @@ import {
 } from "@zoralabs/coins-sdk";
 import { base } from "viem/chains";
 import { showError } from "../../utils/toastUtils";
+import { getBuilderCodeSuffix } from "../../lib/builderCode";
 
 /**
  * Creates a Zora coin using the updated SDK's createCoin function
@@ -44,12 +45,12 @@ export async function createZoraCoin(
     chainId,
   },
   walletClient,
-  publicClient
+  publicClient,
 ) {
   try {
     if (!name || !symbol || !uri || !payoutRecipient) {
       throw new Error(
-        "Required parameters missing: name, symbol, uri, and payoutRecipient are required"
+        "Required parameters missing: name, symbol, uri, and payoutRecipient are required",
       );
     }
 
@@ -69,11 +70,11 @@ export async function createZoraCoin(
     if (targetChainId === base.id && walletChainId !== base.id) {
       showError(
         `You're connected to network ID ${walletChainId}, but Base network (${base.id}) is required. Please switch networks.`,
-        "network validation"
+        "network validation",
       );
 
       throw new Error(
-        `Chain mismatch: Connected to chain ${walletChainId}, but Base (${base.id}) is required. Please switch networks.`
+        `Chain mismatch: Connected to chain ${walletChainId}, but Base (${base.id}) is required. Please switch networks.`,
       );
     }
 
@@ -91,7 +92,7 @@ export async function createZoraCoin(
       "Selected currency:",
       selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA
         ? "ZORA"
-        : "ETH"
+        : "ETH",
     );
 
     // Prepare coin parameters according to new SDK v2 format
@@ -124,7 +125,7 @@ export async function createZoraCoin(
       "Currency:",
       selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA
         ? "ZORA"
-        : "ETH"
+        : "ETH",
     );
     console.log("Starting Market Cap:", startingMarketCap || "Not specified");
     console.log("Smart Wallet Routing:", smartWalletRouting || "Not specified");
@@ -134,7 +135,7 @@ export async function createZoraCoin(
     console.log(
       "Skip Metadata Validation:",
       true,
-      "(Already uploaded to IPFS)"
+      "(Already uploaded to IPFS)",
     );
     console.log("Note: Initial purchase is no longer supported in SDK v2");
     console.log("Final coinParams:", coinParams);
@@ -145,13 +146,30 @@ export async function createZoraCoin(
     console.log(
       "Current gas price:",
       (Number(currentGasPrice) / 1e9).toFixed(2),
-      "gwei"
+      "gwei",
     );
 
     // Use the SDK's createCoin function with new parameter structure
+    // Wrap walletClient to append ERC-8021 Builder Code suffix for Base attribution
+    const builderSuffix = getBuilderCodeSuffix();
+    const walletClientWithSuffix = builderSuffix
+      ? new Proxy(walletClient, {
+          get(target, prop) {
+            if (prop === "sendTransaction") {
+              return async (args) => {
+                const data = args.data || "0x";
+                const newData = data + builderSuffix.slice(2);
+                return target.sendTransaction({ ...args, data: newData });
+              };
+            }
+            return target[prop];
+          },
+        })
+      : walletClient;
+
     const result = await createCoin({
       call: coinParams,
-      walletClient: walletClient,
+      walletClient: walletClientWithSuffix,
       publicClient: publicClient,
       options: {
         skipValidateTransaction: false, // Enable validation to get proper gas estimate
@@ -172,7 +190,7 @@ export async function createZoraCoin(
     // Provide more specific error messages
     if (error.message && error.message.includes("execution reverted")) {
       throw new Error(
-        "Contract execution failed. This might be due to insufficient funds, invalid parameters, or network congestion. Please try again with a higher gas limit or check your wallet balance."
+        "Contract execution failed. This might be due to insufficient funds, invalid parameters, or network congestion. Please try again with a higher gas limit or check your wallet balance.",
       );
     } else if (error.message && error.message.includes("user rejected")) {
       throw new Error("Token creation was rejected");

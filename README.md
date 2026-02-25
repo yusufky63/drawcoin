@@ -142,7 +142,6 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 **Two Ways to Create Art:**
 
 1. **Draw it Yourself (Custom Canvas)**
-
    - Open the drawing canvas on any device - mobile or desktop
    - Use professional drawing tools: different brush sizes, colors, shapes
    - On mobile: Touch and draw with your finger or stylus
