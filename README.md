@@ -1,28 +1,39 @@
 # DrawCoin
 
-![Category](https://img.shields.io/badge/Category-AI%20%2B%20Creator%20Economy%20%2F%20Base-1f1f1f?style=flat-square&labelColor=141414&color=2b2b2b) ![Status](https://img.shields.io/badge/Status-public-1f1f1f?style=flat-square&labelColor=141414&color=2b2b2b)
+DrawCoin lets creators draw or generate artwork, turn it into a tradeable coin through Zora infrastructure, and share the experience through Base and Farcaster-ready surfaces.
 
-Create and trade art-backed coins on Base using hand-drawn artwork or AI-generated visuals in a Farcaster-ready flow.
+## Snapshot
 
-## Links
+- **Category:** AI creator economy on Base
+- **Status:** Public repository
+- **Live:** https://drawcoin-mini.vercel.app
+- **Repository:** https://github.com/yusufky63/drawcoin
+- **Portfolio:** https://codexsha.dev
 
-- Live: https://drawcoin-mini.vercel.app
-- Repository: https://github.com/yusufky63/drawcoin
-- Portfolio: https://codexsha.dev
+## Product Scope
 
-## Overview
+DrawCoin is documented here as a product repository, not just a code dump. The goal of this README is to make the product purpose, runtime surface, and development path clear for future review and maintenance.
 
-DrawCoin is part of the Codexsha product portfolio. The project is focused on shipping a compact, usable product surface rather than a demo-only prototype. This README is written to make the repository easier to understand, run, and evaluate.
+## Core Capabilities
 
-## Key Features
+- Drawing canvas and AI image generation paths
+- Zora-backed coin creation and trading-oriented pages
+- Base network wallet flows
+- Farcaster Mini App and Base App compatibility
+- Supabase/Redis persistence and asset metadata handling
 
-- Interactive drawing canvas
-- AI-assisted artwork generation
-- Zora-backed coin creation flow
-- Base and Farcaster compatible UX
-- Supabase-backed persistence and asset flow
+## Existing README Coverage Preserved
 
-## Stack
+This refresh keeps the important project-specific areas from the previous documentation:
+
+- Art Creation
+- Coin Creation & Trading
+- Multi-Platform Support
+- User Experience
+- Technology Stack
+- App Pages & Features
+
+## Tech Stack
 
 - Next.js
 - TypeScript
@@ -37,35 +48,39 @@ DrawCoin is part of the Codexsha product portfolio. The project is focused on sh
 - Ethers
 - tldraw
 
-## Role / Ownership
+## Repository Map
 
-Built the product flow, drawing/token creation UI, AI-assisted generation path, Web3 integration, and deployment.
+| Path | Purpose |
+| --- | --- |
+| src/app/ | Next.js routes and app surfaces |
+| src/components/ | UI and product components |
+| src/lib/ | Web3, AI, and utility integration code |
+| public/ | Icons, OG images, and static assets |
 
-## Getting Started
+## Local Development
 
-```bash
-npm install
-npm run dev
-npm run build
-```
+| Command | Purpose |
+| --- | --- |
+| npm run dev | Run local development server |
+| npm run build | Build production app |
+| npm run start | Start production server |
+| npm run lint | Run lint checks |
 
-## Environment
+## Environment Notes
 
-Create a local environment file from the project conventions and configure only the values needed for the flow you are running. Do not commit secrets.
-
-Typical values used by this project include:
+Use local environment files for secrets and deployment-specific values. Do not commit real keys.
 
 - Farcaster app credentials
-- Supabase credentials
+- Supabase URL/key
 - Zora/WalletConnect configuration
-- AI provider API keys
-- Redis/Upstash credentials where enabled
+- Gemini or other AI provider key
+- Upstash Redis values where enabled
 
-## Project Notes
+## Operational Notes
 
-- Status: Public repository and live mini app deployment.
-- Private or sensitive implementation details are intentionally not documented in public-facing copy.
-- The README should stay aligned with the live product and the Codexsha portfolio page.
+- Keep this README aligned with the live product and portfolio copy.
+- Prefer small, documented changes over large undocumented rewrites.
+- The previous README already contained rich feature notes; this version keeps those product flows but presents them in a tighter repository-oriented structure.
 
 ## Maintainer
 
