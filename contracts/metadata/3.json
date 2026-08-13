@@ -1,7 +1,7 @@
 {
   "name": "Curator",
   "description": "Awarded for curating five distinct DrawCoins.",
-  "image": "https://drawcoin.app/badges/curator.svg",
+  "image": "ipfs://bafybeigadfsf3yrzioexnqhwswrmobhfurrq54vyamqw7qzbjvbrbnvexi/curator.svg",
   "external_url": "https://drawcoin.app/missions",
   "attributes": [
     { "trait_type": "Mission", "value": "curator" },

@@ -5,8 +5,8 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import {
-  ArrowUpRight,
   Clock3,
+  Heart,
   LayoutGrid,
   Search,
   Table2,
@@ -28,6 +28,7 @@ import {
 import type { SupabaseCoinSnapshot } from "@/lib/market/coinSnapshot";
 import { CreationTypeBadge } from "@/components/market/CreationTypeBadge";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { useWatchlist } from "@/hooks/useWatchlist";
 
 const PAGE_SIZE = 40;
 const VISIBLE_CREATOR_BATCH_SIZE = 100;
@@ -127,87 +128,105 @@ function MarketsSkeleton() {
 type GalleryCardProps = {
   coin: SupabaseCoinSnapshot;
   creatorLabel: string | null;
+  eager: boolean;
+  isWatchlisted: boolean;
+  watchlistBusy: boolean;
+  onToggleWatchlist: (coin: SupabaseCoinSnapshot) => void;
 };
+
+function galleryAspectClass(address: string) {
+  const bucket = Number.parseInt(address.slice(-2), 16) % 3;
+  if (bucket === 0) return "aspect-[4/5]";
+  if (bucket === 1) return "aspect-square";
+  return "aspect-[5/4]";
+}
 
 const MarketGalleryCard = memo(function MarketGalleryCard({
   coin,
   creatorLabel,
+  eager,
+  isWatchlisted,
+  watchlistBusy,
+  onToggleWatchlist,
 }: GalleryCardProps) {
   return (
     <article className="mb-4 inline-block w-full break-inside-avoid overflow-hidden rounded-[18px_10px_20px_12px] border-2 border-[#2d3748] bg-white font-art-sans shadow-[3px_3px_0_#2d3748]">
-      <Link
-        href={`/coin/${coin.contract_address}`}
-        className="group block focus-visible:outline focus-visible:outline-4 focus-visible:outline-[var(--base-blue)] focus-visible:outline-offset-[-4px]"
-        aria-label={`View ${coin.name}`}
+      <div
+        className={`relative overflow-hidden border-b-2 border-[#2d3748] bg-art-gray-50 ${galleryAspectClass(coin.contract_address)}`}
       >
-        <div className="relative overflow-hidden border-b-2 border-[#2d3748] bg-art-gray-50">
+        <Link
+          href={`/coin/${coin.contract_address}`}
+          className="group block h-full w-full p-2 focus-visible:outline focus-visible:outline-4 focus-visible:outline-[var(--base-blue)] focus-visible:outline-offset-[-4px]"
+          aria-label={`View ${coin.name}`}
+        >
           <SafeImage
             src={coin.image_url ?? ""}
             alt={coin.name}
             width={720}
             height={720}
-            natural
-            lazy
-            className="w-full"
+            fluid
+            lazy={!eager}
+            className="h-full w-full rounded-lg object-contain transition-transform duration-300 group-hover:scale-[1.015]"
           />
-          <CreationTypeBadge
-            creationType={coin.creation_type}
-            compact
-            className="absolute left-2.5 top-2.5 z-[1] !bg-[#ffd166]"
-          />
-        </div>
+        </Link>
+        <CreationTypeBadge
+          creationType={coin.creation_type}
+          compact
+          className="pointer-events-none absolute left-2.5 top-2.5 z-[1] !bg-[#ffd166]"
+        />
+        <button
+          type="button"
+          onClick={() => onToggleWatchlist(coin)}
+          disabled={watchlistBusy}
+          aria-pressed={isWatchlisted}
+          aria-label={`${isWatchlisted ? "Remove" : "Add"} ${coin.name} ${isWatchlisted ? "from" : "to"} watchlist`}
+          className={`absolute right-2.5 top-2.5 z-[2] inline-flex h-9 items-center gap-1.5 rounded-lg border-2 border-[#2d3748] px-2.5 text-[11px] font-bold shadow-[1px_1px_0_#2d3748] transition disabled:cursor-wait disabled:opacity-60 ${
+            isWatchlisted
+              ? "bg-[#ffe6eb] text-[#c5305f]"
+              : "bg-white/95 text-art-gray-700 hover:bg-[var(--base-blue-soft)] hover:text-[var(--base-blue-hover)]"
+          }`}
+        >
+          <Heart className={`h-3.5 w-3.5 ${isWatchlisted ? "fill-current" : ""}`} aria-hidden="true" />
+          {isWatchlisted ? "Saved" : "Watch"}
+        </button>
+      </div>
 
-        <div className="p-3.5">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="truncate text-base font-bold leading-tight text-art-gray-900 transition-colors group-hover:text-[var(--base-blue)]">
+      <div className="p-4">
+        <div className="min-w-0">
+          <div className="min-w-0">
+            <Link href={`/coin/${coin.contract_address}`} className="group/title block rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--base-blue)]">
+              <h2 className="truncate text-lg font-bold leading-tight tracking-[-0.02em] text-art-gray-900 transition-colors group-hover/title:text-[var(--base-blue)]">
                 {coin.name}
               </h2>
-              <p className="mt-0.5 truncate font-mono text-[10px] font-bold text-art-gray-500">
+              <p className="mt-1 truncate text-[11px] font-bold uppercase tracking-[0.08em] text-art-gray-500">
                 ${coin.symbol}
               </p>
-            </div>
-            <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border-2 border-[#2d3748] bg-white px-2 text-[10px] font-bold text-art-gray-900 shadow-[1px_1px_0_#2d3748] transition-colors group-hover:bg-[var(--base-blue)] group-hover:text-white">
-              View
-              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </span>
+            </Link>
           </div>
-
-          <p
-            className="mt-2 truncate font-mono text-[11px] font-semibold text-art-gray-500"
-            title={coin.creator_address ?? undefined}
-          >
-            {creatorLabel ? `by ${creatorLabel}` : "Creator unavailable"}
-          </p>
-
-          <dl className="mt-3 grid grid-cols-3 gap-1.5 text-center">
-            <div className="rounded-lg border border-art-gray-200 bg-art-gray-50 px-1.5 py-2">
-              <dt className="text-[8px] font-bold uppercase tracking-wide text-art-gray-400">
-                MC
-              </dt>
-              <dd className="mt-0.5 truncate font-mono text-[11px] font-bold text-art-gray-800">
-                {formatCompactUsd(coin.marketCap)}
-              </dd>
-            </div>
-            <div className="rounded-lg border border-art-gray-200 bg-art-gray-50 px-1.5 py-2">
-              <dt className="text-[8px] font-bold uppercase tracking-wide text-art-gray-400">
-                Holders
-              </dt>
-              <dd className="mt-0.5 truncate font-mono text-[11px] font-bold text-art-gray-800">
-                {formatInteger(coin.holders)}
-              </dd>
-            </div>
-            <div className="rounded-lg border border-art-gray-200 bg-art-gray-50 px-1.5 py-2">
-              <dt className="text-[8px] font-bold uppercase tracking-wide text-art-gray-400">
-                Watches
-              </dt>
-              <dd className="mt-0.5 truncate font-mono text-[11px] font-bold text-art-gray-800">
-                {formatInteger(coin.watchlist_count)}
-              </dd>
-            </div>
-          </dl>
         </div>
-      </Link>
+
+        <p
+          className="mt-2 truncate text-xs font-semibold text-art-gray-500"
+          title={coin.creator_address ?? undefined}
+        >
+          {creatorLabel ? `by ${creatorLabel}` : "Creator unavailable"}
+        </p>
+
+        <dl className="mt-3 grid grid-cols-3 gap-1.5 text-left">
+          <div className="rounded-lg border border-art-gray-200 bg-art-gray-50 px-2.5 py-2">
+            <dt className="text-[9px] font-bold uppercase tracking-[0.1em] text-art-gray-400">Market cap</dt>
+            <dd className="mt-0.5 truncate text-sm font-bold tracking-[-0.01em] text-art-gray-900">{formatCompactUsd(coin.marketCap)}</dd>
+          </div>
+          <div className="rounded-lg border border-art-gray-200 bg-art-gray-50 px-2.5 py-2">
+            <dt className="text-[9px] font-bold uppercase tracking-[0.1em] text-art-gray-400">Holders</dt>
+            <dd className="mt-0.5 truncate text-sm font-bold tracking-[-0.01em] text-art-gray-900">{formatInteger(coin.holders)}</dd>
+          </div>
+          <div className="rounded-lg border border-art-gray-200 bg-art-gray-50 px-2.5 py-2">
+            <dt className="text-[9px] font-bold uppercase tracking-[0.1em] text-art-gray-400">Watches</dt>
+            <dd className="mt-0.5 truncate text-sm font-bold tracking-[-0.01em] text-art-gray-900">{formatInteger(coin.watchlist_count)}</dd>
+          </div>
+        </dl>
+      </div>
     </article>
   );
 });
@@ -215,22 +234,32 @@ const MarketGalleryCard = memo(function MarketGalleryCard({
 const MarketsGallery = memo(function MarketsGallery({
   coins,
   creatorLabels,
+  watchlistSet,
+  watchlistBusy,
+  onToggleWatchlist,
 }: {
   coins: SupabaseCoinSnapshot[];
   creatorLabels: Record<string, string | null>;
+  watchlistSet: Set<string>;
+  watchlistBusy: string | null;
+  onToggleWatchlist: (coin: SupabaseCoinSnapshot) => void;
 }) {
   return (
     <section
       aria-label="DrawCoin market gallery"
       className="columns-1 gap-4 sm:columns-2 xl:columns-3 2xl:columns-4"
     >
-      {coins.map((coin) => (
+      {coins.map((coin, index) => (
         <MarketGalleryCard
           key={coin.contract_address}
           coin={coin}
           creatorLabel={
             creatorLabels[coin.contract_address.toLowerCase()] ?? null
           }
+          eager={index < 8}
+          isWatchlisted={watchlistSet.has(coin.contract_address.toLowerCase())}
+          watchlistBusy={watchlistBusy === coin.contract_address.toLowerCase()}
+          onToggleWatchlist={onToggleWatchlist}
         />
       ))}
     </section>
@@ -243,6 +272,8 @@ export default function MarketsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [view, setView] = useState<MarketsView>("table");
   const [urlReady, setUrlReady] = useState(false);
+  const [watchlistBusy, setWatchlistBusy] = useState<string | null>(null);
+  const { watchlist, toggleWatchlist } = useWatchlist();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -340,6 +371,27 @@ export default function MarketsPage() {
     }
     return labels;
   }, [coins, creatorBasenames]);
+  const watchlistSet = useMemo(
+    () => new Set(watchlist.map((address) => address.toLowerCase())),
+    [watchlist]
+  );
+
+  const handleToggleWatchlist = useCallback(
+    async (coin: SupabaseCoinSnapshot) => {
+      const normalizedAddress = coin.contract_address.toLowerCase();
+      setWatchlistBusy(normalizedAddress);
+      try {
+        await toggleWatchlist(coin.contract_address, {
+          priceUsd: coin.current_price,
+        });
+      } finally {
+        setWatchlistBusy((current) =>
+          current === normalizedAddress ? null : current
+        );
+      }
+    },
+    [toggleWatchlist]
+  );
 
   const total = pages?.[0]?.meta.total ?? 0;
   const lastPage = pages?.[pages.length - 1];
@@ -456,7 +508,13 @@ export default function MarketsPage() {
             ) : null}
 
             {view === "gallery" ? (
-              <MarketsGallery coins={coins} creatorLabels={creatorLabels} />
+              <MarketsGallery
+                coins={coins}
+                creatorLabels={creatorLabels}
+                watchlistSet={watchlistSet}
+                watchlistBusy={watchlistBusy}
+                onToggleWatchlist={(coin) => void handleToggleWatchlist(coin)}
+              />
             ) : (
               <div className="overflow-hidden rounded-2xl border-2 border-[#2d3748] bg-white shadow-[3px_3px_0_#2d3748]">
                 <div className="no-scrollbar max-w-full overflow-x-auto" role="region" aria-label="DrawCoin market table" tabIndex={0}>
@@ -471,7 +529,7 @@ export default function MarketsPage() {
                       <th className="px-3 py-3 text-right">Holders</th>
                       <th className="px-3 py-3 text-right">Watchlists</th>
                       <th className="px-3 py-3 text-right">Age</th>
-                      <th className="w-24 px-3 py-3 text-right">Action</th>
+                      <th className="w-28 px-3 py-3 text-right">Watchlist</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-art-gray-100">
@@ -487,28 +545,36 @@ export default function MarketsPage() {
                               <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border-2 border-[#2d3748] bg-art-gray-50">
                                 <SafeImage src={coin.image_url ?? ""} alt={coin.name} width={40} height={40} fluid className="h-full w-full object-cover" />
                               </div>
-                              <div className="min-w-0">
+                              <div className="min-w-0 font-art-sans">
                                 <p className="max-w-48 truncate text-sm font-bold text-art-gray-900 group-hover:text-[var(--base-blue)]">{coin.name}</p>
-                                <p className="mt-0.5 max-w-40 truncate font-mono text-[10px] font-bold text-art-gray-500">${coin.symbol}</p>
+                                <p className="mt-0.5 max-w-40 truncate text-[10px] font-bold uppercase tracking-[0.08em] text-art-gray-500">${coin.symbol}</p>
                               </div>
                             </Link>
                           </td>
                           <td className="px-3 py-2.5">
                             {creatorLabel ? (
-                              <span className="block max-w-40 truncate font-mono text-xs font-bold text-art-gray-600" title={creatorAddress ?? undefined}>{creatorLabel}</span>
+                              <span className="block max-w-40 truncate text-xs font-semibold text-art-gray-600" title={creatorAddress ?? undefined}>{creatorLabel}</span>
                             ) : (
                               <span className="text-art-gray-400">—</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-art-gray-800">{formatCompactUsd(coin.marketCap)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-art-gray-600">{formatCompactUsd(coin.volume24h)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-art-gray-600">{formatInteger(coin.holders)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-art-gray-600">{formatInteger(coin.watchlist_count)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs font-bold text-art-gray-500" title={coin.created_at ?? undefined}>{formatCoinAge(coin.created_at)}</td>
+                          <td className="px-3 py-2.5 text-right text-sm font-bold text-art-gray-900">{formatCompactUsd(coin.marketCap)}</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-600">{formatCompactUsd(coin.volume24h)}</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-600">{formatInteger(coin.holders)}</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-600">{formatInteger(coin.watchlist_count)}</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-500" title={coin.created_at ?? undefined}>{formatCoinAge(coin.created_at)}</td>
                           <td className="px-3 py-2.5 text-right">
-                            <Link href={`/coin/${coin.contract_address}`} className="inline-flex h-9 items-center gap-1 rounded-lg border-2 border-[#2d3748] bg-white px-2.5 text-xs font-bold text-art-gray-900 shadow-[1px_1px_0_#2d3748] hover:bg-[var(--base-blue)] hover:text-white">
-                              View <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleWatchlist(coin)}
+                              disabled={watchlistBusy === coin.contract_address.toLowerCase()}
+                              aria-pressed={watchlistSet.has(coin.contract_address.toLowerCase())}
+                              aria-label={`${watchlistSet.has(coin.contract_address.toLowerCase()) ? "Remove" : "Add"} ${coin.name} ${watchlistSet.has(coin.contract_address.toLowerCase()) ? "from" : "to"} watchlist`}
+                              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border-2 border-[#2d3748] px-2.5 text-xs font-bold shadow-[1px_1px_0_#2d3748] transition disabled:cursor-wait disabled:opacity-60 ${watchlistSet.has(coin.contract_address.toLowerCase()) ? "bg-[#ffe6eb] text-[#c5305f]" : "bg-white text-art-gray-700 hover:bg-[var(--base-blue-soft)] hover:text-[var(--base-blue-hover)]"}`}
+                            >
+                              <Heart className={`h-3.5 w-3.5 ${watchlistSet.has(coin.contract_address.toLowerCase()) ? "fill-current" : ""}`} aria-hidden="true" />
+                              {watchlistSet.has(coin.contract_address.toLowerCase()) ? "Saved" : "Watch"}
+                            </button>
                           </td>
                         </tr>
                       );

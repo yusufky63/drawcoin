@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAccount } from "wagmi";
 import { toast } from "react-hot-toast";
 import type { SupabaseCoinSnapshot } from "../lib/market/coinSnapshot";
@@ -35,16 +35,63 @@ const buildPriceSnapshot = (hint?: WatchlistPriceHint) => {
   };
 };
 
+const DEVICE_WATCHLIST_KEY = "drawcoin:device-watchlist:v1";
+
+function readDeviceWatchlist() {
+  try {
+    const stored = window.localStorage.getItem(DEVICE_WATCHLIST_KEY);
+    const parsed = stored ? (JSON.parse(stored) as unknown) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (value): value is string =>
+        typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeDeviceWatchlist(addresses: string[]) {
+  try {
+    window.localStorage.setItem(DEVICE_WATCHLIST_KEY, JSON.stringify(addresses));
+  } catch {
+    // Device saves are best-effort; server-backed watchlists remain unaffected.
+  }
+}
+
 export function useWatchlist() {
   const { address } = useAccount();
   const { session, status: sessionStatus, signIn } = useWalletSession();
-  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [serverWatchlist, setServerWatchlist] = useState<string[]>([]);
+  const [deviceWatchlist, setDeviceWatchlist] = useState<string[]>([]);
   const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setDeviceWatchlist(readDeviceWatchlist());
+  }, []);
+
+  const watchlist = useMemo(() => {
+    const combined = new Map<string, string>();
+    for (const item of [...deviceWatchlist, ...serverWatchlist]) {
+      combined.set(item.toLowerCase(), item);
+    }
+    return Array.from(combined.values());
+  }, [deviceWatchlist, serverWatchlist]);
+
+  const updateDeviceWatchlist = (
+    updater: (current: string[]) => string[]
+  ) => {
+    setDeviceWatchlist((current) => {
+      const next = updater(current);
+      writeDeviceWatchlist(next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
     if (!address || sessionStatus !== "authenticated" || !session) {
-      setWatchlist([]);
+      setServerWatchlist([]);
       setWatchlistItems([]);
       setLoading(Boolean(address) && sessionStatus === "loading");
       return;
@@ -64,7 +111,7 @@ export function useWatchlist() {
 
         const items = body.items || [];
         setWatchlistItems(items);
-        setWatchlist(items.map((item) => item.token_address));
+        setServerWatchlist(items.map((item) => item.token_address));
       } catch (error) {
         console.error("Error fetching watchlist:", error);
       } finally {
@@ -79,17 +126,19 @@ export function useWatchlist() {
     tokenAddress: string,
     priceHint?: WatchlistPriceHint
   ): Promise<boolean> => {
-    if (!address) {
-      toast.error("Please connect your wallet");
-      return false;
+    const normalizedAddress = tokenAddress.toLowerCase();
+    if (!address || sessionStatus !== "authenticated" || !session) {
+      updateDeviceWatchlist((current) =>
+        current.some((item) => item.toLowerCase() === normalizedAddress)
+          ? current
+          : [...current, tokenAddress]
+      );
+      toast.success("Saved on this device");
+      return true;
     }
 
     try {
-      if (sessionStatus !== "authenticated" || !session) {
-        await signIn();
-      }
-
-      const previousWatchlist = watchlist;
+      const previousWatchlist = serverWatchlist;
       const previousItems = watchlistItems;
       const insertedAt = new Date().toISOString();
       const snapshot = buildPriceSnapshot(priceHint);
@@ -102,8 +151,7 @@ export function useWatchlist() {
       };
 
       // Optimistic update
-      const normalizedAddress = tokenAddress.toLowerCase();
-      setWatchlist((prev) =>
+      setServerWatchlist((prev) =>
         prev.some((item) => item.toLowerCase() === normalizedAddress)
           ? prev
           : [...prev, tokenAddress]
@@ -130,7 +178,7 @@ export function useWatchlist() {
 
       if (!response.ok) {
         // Revert on error
-        setWatchlist(previousWatchlist);
+        setServerWatchlist(previousWatchlist);
         setWatchlistItems(previousItems);
         const body = (await response.json().catch(() => null)) as
           | { error?: string }
@@ -150,18 +198,29 @@ export function useWatchlist() {
   const removeFromWatchlist = async (
     tokenAddress: string
   ): Promise<boolean> => {
-    if (!address) return false;
+    const normalizedAddress = tokenAddress.toLowerCase();
+    const existsOnServer = serverWatchlist.some(
+      (item) => item.toLowerCase() === normalizedAddress
+    );
+
+    if (
+      !address ||
+      sessionStatus !== "authenticated" ||
+      !session ||
+      !existsOnServer
+    ) {
+      updateDeviceWatchlist((current) =>
+        current.filter((item) => item.toLowerCase() !== normalizedAddress)
+      );
+      toast.success("Removed from this device");
+      return true;
+    }
 
     try {
-      if (sessionStatus !== "authenticated" || !session) {
-        await signIn();
-      }
-
-      const previousWatchlist = watchlist;
+      const previousWatchlist = serverWatchlist;
       const previousItems = watchlistItems;
-      const normalizedAddress = tokenAddress.toLowerCase();
       // Optimistic update
-      setWatchlist((prev) =>
+      setServerWatchlist((prev) =>
         prev.filter((id) => id.toLowerCase() !== normalizedAddress)
       );
       setWatchlistItems((prev) =>
@@ -179,7 +238,7 @@ export function useWatchlist() {
 
       if (!response.ok) {
         // Revert on error
-        setWatchlist(previousWatchlist);
+        setServerWatchlist(previousWatchlist);
         setWatchlistItems(previousItems);
         const body = (await response.json().catch(() => null)) as
           | { error?: string }
@@ -188,6 +247,9 @@ export function useWatchlist() {
       }
 
       toast.success("Removed from watchlist");
+      updateDeviceWatchlist((current) =>
+        current.filter((item) => item.toLowerCase() !== normalizedAddress)
+      );
       return true;
     } catch (error) {
       console.error("Error removing from watchlist:", error);

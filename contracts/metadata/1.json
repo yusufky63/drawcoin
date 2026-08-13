@@ -1,7 +1,7 @@
 {
   "name": "First Stroke",
   "description": "Awarded for creating a verified DrawCoin on Base.",
-  "image": "https://drawcoin.app/badges/first-stroke.svg",
+  "image": "ipfs://bafybeigadfsf3yrzioexnqhwswrmobhfurrq54vyamqw7qzbjvbrbnvexi/first-stroke.svg",
   "external_url": "https://drawcoin.app/missions",
   "attributes": [
     { "trait_type": "Mission", "value": "first-stroke" },

@@ -194,12 +194,6 @@ export default function TokenGrid({
                   🎨
                 </div>
 
-                {/* Creation Type Badge (Overlaid on Image for List View) */}
-                <CreationTypeBadge
-                  creationType={token.creation_type}
-                  compact
-                  className="absolute -bottom-1 -right-1 z-20"
-                />
               </div>
 
               {/* Token Info */}
@@ -211,6 +205,11 @@ export default function TokenGrid({
                   <span className="text-[10px] text-art-gray-500 font-mono bg-art-gray-100 px-1 rounded transform rotate-1">
                     {(token as any).symbol || token.symbol}
                   </span>
+                  <CreationTypeBadge
+                    creationType={token.creation_type}
+                    compact
+                    className="shrink-0"
+                  />
                 </div>
 
                 {/* Creator Info */}

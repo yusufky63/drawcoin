@@ -1,7 +1,7 @@
 {
   "name": "Base Regular",
   "description": "Awarded for verified DrawCoin activity on three different UTC days.",
-  "image": "https://drawcoin.app/badges/base-regular.svg",
+  "image": "ipfs://bafybeigadfsf3yrzioexnqhwswrmobhfurrq54vyamqw7qzbjvbrbnvexi/base-regular.svg",
   "external_url": "https://drawcoin.app/missions",
   "attributes": [
     { "trait_type": "Mission", "value": "base-regular" },

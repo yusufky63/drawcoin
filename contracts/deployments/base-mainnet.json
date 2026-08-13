@@ -1,0 +1,20 @@
+{
+  "network": "Base Mainnet",
+  "chainId": 8453,
+  "contract": "0x089E3889287E8c72892b42d1a856FA0AB51a0737",
+  "owner": "0x78de409a6306550882328E2a67160471368387FF",
+  "claimSigner": "0x78de409a6306550882328E2a67160471368387FF",
+  "baseUri": "ipfs://bafybeibyjppbdsldcvmb7xwhl22duqovtts6i6ekpzipkcltm5ltkvhzxa/",
+  "deploymentTransaction": "0x84da47c88ac59b6a4441d6c53804aef67adb85df2040c9809f489d6fa195710f",
+  "deploymentBlock": 49931814,
+  "deploymentGasUsed": 1521812,
+  "claimTest": {
+    "tokenId": 1,
+    "account": "0x78de409a6306550882328E2a67160471368387FF",
+    "transaction": "0xd555fa3e29a7e07b828e4e26f05afaac0273b853469341e369e6752f9e062509",
+    "block": 49931844,
+    "gasUsed": 123872,
+    "balanceAfter": 1,
+    "nonceAfter": 1
+  }
+}

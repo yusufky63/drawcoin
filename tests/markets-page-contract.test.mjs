@@ -6,10 +6,6 @@ const source = await readFile(
   new URL("../src/components/market/MarketsPage.tsx", import.meta.url),
   "utf8",
 );
-const safeImageSource = await readFile(
-  new URL("../src/components/ui/SafeImage.tsx", import.meta.url),
-  "utf8",
-);
 const galleryCardSource = source.slice(
   source.indexOf("const MarketGalleryCard"),
   source.indexOf("const MarketsGallery"),
@@ -38,7 +34,7 @@ test("markets removes technical copy and keeps the view in URL state", () => {
   assert.match(source, /Show \$\{label\.toLowerCase\(\)\} view/);
 });
 
-test("gallery reuses loaded pages in a memoized natural-ratio masonry", () => {
+test("gallery reuses loaded pages in a memoized stable-frame masonry", () => {
   assert.match(source, /const MarketGalleryCard = memo/);
   assert.match(source, /const MarketsGallery = memo/);
   assert.match(
@@ -46,23 +42,20 @@ test("gallery reuses loaded pages in a memoized natural-ratio masonry", () => {
     /columns-1 gap-4 sm:columns-2 xl:columns-3 2xl:columns-4/,
   );
   assert.match(source, /break-inside-avoid/);
-  assert.match(source, /<SafeImage[\s\S]*?natural[\s\S]*?lazy/);
+  assert.match(source, /galleryAspectClass/);
+  assert.match(source, /<SafeImage[\s\S]*?fluid[\s\S]*?lazy=\{!eager\}/);
   assert.match(source, /<CreationTypeBadge/);
   assert.match(source, /!bg-\[#ffd166\]/);
   assert.doesNotMatch(source, /gradient/);
   assert.match(source, /\[debouncedSearch, sort, urlReady\]/);
 });
 
-test("gallery image mode preserves intrinsic ratios and lazy loading", () => {
-  assert.match(safeImageSource, /natural\?: boolean/);
-  assert.match(
-    safeImageSource,
-    /natural \? \([\s\S]*?<img[\s\S]*?block h-auto w-full[\s\S]*?loading=\{lazy \? "lazy" : "eager"\}/,
-  );
-  assert.doesNotMatch(
-    galleryCardSource,
-    /aspect-\[|aspect-square|object-cover/,
-  );
+test("gallery reserves artwork space before images load", () => {
+  assert.match(source, /aspect-\[4\/5\]/);
+  assert.match(source, /aspect-square/);
+  assert.match(source, /aspect-\[5\/4\]/);
+  assert.match(galleryCardSource, /fluid/);
+  assert.doesNotMatch(galleryCardSource, /\bnatural\b/);
 });
 
 test("markets shares the global Base CTA color tokens", () => {
@@ -80,6 +73,15 @@ test("gallery exposes creator and useful market metrics without new providers", 
   assert.doesNotMatch(source, /\/api\/zora|zoraService|getCoinsTop|getCoinsNew/);
 });
 
+test("gallery and table expose watchlist actions without redundant View buttons", () => {
+  assert.match(source, /useWatchlist\(\)/);
+  assert.match(source, /onToggleWatchlist/);
+  assert.match(source, /aria-pressed=\{isWatchlisted\}/);
+  assert.match(source, /Saved/);
+  assert.match(source, /Watch/);
+  assert.doesNotMatch(source, />\s*View\s*</);
+});
+
 test("only the table region owns horizontal overflow on narrow screens", () => {
   assert.match(source, /no-scrollbar max-w-full overflow-x-auto/);
   assert.match(source, /table className="w-full min-w-\[980px\]/);
@@ -95,7 +97,6 @@ test("markets renders every requested persisted metric honestly", () => {
     "Holders",
     "Watchlists",
     "Age",
-    "Action",
   ]) {
     assert.match(source, new RegExp(label));
   }

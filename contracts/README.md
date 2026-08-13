@@ -5,6 +5,17 @@ claim a mission badge only with a short-lived EIP-712 voucher signed by the
 DrawCoin server. The voucher binds the wallet, badge token ID, onchain nonce,
 deadline, chain, and deployed contract.
 
+## Base mainnet deployment
+
+- Contract: `0x089E3889287E8c72892b42d1a856FA0AB51a0737`
+- Chain ID: `8453`
+- Deployment record: `deployments/base-mainnet.json`
+- Metadata: `ipfs-manifest.json`
+
+The initial owner and claim signer intentionally use the same address for this
+deployment. Rotate `claimSigner` with `setClaimSigner` before moving the owner to
+a multisig if operational key separation is introduced later.
+
 ## Compile
 
 From this directory:
@@ -23,12 +34,11 @@ Deploy with these constructor arguments:
 3. `initialBaseURI`: the HTTPS or IPFS directory containing `1.json` through
    `6.json`. It must end with `/`; the contract appends `<tokenId>.json`.
 
-The matching metadata files are included in `metadata/`. Their current `image`
-fields point to the matching SVG files served from `public/badges/`. Upload the
-complete six-file metadata directory to durable storage and use that directory
-URI, including its trailing `/`, as `initialBaseURI`. If metadata is moved to a
-new content-addressed directory after deployment, update the contract with
-`setBaseURI` before enabling claims for the affected badges.
+The matching metadata files are included in `metadata/`. The production artwork
+and metadata are pinned to IPFS; the reproducible CIDs and gateway paths are in
+`ipfs-manifest.json`. Use its `contractBaseUri`, including the trailing `/`, as
+`initialBaseURI`. If metadata is moved to a new content-addressed directory after
+deployment, update the contract with `setBaseURI` before enabling claims.
 
 ## Application badge IDs
 

@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   BadgeCheck,
+  ChartNoAxesCombined,
   BriefcaseBusiness,
   ChevronDown,
   Compass,
@@ -49,7 +50,12 @@ const desktopPrimaryButton =
 
 const mobileNavigation = [
   { href: "/", id: "explore", label: "Explore", Icon: Compass },
-  { href: "/watchlist", id: "watchlist", label: "Watch", Icon: Heart },
+  {
+    href: "/markets",
+    id: "markets",
+    label: "Markets",
+    Icon: ChartNoAxesCombined,
+  },
   { href: "/create", id: "create", label: "Create", Icon: Plus },
   {
     href: "/portfolio",
@@ -569,7 +575,11 @@ export default function ArtHeader({
 
             {isConnected && address ? (
               <div className="flex min-w-0 items-center gap-1.5">
-                <div className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-art-gray-300 bg-art-gray-50 px-2.5">
+                <Link
+                  href="/portfolio"
+                  aria-label="Open portfolio"
+                  className="flex h-10 min-w-0 items-center gap-2 rounded-[11px_5px_9px_7px] border-2 border-[#2d3748] bg-white px-2.5 text-art-gray-900 shadow-[2px_2px_0_#2d3748] transition-[transform,background-color,box-shadow] hover:-translate-y-0.5 hover:bg-[var(--base-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--base-blue)] focus-visible:ring-offset-2"
+                >
                   {userInfo.type === "farcaster" && userInfo.pfpUrl ? (
                     <Image
                       src={userInfo.pfpUrl}
@@ -586,7 +596,7 @@ export default function ArtHeader({
                     />
                   )}
                   <span className="sr-only">Wallet connected</span>
-                  <span className="max-w-[112px] truncate font-mono text-xs text-art-gray-900 sm:max-w-[156px]">
+                  <span className="max-w-[112px] truncate text-xs font-bold tracking-[-0.01em] sm:max-w-[156px]">
                     {userInfo.name
                       ? userInfo.type === "farcaster"
                         ? `@${userInfo.name}`
@@ -595,7 +605,7 @@ export default function ArtHeader({
                           address.length - 4
                         )}`}
                   </span>
-                </div>
+                </Link>
                 <button
                   type="button"
                   onClick={() => void handleDisconnect()}
