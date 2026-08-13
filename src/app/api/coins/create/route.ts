@@ -16,10 +16,6 @@ import { z } from "zod";
 
 import { basePublicClient } from "@/lib/basePublicClient";
 import { ApiInputError, readJsonBody } from "@/lib/api/requestValidation";
-import {
-  requireWalletSession,
-  SessionError,
-} from "@/lib/auth/session";
 import { DRAWCOIN_PLATFORM_REFERRER } from "@/lib/drawcoinPlatform";
 import type { CoinRecordErrorCode } from "@/lib/functions/coinCreationSync";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
@@ -169,24 +165,6 @@ function verifyCreationCurrency(
 
 export async function POST(request: NextRequest) {
   let input: z.infer<typeof createCoinSchema>;
-  let session;
-
-  try {
-    session = await requireWalletSession();
-  } catch (error) {
-    if (error instanceof SessionError) {
-      return jsonError(
-        error.message,
-        error.status,
-        "WALLET_SESSION_REQUIRED"
-      );
-    }
-    return jsonError(
-      "Wallet sign-in is temporarily unavailable.",
-      503,
-      "WALLET_SESSION_UNAVAILABLE"
-    );
-  }
 
   try {
     const body = await readJsonBody<unknown>(request, 16_384);
@@ -224,13 +202,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!isAddressEqual(creatorAddress, session.address)) {
-    return jsonError(
-      "The verified wallet does not match the coin creator.",
-      403,
-      "CREATOR_MISMATCH"
-    );
-  }
   if (
     !isAddressEqual(
       requestedPlatformReferrer,

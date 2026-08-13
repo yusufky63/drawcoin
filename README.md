@@ -147,7 +147,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 
 **Buying Tokens:**
 
-- Multiple payment options: ETH, USDC, or other coins
+- Buy with ETH on Base using a supported EOA wallet
 - Use quick percentage buttons (25%, 50%, 75%, 100% of your balance)
 - Slippage protection: Set how much price change you'll accept
 - See the USD value before you confirm
@@ -157,7 +157,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 
 - Sell any amount you own with one click
 - Same easy interface as buying
-- Convert back to ETH or USDC
+- Convert back to ETH on Base
 - See your profit/loss in real-time
 
 **Smart Trading Features:**

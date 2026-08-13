@@ -11,8 +11,8 @@ export type CoinCreationCurrency =
 /**
  * Everything needed to replay DrawCoin's verified record step after the
  * onchain transaction has already succeeded. It contains no credentials or
- * signatures; the server still requires the wallet's HTTP-only SIWE session
- * and re-verifies the Base receipt on every call.
+ * signatures; the server derives the creator from the official Zora event and
+ * re-verifies the Base receipt on every call.
  */
 export interface CoinCreationRecordPayload {
   name: string;
@@ -30,8 +30,6 @@ export interface CoinCreationRecordPayload {
 export type CoinRecordStatus = "recorded" | "sync_required";
 
 export type CoinRecordErrorCode =
-  | "WALLET_SESSION_REQUIRED"
-  | "WALLET_SESSION_UNAVAILABLE"
   | "INVALID_RECORD_PAYLOAD"
   | "CREATOR_MISMATCH"
   | "PLATFORM_REFERRER_MISMATCH"
@@ -64,14 +62,6 @@ const ERROR_DETAILS: Record<
   CoinRecordErrorCode,
   Pick<CoinRecordError, "message" | "retryable">
 > = {
-  WALLET_SESSION_REQUIRED: {
-    message: "Verify your wallet, then sync this token again.",
-    retryable: true,
-  },
-  WALLET_SESSION_UNAVAILABLE: {
-    message: "Wallet verification is temporarily unavailable.",
-    retryable: true,
-  },
   INVALID_RECORD_PAYLOAD: {
     message: "The saved token details are incomplete or invalid.",
     retryable: false,
@@ -123,7 +113,6 @@ function createRecordError(code: CoinRecordErrorCode): CoinRecordError {
 }
 
 function fallbackCodeForStatus(status: number): CoinRecordErrorCode {
-  if (status === 401) return "WALLET_SESSION_REQUIRED";
   if (status === 403) return "CREATOR_MISMATCH";
   if (status === 409) return "RECORD_CONFLICT";
   if (status === 400 || status === 413 || status === 415) {

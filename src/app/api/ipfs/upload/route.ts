@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireWalletSession, SessionError } from "@/lib/auth/session";
-import { IpfsQuotaError, reserveIpfsUpload } from "@/lib/ipfs/quota";
+import {
+  getIpfsUploadRequestClientKey,
+  IpfsQuotaError,
+  reserveIpfsUpload,
+} from "@/lib/ipfs/quota";
 import {
   decodeDataImageUrl,
   IpfsInputError,
@@ -51,19 +54,6 @@ async function parseUploadBody(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  let session;
-  try {
-    session = await requireWalletSession();
-  } catch (error) {
-    if (error instanceof SessionError) {
-      return jsonResponse({ error: error.code, success: false }, error.status);
-    }
-    return jsonResponse(
-      { error: "UPLOAD_AUTH_UNAVAILABLE", success: false },
-      503
-    );
-  }
-
   const contentType = request.headers.get("content-type")?.split(";", 1)[0];
   if (contentType?.trim().toLowerCase() !== "application/json") {
     return jsonResponse(
@@ -87,7 +77,10 @@ export async function POST(request: NextRequest) {
   try {
     const input = await parseUploadBody(request);
     const image = decodeDataImageUrl(input.imageUrl);
-    await reserveIpfsUpload(session.address, image.bytes.byteLength);
+    await reserveIpfsUpload(
+      getIpfsUploadRequestClientKey(request),
+      image.bytes.byteLength
+    );
     const imageBuffer = new ArrayBuffer(image.bytes.byteLength);
     new Uint8Array(imageBuffer).set(image.bytes);
     const imageBlob = new Blob([imageBuffer], { type: image.mimeType });

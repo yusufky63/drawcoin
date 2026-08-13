@@ -417,14 +417,20 @@ async function getTokenDecimals(tokenAddress, publicClient) {
         type: "function",
       },
     ];
-    return await publicClient.readContract({
+    const decimals = Number(await publicClient.readContract({
       address: tokenAddress,
       abi: erc20DecimalsAbi,
       functionName: "decimals",
-    });
+    }));
+
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+      throw new Error("Token returned invalid decimals.");
+    }
+
+    return decimals;
   } catch (error) {
-    console.warn("Failed to fetch token decimals; defaulting to 18", error);
-    return 18;
+    console.warn("Failed to fetch token decimals", error);
+    throw new Error("Unable to verify token decimals before selling.");
   }
 }
 
@@ -457,6 +463,10 @@ export async function executeTrade({
 }) {
   const safeSlippage = assertSafeTradeSlippage(slippage);
   assertZoraTradeWalletSupported(walletConnectorId);
+
+  if (direction !== "buy" && direction !== "sell") {
+    throw new TypeError("Trade direction must be buy or sell.");
+  }
 
   // Determine sender address
   const senderAddress =

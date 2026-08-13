@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   decodeDataImageUrl,
+  getIpfsUploadClientKey,
   IpfsInputError,
   MAX_IPFS_IMAGE_BYTES,
   readStreamWithLimit,
@@ -71,4 +72,11 @@ test("stream reads stop at the configured byte limit", async () => {
     readStreamWithLimit(overLimit, 3),
     (error) => error instanceof IpfsInputError && error.status === 413
   );
+});
+
+test("IPFS quota identity is private and does not require wallet sign-in", () => {
+  const expected = getIpfsUploadClientKey("untrusted-proxy");
+
+  assert.match(expected, /^[0-9a-f]{64}$/);
+  assert.notEqual(expected, "untrusted-proxy");
 });

@@ -10,7 +10,6 @@ import {
 } from "../../lib/creatorIdentity";
 import type { Coin } from "../../lib/supabase";
 import { useWatchlist } from "../../hooks/useWatchlist";
-import DetailsModal from "./DetailsModal";
 import TokenFilters, {
   type CreationType,
   type MarketSort,
@@ -114,8 +113,6 @@ export default function MarketPage() {
   const [creationType, setCreationType] = useState<CreationType>("all");
   const [selectedCreator, setSelectedCreator] = useState<string | null>(null);
   const [filtersReady, setFiltersReady] = useState(false);
-  const [tradeModalOpen, setTradeModalOpen] = useState(false);
-  const [selectedToken, setSelectedToken] = useState<Coin | null>(null);
   const marketTopRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -462,10 +459,6 @@ export default function MarketPage() {
         {tokens.length > 0 ? (
           <TokenGrid
             tokens={tokens}
-            onTrade={(token) => {
-              setSelectedToken(token);
-              setTradeModalOpen(true);
-            }}
             loading={false}
             viewMode={viewMode}
             watchlistSet={watchlistSet}
@@ -502,14 +495,6 @@ export default function MarketPage() {
         </div>
       </div>
 
-      <DetailsModal
-        token={selectedToken}
-        isOpen={tradeModalOpen}
-        onClose={() => {
-          setTradeModalOpen(false);
-          setSelectedToken(null);
-        }}
-      />
     </div>
   );
 }

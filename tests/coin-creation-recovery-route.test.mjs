@@ -11,7 +11,7 @@ const createTokenSource = await readFile(
   "utf8"
 );
 
-test("recovery re-verifies the official Base receipt and immutable creation fields", () => {
+test("recovery needs no message signature and re-verifies the official Base receipt", () => {
   const receiptIndex = routeSource.indexOf(
     "basePublicClient.getTransactionReceipt"
   );
@@ -27,7 +27,8 @@ test("recovery re-verifies the official Base receipt and immutable creation fiel
   assert.match(routeSource, /deployment\.name !== input\.name/);
   assert.match(routeSource, /deployment\.symbol !== input\.symbol/);
   assert.match(routeSource, /deployment\.uri !== input\.image_url/);
-  assert.match(routeSource, /requireWalletSession\(\)/);
+  assert.doesNotMatch(routeSource, /requireWalletSession|SessionError/);
+  assert.match(routeSource, /const matchesCreator = isAddressEqual\(creatorAddress, eventCaller\)/);
 });
 
 test("the stored currency label is derived from and matched to the onchain event", () => {

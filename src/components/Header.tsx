@@ -461,7 +461,7 @@ export default function ArtHeader({
                             />
                           )}
                           <span className="sr-only">Wallet connected.</span>
-                          <span className="max-w-[90px] truncate font-mono text-[11px] xl:max-w-[116px]">
+                          <span className="max-w-[90px] truncate font-art-sans text-xs font-extrabold tracking-[-0.015em] xl:max-w-[116px]">
                             {userInfo.name
                               ? userInfo.type === "farcaster"
                                 ? `@${userInfo.name}`
@@ -596,7 +596,7 @@ export default function ArtHeader({
                     />
                   )}
                   <span className="sr-only">Wallet connected</span>
-                  <span className="max-w-[112px] truncate text-xs font-bold tracking-[-0.01em] sm:max-w-[156px]">
+                  <span className="max-w-[112px] truncate text-xs font-extrabold tracking-[-0.015em] sm:max-w-[156px]">
                     {userInfo.name
                       ? userInfo.type === "farcaster"
                         ? `@${userInfo.name}`

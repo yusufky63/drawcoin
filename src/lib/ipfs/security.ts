@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 
 export const MAX_IPFS_UPLOAD_REQUEST_BYTES = 6 * 1024 * 1024;
 export const MAX_IPFS_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -27,6 +28,12 @@ const IMAGE_SIGNATURES: Record<string, (bytes: Uint8Array) => boolean> = {
     String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" &&
     String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP",
 };
+
+export function getIpfsUploadClientKey(identifier: string): string {
+  return createHash("sha256")
+    .update(`drawcoin-ipfs-upload:${identifier.toLowerCase()}`, "utf8")
+    .digest("hex");
+}
 
 export class IpfsInputError extends Error {
   readonly status: 400 | 413 | 415;

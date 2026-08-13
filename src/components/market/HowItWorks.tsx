@@ -88,7 +88,7 @@ export default function HowItWorks() {
           <div className="space-y-2 text-sm text-art-gray-700">
             <div className="bg-white/60 p-2 md:p-3 rounded-art transform rotate-0.5">
               <p className="font-bold text-green-800 mb-0.5">Buy & Sell</p>
-              <p className="text-xs">Trade with ETH or USDC - instant swaps</p>
+              <p className="text-xs">Trade with ETH on Base</p>
             </div>
             
             <div className="bg-white/60 p-2 md:p-3 rounded-art transform -rotate-0.5">

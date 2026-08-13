@@ -11,7 +11,6 @@ import { CreationTypeBadge } from "./CreationTypeBadge";
 
 interface TokenGridProps {
   tokens: Coin[];
-  onTrade: (token: Coin) => void;
   loading?: boolean;
   viewMode?: "grid" | "list";
   showBalance?: boolean; // Optional prop to show user balance
@@ -27,7 +26,6 @@ interface TokenGridProps {
 
 export default function TokenGrid({
   tokens,
-  onTrade,
   loading = false,
   viewMode = "grid",
   showBalance = false,
@@ -369,22 +367,6 @@ export default function TokenGrid({
                     )}
                   </button>
 
-                  {/* Trade Button (Hand Drawn Style) */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onTrade(token);
-                    }}
-                    className="relative z-20 hand-drawn-btn text-xs font-bold py-1.5 px-3 transform rotate-1 hover:scale-105 transition-transform duration-200"
-                    style={{
-                      borderRadius: "8px 6px 12px 4px",
-                      backgroundColor: "#48bb78",
-                      minWidth: "60px",
-                    }}
-                  >
-                    Trade
-                  </button>
                 </div>
               </div>
             </article>
@@ -400,7 +382,6 @@ export default function TokenGrid({
         <TokenCard
           key={token.id || token.contract_address}
           token={token}
-          onTrade={onTrade}
           showBalance={showBalance}
           watchlistSet={watchlistSet}
           onToggleWatchlist={onToggleWatchlist}

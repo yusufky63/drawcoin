@@ -24,7 +24,6 @@ import HandDrawnIcon from "../ui/HandDrawnIcon";
 import SuccessModal from "./SuccessModal";
 import { toast } from "react-hot-toast";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
-import { useWalletSession } from "@/hooks/useWalletSession";
 import { normalizeAdditionalOwners } from "@/lib/create/additionalOwners";
 import { DRAWCOIN_PLATFORM_REFERRER } from "@/lib/drawcoinPlatform";
 import {
@@ -48,11 +47,6 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { switchChainAsync } = useSwitchChain();
-  const {
-    session,
-    status: sessionStatus,
-    signIn,
-  } = useWalletSession();
   const customCanvasRef = React.useRef<CustomCanvasRef>(null);
 
   // Form state
@@ -358,14 +352,6 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     setLoading(true);
 
     try {
-      if (
-        sessionStatus !== "authenticated" ||
-        !session ||
-        session.address.toLowerCase() !== address.toLowerCase()
-      ) {
-        await signIn();
-      }
-
       // A manual retry after a cancelled wallet request reuses the same IPFS
       // metadata URI and does not consume another permanent upload quota.
       const ipfsUrl =
@@ -475,14 +461,6 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     setRecordError(null);
 
     try {
-      if (
-        sessionStatus !== "authenticated" ||
-        !session ||
-        session.address.toLowerCase() !== address.toLowerCase()
-      ) {
-        await signIn();
-      }
-
       const result = await syncCreatedToken(pendingCreation.payload);
       if (result.status === "recorded") {
         const syncedAddress =

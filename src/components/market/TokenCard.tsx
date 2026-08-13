@@ -8,7 +8,6 @@ import { CreationTypeBadge } from "./CreationTypeBadge";
 
 interface TokenCardProps {
   token: Coin;
-  onTrade: (token: Coin) => void;
   showBalance?: boolean; // Optional prop to show user balance
   watchlistSet?: Set<string>; // Pre-computed Set for O(1) lookup
   onToggleWatchlist?: (
@@ -22,7 +21,6 @@ interface TokenCardProps {
 
 export function TokenCard({
   token,
-  onTrade,
   showBalance = false,
   watchlistSet,
   onToggleWatchlist,
@@ -50,11 +48,6 @@ export function TokenCard({
       (token as any).tokenPrice?.priceInPoolToken ??
         (token as any).tokenPrice?.priceInEth
     ),
-  };
-
-  const handleTradeClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onTrade(token);
   };
 
   const tokenName = (token as any).name || token.name || "token";
@@ -144,33 +137,6 @@ export function TokenCard({
         className="absolute left-3 top-3 z-30"
       />
 
-      {/* Hover Overlay with Buttons */}
-      <div className="token-card-actions pointer-events-none absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-300 z-20 overflow-hidden rounded-art">
-        <div className="flex gap-3 pointer-events-auto">
-          <Link
-            href={`/coin/${token.contract_address}`}
-            className="hand-drawn-btn text-sm font-bold py-3 px-6 transform -rotate-1 hover:scale-105 transition-transform duration-200"
-            style={{
-              borderRadius: "12px 4px 8px 6px",
-              minWidth: "80px",
-            }}
-          >
-            View
-          </Link>
-          <button
-            type="button"
-            onClick={handleTradeClick}
-            className="hand-drawn-btn text-sm font-bold py-3 px-6 transform rotate-1 hover:scale-105 transition-transform duration-200"
-            style={{
-              borderRadius: "8px 6px 12px 4px",
-              backgroundColor: "#48bb78",
-              minWidth: "80px",
-            }}
-          >
-            Trade
-          </button>
-        </div>
-      </div>
       {/* Token Image - with lazy loading */}
       <div
         className="w-full bg-art-gray-50 rounded-art-lg mb-2 md:mb-3 overflow-hidden relative flex items-center justify-center"

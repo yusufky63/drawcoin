@@ -244,3 +244,33 @@ test("trade UIs are ETH-only and expose no unsafe quick slippage option", async 
     assert.ok(values.every((value) => value >= 0.001 && value <= 0.1));
   }
 });
+
+test("buy and sell parameters match the installed Zora trade contract", () => {
+  const executeTradeStart = sdkSource.indexOf(
+    "export async function executeTrade({",
+  );
+  const executeTradeEnd = sdkSource.indexOf(
+    "export async function executeERC20Trade({",
+    executeTradeStart,
+  );
+  const wrapper = sdkSource.slice(executeTradeStart, executeTradeEnd);
+
+  assert.match(wrapper, /direction !== "buy" && direction !== "sell"/);
+  assert.match(
+    wrapper,
+    /if \(direction === "buy"\)[\s\S]*?sellToken = \{ type: "eth" \};[\s\S]*?buyToken = \{ type: "erc20", address: coinAddress \};[\s\S]*?parseEther\(/,
+  );
+  assert.match(
+    wrapper,
+    /getTokenDecimals\(coinAddress, publicClient\)[\s\S]*?sellToken = \{ type: "erc20", address: coinAddress \};[\s\S]*?buyToken = \{ type: "eth" \};[\s\S]*?parseUnits\(/,
+  );
+  assert.doesNotMatch(
+    sdkSource,
+    /defaulting to 18/,
+    "unknown token decimals must fail closed instead of changing the amount",
+  );
+  assert.match(
+    sdkSource,
+    /tradeCoin\(\{[\s\S]*?tradeParameters,[\s\S]*?walletClient,[\s\S]*?publicClient,[\s\S]*?validateTransaction/,
+  );
+});
