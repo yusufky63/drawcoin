@@ -3,12 +3,27 @@ import {
   getCoinAddressFromReceipt,
   CreateConstants,
 } from "../../services/sdk/getCreateCoin.js";
-import { type CreateCoinData } from "../../services/coinService";
+import { createPublicClient, getAddress, http, isAddress } from "viem";
 import { base } from "viem/chains";
 import { showCreateMessages } from "../../utils/toastUtils";
-import { checkAndSwitchNetwork } from "../../services/networkUtils";
 import { toast } from "react-hot-toast";
-import { AnalyticsService } from "../../services/analyticsService";
+import {
+  BASE_CHAIN_ID,
+  syncCreatedToken,
+  type CoinCreationCurrency,
+  type CoinCreationRecordPayload,
+  type CoinRecordError,
+  type CoinRecordStatus,
+} from "./coinCreationSync";
+
+export { syncCreatedToken } from "./coinCreationSync";
+export type {
+  CoinCreationRecordPayload,
+  CoinRecordError,
+  CoinRecordErrorCode,
+  CoinRecordResult,
+  CoinRecordStatus,
+} from "./coinCreationSync";
 
 export interface CreateTokenData {
   name: string;
@@ -20,227 +35,270 @@ export interface CreateTokenData {
   // Note: Initial purchase fields removed as not supported in SDK v2
   ownersAddresses: string[];
   selectedCurrency: number;
-  startingMarketCap: number; // 0 = LOW, 1 = HIGH
-  smartWalletRouting: number; // 0 = AUTO, 1 = DISABLE
   platformReferrer: string;
 }
 
 export interface CreateTokenResult {
   hash: string;
   address?: string;
-  receipt?: any;
-  deployment?: any;
+  receipt?: CoinCreationReceipt;
+  deployment?: unknown;
+  transactionHash: string;
+  contractAddress?: string;
+  recordStatus: CoinRecordStatus;
+  recoveryPayload: CoinCreationRecordPayload;
+  recordError?: CoinRecordError;
+  recordedCoin?: Awaited<ReturnType<typeof syncCreatedToken>>["coin"];
+}
+
+type CoinCreationReceipt = {
+  transactionHash?: string;
+} & Record<string, unknown>;
+
+type CreationWalletClient = {
+  getChainId: () => Promise<number>;
+};
+
+export type SwitchToBaseAsync = (args: {
+  chainId: typeof BASE_CHAIN_ID;
+}) => Promise<unknown>;
+
+export type CreateTokenErrorCode =
+  | "BASE_SWITCH_REQUIRED"
+  | "BASE_SWITCH_FAILED"
+  | "TRANSACTION_CANCELLED"
+  | "INSUFFICIENT_FUNDS"
+  | "CREATION_STATUS_UNKNOWN"
+  | "TOKEN_CREATION_FAILED";
+
+export class CreateTokenError extends Error {
+  constructor(
+    readonly code: CreateTokenErrorCode,
+    message: string,
+    readonly retryable: boolean
+  ) {
+    super(message);
+    this.name = "CreateTokenError";
+  }
+}
+
+const fallbackBasePublicClient = createPublicClient({
+  chain: base,
+  transport: http(process.env.NEXT_PUBLIC_BASE_RPC_URL),
+});
+
+function selectBasePublicClient(publicClient: unknown) {
+  if (
+    publicClient &&
+    typeof publicClient === "object" &&
+    "chain" in publicClient &&
+    publicClient.chain &&
+    typeof publicClient.chain === "object" &&
+    "id" in publicClient.chain &&
+    publicClient.chain.id === base.id
+  ) {
+    return publicClient;
+  }
+
+  return fallbackBasePublicClient;
 }
 
 export const createToken = async (
   tokenData: CreateTokenData,
-  walletClient: any,
-  publicClient: any,
+  walletClient: CreationWalletClient,
+  publicClient: unknown,
   walletAddress: string,
-  switchChain?: any
+  switchChainAsync?: SwitchToBaseAsync
 ): Promise<CreateTokenResult> => {
   try {
-    console.log("Creating token with data:", tokenData);
-
-    // Check if we're on the Base network and auto-switch if needed
-    const chainId = await walletClient.getChainId();
-    if (chainId !== base.id) {
-      console.log(
-        `Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Attempting to switch...`
+    if (!isAddress(walletAddress) || !isAddress(tokenData.platformReferrer)) {
+      throw new CreateTokenError(
+        "TOKEN_CREATION_FAILED",
+        "The creator or DrawCoin referral address is invalid. No transaction was sent.",
+        false
       );
+    }
+    const normalizedWalletAddress = getAddress(walletAddress);
+    const normalizedPlatformReferrer = getAddress(
+      tokenData.platformReferrer
+    );
 
-      if (switchChain) {
-        const switchSuccess = await checkAndSwitchNetwork({
-          chainId,
-          switchChain,
-        });
-        if (!switchSuccess) {
-          throw new Error(
-            `Please switch to Base network manually in your wallet.`
-          );
-        }
-        // Wait a moment for the network switch to complete
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } else {
-        throw new Error(
-          `Chain mismatch: Connected to chain ${chainId}, but Base (${base.id}) is required. Please switch networks.`
+    const initialChainId = await walletClient.getChainId();
+    if (initialChainId !== base.id) {
+      if (!switchChainAsync) {
+        throw new CreateTokenError(
+          "BASE_SWITCH_REQUIRED",
+          "Switch your wallet to Base before creating the token.",
+          false
+        );
+      }
+
+      try {
+        // Request a network switch once. A transaction is never submitted
+        // until the wallet independently reports that Base is active.
+        await switchChainAsync({ chainId: BASE_CHAIN_ID });
+      } catch {
+        throw new CreateTokenError(
+          "BASE_SWITCH_FAILED",
+          "The wallet could not switch to Base.",
+          false
         );
       }
     }
 
-    // Show a loading toast for the creation process
+    const confirmedChainId = await walletClient.getChainId();
+    if (confirmedChainId !== base.id) {
+      throw new CreateTokenError(
+        "BASE_SWITCH_FAILED",
+        "Base was not confirmed in the wallet. No transaction was sent.",
+        false
+      );
+    }
+
     showCreateMessages.loading();
 
-    // Create Zora coin using updated SDK with the IPFS URI
-    console.log("Creating coin with URI:", tokenData.imageUrl);
-    // Convert selectedCurrency number to string
     const currencyString =
       tokenData.selectedCurrency === 0
         ? CreateConstants.ContentCoinCurrencies.ZORA
         : CreateConstants.ContentCoinCurrencies.ETH;
+    const recordCurrency = currencyString as CoinCreationCurrency;
 
-    // Convert startingMarketCap number to string
-    const marketCapString =
-      tokenData.startingMarketCap === 0
-        ? CreateConstants.StartingMarketCaps.LOW
-        : CreateConstants.StartingMarketCaps.HIGH;
-
-    // Convert smartWalletRouting number to string
-    const smartWalletString =
-      tokenData.smartWalletRouting === 0 ? "AUTO" : "DISABLE";
-
-    console.log("Using currency:", currencyString);
-    console.log("Using starting market cap:", marketCapString);
-    console.log("Using smart wallet routing:", smartWalletString);
-
-    // Fee optimization: Use minimal gas settings
-    const optimizedWalletClient = {
-      ...walletClient,
-      // Use wallet's optimal gas price instead of manual setting
-      request: async (args: any) => {
-        if (args.method === "eth_sendTransaction") {
-          // Let wallet optimize gas automatically
-          return walletClient.request(args);
-        }
-        return walletClient.request(args);
-      },
-    };
-
-    const result = (await createZoraCoin(
+    // Use a Base-bound public client even when React has not yet re-rendered
+    // the publicClient prop after the wallet switch.
+    const baseClient = selectBasePublicClient(publicClient);
+    const sdkResult = (await createZoraCoin(
       {
         name: tokenData.name,
         symbol: tokenData.symbol,
         uri: tokenData.imageUrl,
-        payoutRecipient: walletAddress,
+        payoutRecipient: normalizedWalletAddress,
         currency: currencyString,
-        startingMarketCap: marketCapString,
-        smartWalletRouting: smartWalletString,
-        chainId: chainId,
-        platformReferrer: tokenData.platformReferrer || undefined,
+        chainId: BASE_CHAIN_ID,
+        platformReferrer: normalizedPlatformReferrer,
         owners:
           tokenData.ownersAddresses.length > 0
             ? tokenData.ownersAddresses
             : undefined,
       },
-      optimizedWalletClient,
-      publicClient
-    )) as CreateTokenResult;
+      walletClient,
+      baseClient
+    )) as {
+      hash?: string;
+      address?: string;
+      receipt?: CoinCreationReceipt;
+      deployment?: unknown;
+    };
 
-    console.log("Token created successfully:", result);
+    const transactionHash =
+      sdkResult.hash ?? sdkResult.receipt?.transactionHash;
+    if (
+      typeof transactionHash !== "string" ||
+      !/^0x[0-9a-fA-F]{64}$/.test(transactionHash)
+    ) {
+      throw new CreateTokenError(
+        "CREATION_STATUS_UNKNOWN",
+        "The wallet did not return a valid transaction ID. Check your activity before trying again.",
+        false
+      );
+    }
 
-    // Update toast with success
     toast.success("Art token created successfully!", {
       id: "status-toast",
     });
 
-    // Set the contract address from the result or extract from receipt
-    let contractAddress = "";
-    if (
-      result &&
-      typeof result === "object" &&
-      "address" in result &&
-      result.address
-    ) {
-      contractAddress = result.address;
-    } else if (result && result.receipt) {
-      const extractedAddress = getCoinAddressFromReceipt(result.receipt);
-      contractAddress = extractedAddress || "Contract created, address unknown";
+    const extractedAddress = sdkResult.receipt
+      ? getCoinAddressFromReceipt(sdkResult.receipt)
+      : null;
+    const rawContractAddress = sdkResult.address ?? extractedAddress ?? undefined;
+    const contractAddress =
+      rawContractAddress && isAddress(rawContractAddress)
+        ? getAddress(rawContractAddress)
+        : undefined;
+
+    const recoveryPayload: CoinCreationRecordPayload = {
+      name: tokenData.name,
+      symbol: tokenData.symbol,
+      description: tokenData.description,
+      image_url: tokenData.imageUrl,
+      creator_address: normalizedWalletAddress,
+      tx_hash: transactionHash.toLowerCase(),
+      chain_id: BASE_CHAIN_ID,
+      currency: recordCurrency,
+      platform_referrer: normalizedPlatformReferrer,
+      ...(contractAddress ? { contract_address: contractAddress } : {}),
+    };
+
+    toast.loading("Syncing token with DrawCoin...", { id: "save-toast" });
+    const recordResult = await syncCreatedToken(recoveryPayload);
+
+    if (recordResult.status === "recorded") {
+      toast.success("Token synced with DrawCoin.", { id: "save-toast" });
     } else {
-      console.warn("Contract address not found in result:", result);
-      contractAddress = "Contract created, address unknown";
+      // The chain transaction remains successful. Return an explicit recovery
+      // payload instead of converting this into a second mint attempt.
+      toast.error(recordResult.error!.message, { id: "save-toast" });
     }
 
-    // Save coin to database after successful creation
-    if (
-      contractAddress &&
-      contractAddress !== "Contract created, address unknown"
-    ) {
-      try {
-        toast.loading("Saving token to database...", { id: "save-toast" });
-
-        const coinData: CreateCoinData = {
-          name: tokenData.name,
-          symbol: tokenData.symbol,
-          description: tokenData.description,
-          contract_address: contractAddress,
-          image_url: tokenData.imageUrl,
-          category: tokenData.category,
-          creator_address: walletAddress,
-          creator_name: walletAddress,
-          tx_hash: result.hash,
-          chain_id: chainId,
-          currency: currencyString,
-          platform_referrer: tokenData.platformReferrer || undefined,
-          creation_type: tokenData.creation_type || "hand-drawn",
-        };
-
-        // Use secure API route instead of direct client-side insert
-        const response = await fetch("/api/coins/create", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(coinData),
-        });
-
-        if (response.ok) {
-          await response.json();
-          toast.success("Token saved to database successfully!", {
-            id: "save-toast",
-          });
-
-          // Record analytics for token creation
-          try {
-            await AnalyticsService.recordTransaction({
-              tx_hash: result.hash,
-              user_address: walletAddress,
-              token_address: contractAddress,
-              type: "create",
-              amount_token: 0,
-              amount_eth: 0,
-              amount_usd: 0,
-            });
-          } catch (analyticsError) {
-            console.error("Analytics error (non-blocking):", analyticsError);
-          }
-        } else {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "Failed to save token");
-        }
-      } catch (error) {
-        console.error("Error saving token to database:", error);
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-        toast.error(`Database error: ${errorMessage}`, { id: "save-toast" });
-      }
-    }
-
-    return result;
+    return {
+      ...sdkResult,
+      hash: transactionHash,
+      address: contractAddress ?? sdkResult.address,
+      transactionHash,
+      contractAddress,
+      recordStatus: recordResult.status,
+      recoveryPayload,
+      recordError: recordResult.error,
+      recordedCoin: recordResult.coin,
+    };
   } catch (error) {
     console.error("Error creating token:", error);
-    const raw = error instanceof Error ? error.message : String(error || "");
-
-    // Short, user-friendly messages
-    if (
-      raw.toLowerCase().includes("user rejected") ||
-      raw.toLowerCase().includes("user denied") ||
-      raw.toLowerCase().includes("denied transaction") ||
-      raw.toLowerCase().includes("request rejected") ||
-      raw.toLowerCase().includes("rejected the request")
-    ) {
-      const shortMsg = "Transaction cancelled by user.";
-      toast.error(shortMsg, { id: "status-toast" });
-      throw new Error(shortMsg);
-    } else if (
-      raw.toLowerCase().includes("insufficient funds") ||
-      raw.toLowerCase().includes("exceeds the balance")
-    ) {
-      toast.error("Insufficient funds.", { id: "status-toast" });
-      throw new Error("Insufficient funds.");
-    } else {
-      const concise = raw.length > 120 ? `${raw.slice(0, 117)}...` : raw;
-      toast.error(concise, { id: "status-toast" });
-      throw new Error(concise);
+    if (error instanceof CreateTokenError) {
+      toast.error(error.message, { id: "status-toast" });
+      throw error;
     }
+
+    const raw = error instanceof Error ? error.message.toLowerCase() : "";
+    if (
+      raw.includes("user rejected") ||
+      raw.includes("user denied") ||
+      raw.includes("denied transaction") ||
+      raw.includes("request rejected") ||
+      raw.includes("rejected the request") ||
+      raw.includes("token creation was rejected") ||
+      raw.includes("token creation was cancelled")
+    ) {
+      const safeError = new CreateTokenError(
+        "TRANSACTION_CANCELLED",
+        "Transaction cancelled by user.",
+        false
+      );
+      toast.error(safeError.message, { id: "status-toast" });
+      throw safeError;
+    }
+
+    if (raw.includes("insufficient funds") || raw.includes("exceeds the balance")) {
+      const safeError = new CreateTokenError(
+        "INSUFFICIENT_FUNDS",
+        "Insufficient funds for this transaction.",
+        false
+      );
+      toast.error(safeError.message, { id: "status-toast" });
+      throw safeError;
+    }
+
+    const statusUnknown =
+      raw.includes("timeout") ||
+      raw.includes("network") ||
+      raw.includes("fetch failed") ||
+      raw.includes("connection");
+    const safeError = new CreateTokenError(
+      statusUnknown ? "CREATION_STATUS_UNKNOWN" : "TOKEN_CREATION_FAILED",
+      statusUnknown
+        ? "The final transaction status is unclear. Check your wallet activity before trying again."
+        : "Token creation failed. No transaction was retried.",
+      false
+    );
+    toast.error(safeError.message, { id: "status-toast" });
+    throw safeError;
   }
 };

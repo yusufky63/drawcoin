@@ -1,265 +1,443 @@
-import React from "react";
-import { Tool, PenStyle } from "../types";
-import { CANVAS_COLORS, PEN_TOOLS } from "../constants";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Circle,
+  Download,
+  Eraser,
+  Minus,
+  MoreHorizontal,
+  MousePointer2,
+  PaintBucket,
+  PenLine,
+  Redo2,
+  Shapes,
+  Square,
+  Star,
+  Trash2,
+  Triangle,
+  Type,
+  Undo2,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { PenStyle, Tool } from "../types";
+import { QUICK_CANVAS_COLORS } from "../constants";
+import { ERASER_COLOR, getEraserStrokeWidth } from "../utils/eraserUtils";
 
 interface DesktopToolbarProps {
+  tool: Tool;
+  historyStep: number;
+  historyLength: number;
+  onToolChange: (tool: Tool) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onClear: () => void;
+  onDownload: () => void;
+}
+
+interface DesktopInspectorProps {
   tool: Tool;
   color: string;
   customColor: string;
   lineWidth: number;
   penStyle: PenStyle;
-  fontSize: number;
-  fontFamily: string;
-  historyStep: number;
-  historyLength: number;
   onToolChange: (tool: Tool) => void;
   onColorChange: (color: string) => void;
   onCustomColorChange: (color: string) => void;
   onLineWidthChange: (width: number) => void;
   onPenStyleChange: (style: PenStyle) => void;
-  onUndo: () => void;
-  onRedo: () => void;
-  onClear: () => void;
-  onDownload: () => void;
-  onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+interface IconButtonProps {
+  label: string;
+  icon: LucideIcon;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+const SHAPE_TOOLS: Tool[] = [
+  "line",
+  "rectangle",
+  "circle",
+  "triangle",
+  "arrow",
+  "star",
+];
+
+const SHAPE_OPTIONS: Array<{
+  id: Tool;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { id: "line", label: "Line", icon: Minus },
+  { id: "rectangle", label: "Rectangle", icon: Square },
+  { id: "circle", label: "Circle", icon: Circle },
+  { id: "triangle", label: "Triangle", icon: Triangle },
+  { id: "arrow", label: "Arrow", icon: ArrowRight },
+  { id: "star", label: "Star", icon: Star },
+];
+
+const PEN_STYLES: Array<{ id: PenStyle; label: string }> = [
+  { id: "pen", label: "Pen" },
+  { id: "brush", label: "Brush" },
+  { id: "marker", label: "Marker" },
+  { id: "highlighter", label: "Highlight" },
+];
+
+function isShapeTool(tool: Tool) {
+  return SHAPE_TOOLS.includes(tool);
+}
+
+function IconButton({
+  label,
+  icon: Icon,
+  active = false,
+  disabled = false,
+  onClick,
+}: IconButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-30 ${
+        active
+          ? "border-[#0052ff] bg-[#0052ff] text-white"
+          : "border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50"
+      }`}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+    >
+      <Icon aria-hidden="true" className="h-[18px] w-[18px]" />
+    </button>
+  );
 }
 
 export const DesktopToolbar: React.FC<DesktopToolbarProps> = ({
   tool,
-  color,
-  customColor,
-  lineWidth,
-  penStyle,
   historyStep,
   historyLength,
   onToolChange,
-  onColorChange,
-  onCustomColorChange,
-  onLineWidthChange,
-  onPenStyleChange,
   onUndo,
   onRedo,
   onClear,
   onDownload,
-  onImageUpload,
 }) => {
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!actionsRef.current?.contains(event.target as Node)) {
+        setActionsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActionsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [actionsOpen]);
+
   return (
-    <div className="hidden md:block relative z-10">
-      <div className="hand-drawn-card p-3 space-y-2 overflow-y-auto">
-        {/* Actions */}
-        <div>
-          <h3 className="text-xs font-bold mb-1.5 text-gray-700">Actions</h3>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={onUndo}
-              disabled={historyStep <= 0}
-              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 flex flex-col items-center text-xs"
-              title="Undo"
-            >
-              <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              Undo
-            </button>
-            <button
-              onClick={onRedo}
-              disabled={historyStep >= historyLength - 1}
-              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 flex flex-col items-center text-xs"
-              title="Redo"
-            >
-              <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
-              </svg>
-              Redo
-            </button>
-            <button
-              onClick={onClear}
-              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex flex-col items-center text-xs"
-              title="Clear All"
-            >
-              <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Clear
-            </button>
-            <button
-              onClick={onDownload}
-              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex flex-col items-center text-xs"
-              title="Download"
-            >
-              <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Save
-            </button>
-          </div>
-        </div>
+    <div
+      className="relative z-20 hidden min-h-12 w-full items-center justify-between gap-2 rounded-xl border-2 border-[#2d3748] bg-white p-1.5 shadow-[2px_2px_0_#171717] lg:flex"
+      role="toolbar"
+      aria-label="Drawing tools"
+    >
+      <div className="flex min-w-0 items-center gap-0.5">
+        <IconButton
+          label="Select"
+          icon={MousePointer2}
+          active={tool === "select"}
+          onClick={() => onToolChange("select")}
+        />
+        <IconButton
+          label="Pen"
+          icon={PenLine}
+          active={tool === "pen"}
+          onClick={() => onToolChange("pen")}
+        />
+        <IconButton
+          label="Eraser"
+          icon={Eraser}
+          active={tool === "eraser"}
+          onClick={() => onToolChange("eraser")}
+        />
+        <IconButton
+          label="Fill"
+          icon={PaintBucket}
+          active={tool === "fill"}
+          onClick={() => onToolChange("fill")}
+        />
+        <IconButton
+          label="Shapes"
+          icon={Shapes}
+          active={isShapeTool(tool)}
+          onClick={() => onToolChange(isShapeTool(tool) ? tool : "rectangle")}
+        />
+        <IconButton
+          label="Text"
+          icon={Type}
+          active={tool === "text"}
+          onClick={() => onToolChange("text")}
+        />
+      </div>
 
-        <div className="border-t border-gray-200"></div>
-
-        {/* Tools */}
-        <div>
-          <h3 className="text-xs font-bold mb-1.5 text-gray-700">Tools</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { id: "select", label: "Select", icon: "M15 15l-2 5L9 9l11 4-5 2z" },
-              { id: "pen", label: "Pen", icon: "M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" },
-              { id: "eraser", label: "Erase", icon: "M10 4L4 10l8 8 6-6-8-8z" },
-              { id: "fill", label: "Fill", icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 008 10.586V5L7 4z" },
-            ].map((t) => (
+      <div className="flex shrink-0 items-center gap-0.5 border-l border-gray-200 pl-1.5">
+        <IconButton
+          label="Undo"
+          icon={Undo2}
+          disabled={historyStep <= 0}
+          onClick={onUndo}
+        />
+        <IconButton
+          label="Redo"
+          icon={Redo2}
+          disabled={historyStep >= historyLength - 1}
+          onClick={onRedo}
+        />
+        <div ref={actionsRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setActionsOpen((open) => !open)}
+            className={`inline-flex h-11 w-11 items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:ring-offset-2 ${
+              actionsOpen
+                ? "border-[#0052ff] bg-[#eef3ff] text-[#003ecb]"
+                : "border-transparent text-gray-700 hover:border-gray-200 hover:bg-gray-50"
+            }`}
+            aria-label="More canvas actions"
+            aria-expanded={actionsOpen}
+          >
+            <MoreHorizontal aria-hidden="true" className="h-5 w-5" />
+          </button>
+          {actionsOpen ? (
+            <div
+              className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-44 rounded-xl border-2 border-[#2d3748] bg-white p-1.5 shadow-[3px_3px_0_#171717]"
+              role="menu"
+            >
               <button
-                key={t.id}
+                type="button"
                 onClick={() => {
-                  onToolChange(t.id as Tool);
+                  onDownload();
+                  setActionsOpen(false);
                 }}
-                className={`p-1.5 rounded-lg transition-colors flex flex-col items-center text-xs ${
-                  tool === t.id ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-                }`}
-                title={t.label}
+                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-gray-800 hover:bg-gray-50"
+                role="menuitem"
               >
-                <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={t.icon} />
-                </svg>
-                {t.label}
+                <Download aria-hidden="true" className="h-4 w-4" />
+                Save PNG
               </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="border-t border-gray-200"></div>
-
-        {/* Pen Styles */}
-        <div>
-          <h3 className="text-xs font-bold mb-1.5 text-gray-700">Pen Style</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {PEN_TOOLS.map((t) => (
               <button
-                key={t.id}
+                type="button"
                 onClick={() => {
-                  onToolChange("pen");
-                  onPenStyleChange(t.id as PenStyle);
+                  onClear();
+                  setActionsOpen(false);
                 }}
-                className={`p-2 rounded transition-colors flex items-center justify-center text-lg ${
-                  tool === "pen" && penStyle === t.id ? "bg-blue-500" : "bg-gray-100 hover:bg-gray-200"
-                }`}
-                title={t.label}
+                className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-red-600 hover:bg-red-50"
+                role="menuitem"
               >
-                {t.icon}
+                <Trash2 aria-hidden="true" className="h-4 w-4" />
+                Clear canvas
               </button>
-            ))}
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              type="range"
-              min="1"
-              max="30"
-              value={lineWidth}
-              onChange={(e) => onLineWidthChange(Number(e.target.value))}
-              className="w-full mb-1"
-              style={{ accentColor: "#3b82f6" }}
-            />
-            <div className="text-center text-xs font-bold text-blue-600">{lineWidth}px</div>
-          </div>
-        </div>
-
-        <div className="border-t border-gray-200"></div>
-
-        {/* Shapes */}
-        <div>
-          <h3 className="text-xs font-bold mb-1.5 text-gray-700">Shapes</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: "line", icon: "M5 19l14-14" },
-              { id: "rectangle", icon: "rect", props: { x: "3", y: "3", width: "18", height: "18", rx: "2" } },
-              { id: "circle", icon: "circle", props: { cx: "12", cy: "12", r: "9" } },
-              { id: "triangle", icon: "M12 3l9 18H3l9-18z" },
-              { id: "arrow", icon: "M13 7l5 5m0 0l-5 5m5-5H6" },
-              { id: "star", icon: "M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" },
-            ].map((s) => (
-              <button
-                key={s.id}
-                onClick={() => onToolChange(s.id as Tool)}
-                className={`p-2 rounded transition-colors ${
-                  tool === s.id ? "bg-blue-500 text-white" : "bg-gray-100 hover:bg-gray-200"
-                }`}
-                title={s.id}
-              >
-                <svg className="w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  {s.icon === "rect" ? (
-                    <rect {...s.props} strokeWidth={2} />
-                  ) : s.icon === "circle" ? (
-                    <circle {...s.props} strokeWidth={2} />
-                  ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={s.icon} />
-                  )}
-                </svg>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="border-t border-gray-200"></div>
-
-        {/* Text & Image */}
-        <div>
-          <h3 className="text-xs font-bold mb-1.5 text-gray-700">Other</h3>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => onToolChange("text")}
-              className={`p-2 rounded-lg transition-colors flex flex-col items-center ${
-                tool === "text" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Text"
-            >
-              <div className="text-xl font-bold">T</div>
-              <span className="text-xs">Text</span>
-            </button>
-            <label className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer flex flex-col items-center text-xs" title="Image">
-              <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Image
-              <input type="file" accept="image/*" onChange={onImageUpload} className="hidden" />
-            </label>
-          </div>
-        </div>
-
-        <div className="border-t border-gray-200"></div>
-
-        {/* Color */}
-        <div>
-          <h3 className="text-xs font-bold mb-1.5 text-gray-700">Color</h3>
-          <div className="grid grid-cols-5 gap-1 mb-2">
-            {CANVAS_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => {
-                  onColorChange(c);
-                  onCustomColorChange(c);
-                }}
-                className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 ${
-                  color === c ? "border-blue-500 scale-110 shadow-md" : "border-gray-200"
-                }`}
-                style={{ backgroundColor: c }}
-                title={c}
-              />
-            ))}
-          </div>
-          <div className="flex items-center gap-2 mt-2">
-            <label className="text-xs font-medium text-gray-600">Custom:</label>
-            <input
-              type="color"
-              value={customColor}
-              onChange={(e) => {
-                onCustomColorChange(e.target.value);
-                onColorChange(e.target.value);
-              }}
-              className="w-full h-8 rounded border-2 border-gray-300 cursor-pointer"
-            />
-          </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
 };
 
+export const DesktopInspector: React.FC<DesktopInspectorProps> = ({
+  tool,
+  color,
+  customColor,
+  lineWidth,
+  penStyle,
+  onToolChange,
+  onColorChange,
+  onCustomColorChange,
+  onLineWidthChange,
+  onPenStyleChange,
+}) => {
+  const title = isShapeTool(tool)
+    ? "Shape"
+    : tool === "eraser"
+      ? "Eraser"
+      : tool === "fill"
+        ? "Fill"
+        : tool === "text"
+          ? "Text"
+          : tool === "select"
+            ? "Select"
+            : "Pen";
+  const showsColor = tool !== "select" && tool !== "eraser";
+  const showsSize = tool === "pen" || tool === "eraser";
+
+  return (
+    <aside className="sticky top-28 hidden w-60 shrink-0 rounded-xl border-2 border-[#2d3748] bg-white p-3 shadow-[2px_2px_0_#171717] lg:block">
+      <div className="mb-3 flex items-center justify-between border-b border-gray-200 pb-2">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#0052ff]">
+            Tool settings
+          </p>
+          <h3 className="text-base font-bold text-gray-900">{title}</h3>
+        </div>
+        <span
+          className="h-5 w-5 rounded-full border border-gray-300"
+          style={{ backgroundColor: tool === "eraser" ? ERASER_COLOR : color }}
+          aria-hidden="true"
+        />
+      </div>
+
+      {tool === "select" ? (
+        <p className="rounded-lg bg-gray-50 p-2.5 text-xs leading-5 text-gray-600">
+          Tap an element to move or resize it.
+        </p>
+      ) : null}
+
+      {tool === "pen" ? (
+        <div className="mb-3">
+          <p className="mb-1.5 text-[11px] font-semibold text-gray-600">
+            Style
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {PEN_STYLES.map((style) => (
+              <button
+                type="button"
+                key={style.id}
+                onClick={() => onPenStyleChange(style.id)}
+                className={`min-h-9 rounded-lg border px-2 text-[11px] font-semibold transition-colors ${
+                  penStyle === style.id
+                    ? "border-[#0052ff] bg-[#eef3ff] text-[#003ecb]"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+                aria-pressed={penStyle === style.id}
+              >
+                {style.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {showsSize ? (
+        <div className="mb-3">
+          <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-gray-600">
+            <label htmlFor="desktop-canvas-size">
+              {tool === "eraser" ? "Eraser size" : "Brush size"}
+            </label>
+            <span className="text-[#0052ff]">
+              {tool === "eraser" ? getEraserStrokeWidth(lineWidth) : lineWidth}px
+            </span>
+          </div>
+          <input
+            id="desktop-canvas-size"
+            type="range"
+            min="1"
+            max="30"
+            value={lineWidth}
+            onChange={(event) => onLineWidthChange(Number(event.target.value))}
+            className="h-8 w-full"
+            style={{ accentColor: "#0052ff" }}
+          />
+        </div>
+      ) : null}
+
+      {isShapeTool(tool) ? (
+        <div className="mb-3">
+          <p className="mb-1.5 text-[11px] font-semibold text-gray-600">
+            Shape
+          </p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {SHAPE_OPTIONS.map(({ id, label, icon: Icon }) => (
+              <button
+                type="button"
+                key={id}
+                onClick={() => onToolChange(id)}
+                className={`flex h-10 items-center justify-center rounded-lg border transition-colors ${
+                  tool === id
+                    ? "border-[#0052ff] bg-[#0052ff] text-white"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+                aria-label={label}
+                aria-pressed={tool === id}
+                title={label}
+              >
+                <Icon aria-hidden="true" className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {tool === "text" ? (
+        <p className="mb-3 rounded-lg bg-gray-50 p-2.5 text-xs leading-5 text-gray-600">
+          Tap the canvas where you want to add text.
+        </p>
+      ) : null}
+
+      {tool === "fill" ? (
+        <p className="mb-3 rounded-lg bg-blue-50 p-2.5 text-xs leading-5 text-blue-800">
+          Choose a color, then tap a shape or the empty canvas.
+        </p>
+      ) : null}
+
+      {showsColor ? (
+        <div>
+          <p className="mb-1.5 text-[11px] font-semibold text-gray-600">
+            Color
+          </p>
+          <div className="grid grid-cols-4 justify-items-center gap-1">
+            {QUICK_CANVAS_COLORS.map((canvasColor) => (
+              <button
+                type="button"
+                key={canvasColor}
+                onClick={() => {
+                  onColorChange(canvasColor);
+                  onCustomColorChange(canvasColor);
+                }}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                  color === canvasColor ? "bg-[#eef3ff]" : "hover:bg-gray-50"
+                }`}
+                aria-label={`Use color ${canvasColor}`}
+                aria-pressed={color === canvasColor}
+              >
+                <span
+                  className={`h-5 w-5 rounded-full border ${
+                    color === canvasColor
+                      ? "border-[#0052ff] ring-2 ring-blue-200"
+                      : "border-gray-300"
+                  }`}
+                  style={{ backgroundColor: canvasColor }}
+                  aria-hidden="true"
+                />
+              </button>
+            ))}
+          </div>
+          <label className="mt-2 flex min-h-10 items-center justify-between rounded-lg border border-gray-200 px-2.5 text-[11px] font-semibold text-gray-600">
+            Custom color
+            <input
+              type="color"
+              value={customColor}
+              onChange={(event) => {
+                onCustomColorChange(event.target.value);
+                onColorChange(event.target.value);
+              }}
+              className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
+              aria-label="Choose a custom canvas color"
+            />
+          </label>
+        </div>
+      ) : null}
+    </aside>
+  );
+};

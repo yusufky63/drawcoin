@@ -1,88 +1,125 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCoinDetails } from "../../../services/sdk/getCoins.js";
 import { getZoraProfile, getProfileBalance } from "../../../services/sdk/getProfiles.js";
+import { getFreshCryptoPrice } from "@/lib/server/cryptoPrice";
+import {
+  ApiInputError,
+  normalizeEvmAddress,
+} from "@/lib/api/requestValidation";
+
+export const dynamic = "force-dynamic";
+
+function jsonError(error: string, status: number, retryable = false) {
+  return NextResponse.json(
+    { error, ...(retryable && { retryable: true }) },
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+        ...(retryable && { "Retry-After": "5" }),
+      },
+    }
+  );
+}
+
+async function withTimeout<T>(work: Promise<T>, milliseconds = 6_000) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("The upstream request timed out.")),
+          milliseconds
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function readAddress(searchParams: URLSearchParams) {
+  const values = searchParams.getAll("address");
+  if (values.length !== 1) {
+    throw new ApiInputError("One address parameter is required.");
+  }
+  const address = normalizeEvmAddress(values[0]);
+  if (!address) throw new ApiInputError("The Base address is invalid.", 422);
+  return address;
+}
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action");
 
-    if (!action) {
-      return NextResponse.json(
-        { error: "Action parameter is required" },
-        { status: 400 }
-      );
+    if (!action || searchParams.getAll("action").length !== 1) {
+      throw new ApiInputError("One action parameter is required.");
     }
 
 
     if (action === "ethPrice") {
-      // Fetch from our unified crypto-price API
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-        const response = await fetch(`${baseUrl}/api/crypto-price?symbol=ETH`);
-        const data = await response.json();
-        
-        if (data.success && data.price) {
-          return NextResponse.json({ price: data.price, source: data.source });
-        } else if (data.fallbackPrice) {
-          return NextResponse.json({ price: data.fallbackPrice, source: 'fallback' });
-        }
-        
-        throw new Error('Failed to fetch ETH price');
+        const quote = await getFreshCryptoPrice("ETH");
+        return NextResponse.json(quote, {
+          headers: { "Cache-Control": "no-store, max-age=0" },
+        });
       } catch (error) {
-        console.error('Failed to fetch ETH price:', error);
-        return NextResponse.json({ price: 3000, source: 'fallback' }); // Fallback price
+        console.error("Failed to fetch ETH price:", error);
+        return NextResponse.json(
+          {
+            error: "Live ETH price is temporarily unavailable.",
+            retryable: true,
+          },
+          {
+            status: 503,
+            headers: {
+              "Cache-Control": "no-store, max-age=0",
+              "Retry-After": "10",
+            },
+          }
+        );
       }
     }
 
     else if (action === "coinDetails") {
-      const address = searchParams.get("address");
-      if (!address) {
-        return NextResponse.json(
-          { error: "Address parameter is required" },
-          { status: 400 }
-        );
-      }
-
-      const coinData = await getCoinDetails(address);
-      return NextResponse.json(coinData);
+      const address = readAddress(searchParams);
+      const coinData = await withTimeout(
+        getCoinDetails(address, 8453, { maxRetries: 2, retryDelay: 500 })
+      );
+      return NextResponse.json(coinData, {
+        headers: { "Cache-Control": "public, max-age=0, s-maxage=30" },
+      });
     }
 
     else if (action === "profile") {
-      const address = searchParams.get("address");
-      if (!address) {
-        return NextResponse.json(
-          { error: "Address parameter is required" },
-          { status: 400 }
-        );
-      }
-
-      const profileData = await getZoraProfile(address);
-      return NextResponse.json(profileData);
+      const address = readAddress(searchParams);
+      const profileData = await withTimeout(
+        getZoraProfile(address, false, {
+          maxRetries: 2,
+          baseRetryDelay: 500,
+        })
+      );
+      return NextResponse.json(profileData, {
+        headers: { "Cache-Control": "public, max-age=0, s-maxage=60" },
+      });
     }
 
     else if (action === "balance") {
-      const address = searchParams.get("address");
-      if (!address) {
-        return NextResponse.json(
-          { error: "Address parameter is required" },
-          { status: 400 }
-        );
-      }
-
-      const balanceData = await getProfileBalance(address);
-      return NextResponse.json(balanceData);
+      const address = readAddress(searchParams);
+      const balanceData = await withTimeout(getProfileBalance(address));
+      return NextResponse.json(balanceData, {
+        headers: { "Cache-Control": "private, no-store" },
+      });
     } else {
-      return NextResponse.json(
-        { error: "Invalid action value" },
-        { status: 400 }
-      );
+      throw new ApiInputError("The action value is invalid.");
     }
   } catch (error) {
+    if (error instanceof ApiInputError) {
+      return jsonError(error.message, error.status);
+    }
     console.error("Zora API error:", error);
-    return NextResponse.json(
-      { error: "An error occurred during the operation" },
-      { status: 500 }
-    );
+    return jsonError("Zora data is temporarily unavailable.", 503, true);
   }
 }

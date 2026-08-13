@@ -5,7 +5,7 @@ import Image from "next/image";
 
 export default function Footer() {
   return (
-    <footer className="hidden md:block fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-dotted border-art-gray-400">
+    <footer className="hidden md:block bg-white border-t-2 border-dotted border-art-gray-400">
       <div className="max-w-7xl mx-auto px-4 py-1.5">
         <div className="flex items-center justify-between text-xs">
           {/* Left - Links */}
@@ -16,7 +16,7 @@ export default function Footer() {
             >
               How It Works
             </Link>
-            <span className="text-art-gray-400">•</span>
+            <span className="text-art-gray-400">&bull;</span>
             <a 
               href="https://twitter.com/DrawCoinBase" 
               target="_blank" 
@@ -28,7 +28,7 @@ export default function Footer() {
               </svg>
               Twitter
             </a>
-            <span className="text-art-gray-400">•</span>
+            <span className="text-art-gray-400">&bull;</span>
             <a 
               href="https://farcaster.xyz/drawcoin" 
               target="_blank" 
@@ -37,14 +37,15 @@ export default function Footer() {
             >
               <Image 
                 src="https://pbs.twimg.com/profile_images/1980310281558409216/DWoYcKR7_400x400.jpg" 
-                alt="Farcaster" 
+                alt=""
+                aria-hidden="true"
                 width={24} 
                 height={24} 
-                className="rounded-full"
+                className="h-6 w-6 rounded-full object-cover"
               />
               Farcaster
             </a>
-            <span className="text-art-gray-400">•</span>
+            <span className="text-art-gray-400">&bull;</span>
             <a 
               href="https://zora.co/@drawcoin" 
               target="_blank" 
@@ -52,11 +53,12 @@ export default function Footer() {
               className="text-art-gray-700 hover:text-art-gray-900 transition-colors flex items-center gap-1.5 font-medium transform hover:rotate-1"
             >
               <Image 
-                src="https://pbs.twimg.com/profile_images/1912995896226443264/R9N6BIXd_400x400.jpg" 
-                alt="Zora" 
+                src="https://pbs.twimg.com/profile_images/2031161087220146176/Tcp7O7yC_400x400.jpg"
+                alt=""
+                aria-hidden="true"
                 width={24} 
                 height={24} 
-                className="rounded-full"
+                className="h-6 w-6 rounded-full object-cover"
               />
               Zora
             </a>
@@ -64,7 +66,7 @@ export default function Footer() {
 
           {/* Right - Copyright */}
           <div className="text-art-gray-500 font-medium transform -rotate-0.5">
-            © 2025 DrawCoin
+            Base App first &middot; &copy; 2026 DrawCoin
           </div>
         </div>
       </div>

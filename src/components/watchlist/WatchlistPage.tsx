@@ -1,33 +1,44 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWatchlist } from "../../hooks/useWatchlist";
-import { CoinService, Coin } from "../../services/coinService";
+import type { SupabaseCoinSnapshot } from "../../lib/market/coinSnapshot";
 import { useAccount } from "wagmi";
-import { resolveImageUrl, getImageFromIpfsMetadata } from "../../utils/ipfs";
-import { getCoinsBatchWithRetry } from "../../services/zoraService";
+import { resolveImageUrl } from "../../utils/ipfs";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
-interface WatchlistTokenData extends Coin {
+type WatchlistTokenData = SupabaseCoinSnapshot & {
   added_at?: string;
   added_price_eth?: number | string | null;
   added_price_usd?: number | string | null;
   added_price_timestamp?: string | null;
-}
+};
 
 export default function WatchlistPage() {
   const {
-    watchlist,
     watchlistItems,
     loading: watchlistLoading,
+    requiresSignIn,
+    verifyWallet,
     toggleWatchlist,
   } = useWatchlist();
   const router = useRouter();
-  const [tokens, setTokens] = useState<WatchlistTokenData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [verificationError, setVerificationError] = useState<string | null>(
+    null
+  );
   const { isConnected } = useAccount();
-  const [resolvedImages, setResolvedImages] = useState<Record<string, string>>(
-    {}
+  const tokens = watchlistItems.flatMap<WatchlistTokenData>((item) =>
+    item.coin
+      ? [
+          {
+            ...item.coin,
+            added_at: item.added_at,
+            added_price_eth: item.added_price_eth,
+            added_price_usd: item.added_price_usd,
+            added_price_timestamp: item.added_price_timestamp,
+          },
+        ]
+      : []
   );
   const parsePriceValue = (value: number | string | null | undefined) => {
     if (value === null || value === undefined) return null;
@@ -55,127 +66,14 @@ export default function WatchlistPage() {
     return { diffPct, addedPrice };
   };
 
-  useEffect(() => {
-    const fetchTokens = async () => {
-      console.log("🔍 Watchlist Page - Starting fetch:", {
-        watchlistLength: watchlist.length,
-        watchlistItemsLength: watchlistItems.length,
-        watchlist,
-        watchlistItems,
-      });
 
-      if (watchlist.length === 0) {
-        console.log("⚠️ Watchlist is empty");
-        setTokens([]);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        console.log("🔄 Fetching token details in batch from Zora API...");
-
-        // Fetch Zora data in batches (20 tokens per request)
-        let zoraDataMap: Record<string, any> = {};
-        try {
-          zoraDataMap = await getCoinsBatchWithRetry(watchlist);
-          console.log("📦 Zora batch data:", zoraDataMap);
-        } catch (error) {
-          console.warn(
-            "⚠️ Zora batch fetch failed, will use Supabase data only:",
-            error
-          );
-        }
-
-        // Fetch Supabase data for static info (image_url, description)
-        const dbPromises = watchlist.map((address) =>
-          CoinService.getCoinByAddress(address)
-        );
-        const dbTokens = await Promise.all(dbPromises);
-        console.log("📦 Supabase data:", dbTokens);
-
-        // Merge Zora (live) + Supabase (static)
-        const mergedTokens = watchlist.map((address, index) => {
-          const dbData = dbTokens[index];
-          const zoraData = zoraDataMap[address.toLowerCase()];
-
-          if (!dbData && !zoraData) return null;
-
-          return {
-            ...dbData,
-            ...zoraData,
-            contract_address: address,
-            // Keep image_url from DB for IPFS resolution
-            image_url: dbData?.image_url || zoraData?.tokenUri,
-            // Keep name/symbol from DB if Zora doesn't have it
-            name: zoraData?.name || dbData?.name,
-            symbol: zoraData?.symbol || dbData?.symbol,
-          };
-        });
-
-        const validTokens = mergedTokens.filter((t) => t !== null);
-        console.log("✅ Merged tokens:", validTokens);
-
-        // Merge with watchlist items to get added_at and price snapshot
-        const tokensWithAddedAt = validTokens.map((token) => {
-          const watchlistItem = watchlistItems.find(
-            (item) =>
-              item.token_address.toLowerCase() ===
-              token.contract_address.toLowerCase()
-          );
-          return {
-            ...token,
-            added_at: watchlistItem?.added_at,
-            added_price_eth: watchlistItem?.added_price_eth,
-            added_price_usd: watchlistItem?.added_price_usd,
-            added_price_timestamp: watchlistItem?.added_price_timestamp,
-          };
-        });
-
-        console.log("🎯 Final tokens with metadata:", tokensWithAddedAt);
-        setTokens(tokensWithAddedAt);
-
-        // Resolve IPFS images
-        tokensWithAddedAt.forEach(async (token) => {
-          const imageUrl =
-            (token as any).mediaContent?.previewImage?.small || token.image_url;
-          if (imageUrl && imageUrl.startsWith("ipfs://")) {
-            try {
-              const resolved = await getImageFromIpfsMetadata(imageUrl);
-              if (resolved) {
-                setResolvedImages((prev) => ({
-                  ...prev,
-                  [token.contract_address]: resolved,
-                }));
-              }
-            } catch (err) {
-              console.warn(
-                "Failed to resolve IPFS image for",
-                token.contract_address,
-                err
-              );
-            }
-          }
-        });
-      } catch (error) {
-        console.error("💥 Error fetching watchlist tokens:", error);
-        setTokens([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (!watchlistLoading) {
-      fetchTokens();
-    }
-  }, [watchlist, watchlistItems, watchlistLoading]);
-
-  const formatNumber = (num: string | number | undefined) => {
-    if (!num) return "0";
+  const formatUsd = (num: string | number | null | undefined) => {
+    if (num === null || num === undefined) return "—";
     const value = typeof num === "string" ? parseFloat(num) : num;
-    if (value >= 1000000) return (value / 1000000).toFixed(2) + "M";
-    if (value >= 1000) return (value / 1000).toFixed(2) + "K";
-    return value.toFixed(2);
+    if (!Number.isFinite(value) || value < 0) return "—";
+    if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
+    if (value >= 1000) return `$${(value / 1000).toFixed(2)}K`;
+    return `$${value.toFixed(2)}`;
   };
 
   if (!isConnected) {
@@ -193,6 +91,43 @@ export default function WatchlistPage() {
     );
   }
 
+  if (requiresSignIn) {
+    return (
+      <div className="min-h-screen bg-art-gray-50 flex items-center justify-center p-4">
+        <div className="hand-drawn-card max-w-md w-full text-center">
+          <div className="hand-drawn-header justify-center mb-4">
+            <h2 className="text-xl">Verify your wallet</h2>
+          </div>
+          <p className="text-art-gray-600 mb-6">
+            Sign one gas-free message to open your private watchlist in Base
+            App.
+          </p>
+          <button
+            type="button"
+            className="hand-drawn-btn px-6 py-2 font-bold"
+            onClick={() => {
+              setVerificationError(null);
+              void verifyWallet().catch((error) =>
+                setVerificationError(
+                  error instanceof Error
+                    ? error.message
+                    : "Wallet verification failed."
+                )
+              );
+            }}
+          >
+            Verify wallet
+          </button>
+          {verificationError ? (
+            <p className="mt-4 text-sm font-semibold text-red-700" role="alert">
+              {verificationError}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-art-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
@@ -205,7 +140,7 @@ export default function WatchlistPage() {
             ({tokens.length} tokens){" "}
           </p>
         </div>
-        {loading || watchlistLoading ? (
+        {watchlistLoading ? (
           <div className="space-y-6">
             {/* Desktop Skeleton */}
             <div className="hidden md:block">
@@ -290,6 +225,9 @@ export default function WatchlistPage() {
                 <tbody>
                   {tokens.map((token) => {
                     const changeMeta = getWatchlistChangeMeta(token);
+                    const marketChange = parsePriceValue(
+                      (token as any).marketCapDelta24h
+                    );
                     return (
                       <tr
                         key={token.contract_address}
@@ -304,9 +242,9 @@ export default function WatchlistPage() {
                               const imageUrl =
                                 (token as any).mediaContent?.previewImage
                                   ?.small || token.image_url;
-                              const resolvedUrl =
-                                resolvedImages[token.contract_address] ||
-                                (imageUrl ? resolveImageUrl(imageUrl) : "");
+                              const resolvedUrl = imageUrl
+                                ? resolveImageUrl(imageUrl)
+                                : "";
 
                               return resolvedUrl ? (
                                 <img
@@ -330,38 +268,25 @@ export default function WatchlistPage() {
                           </div>
                         </td>
                         <td className="p-3 text-right text-sm">
-                          ${formatNumber(token.marketCap)}
+                          {formatUsd(token.marketCap)}
                         </td>
                         <td className="p-3 text-right text-sm">
-                          $
-                          {formatNumber(
-                            token.volume_24h || (token as any).totalVolume
-                          )}
+                          {formatUsd(token.volume_24h)}
                         </td>
                         <td
-                          className={`p-3 text-right text-sm font-bold ${(() => {
-                            const val =
-                              typeof (token as any).marketCapDelta24h ===
-                              "number"
-                                ? (token as any).marketCapDelta24h
-                                : parseFloat(
-                                    (token as any).marketCapDelta24h || "0"
-                                  );
-                            return val >= 0 ? "text-green-600" : "text-red-600";
-                          })()}`}
+                          className={`p-3 text-right text-sm font-bold ${
+                            marketChange === null
+                              ? "text-art-gray-400"
+                              : marketChange >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
                         >
-                          {(() => {
-                            const change =
-                              typeof (token as any).marketCapDelta24h ===
-                              "number"
-                                ? (token as any).marketCapDelta24h
-                                : parseFloat(
-                                    (token as any).marketCapDelta24h || "0"
-                                  );
-                            return change >= 0
-                              ? `+${change.toFixed(2)}%`
-                              : `${change.toFixed(2)}%`;
-                          })()}
+                          {marketChange === null
+                            ? "—"
+                            : `${marketChange >= 0 ? "+" : ""}${marketChange.toFixed(
+                                2
+                              )}%`}
                         </td>
                         <td className="p-3 text-right">
                           {changeMeta.diffPct !== null ? (
@@ -413,6 +338,9 @@ export default function WatchlistPage() {
             <div className="md:hidden space-y-3">
               {tokens.map((token) => {
                 const changeMeta = getWatchlistChangeMeta(token);
+                const marketChange = parsePriceValue(
+                  (token as any).marketCapDelta24h
+                );
                 return (
                   <div
                     key={token.contract_address}
@@ -426,9 +354,9 @@ export default function WatchlistPage() {
                         const imageUrl =
                           (token as any).mediaContent?.previewImage?.small ||
                           token.image_url;
-                        const resolvedUrl =
-                          resolvedImages[token.contract_address] ||
-                          (imageUrl ? resolveImageUrl(imageUrl) : "");
+                        const resolvedUrl = imageUrl
+                          ? resolveImageUrl(imageUrl)
+                          : "";
 
                         return resolvedUrl ? (
                           <img
@@ -477,7 +405,7 @@ export default function WatchlistPage() {
                           MC
                         </div>
                         <div className="font-bold text-art-gray-900 text-xs">
-                          ${formatNumber(token.marketCap)}
+                          {formatUsd(token.marketCap)}
                         </div>
                       </div>
                       <div className="text-center border-l border-r border-art-gray-200 border-dashed px-1">
@@ -485,10 +413,7 @@ export default function WatchlistPage() {
                           VOL
                         </div>
                         <div className="font-bold text-art-gray-900 text-xs">
-                          $
-                          {formatNumber(
-                            token.volume_24h || (token as any).totalVolume
-                          )}
+                          {formatUsd(token.volume_24h)}
                         </div>
                       </div>
                       <div className="text-center">
@@ -496,29 +421,19 @@ export default function WatchlistPage() {
                           24h %
                         </div>
                         <div
-                          className={`font-bold text-xs ${(() => {
-                            const val =
-                              typeof (token as any).marketCapDelta24h ===
-                              "number"
-                                ? (token as any).marketCapDelta24h
-                                : parseFloat(
-                                    (token as any).marketCapDelta24h || "0"
-                                  );
-                            return val >= 0 ? "text-green-600" : "text-red-600";
-                          })()}`}
+                          className={`font-bold text-xs ${
+                            marketChange === null
+                              ? "text-art-gray-400"
+                              : marketChange >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
                         >
-                          {(() => {
-                            const change =
-                              typeof (token as any).marketCapDelta24h ===
-                              "number"
-                                ? (token as any).marketCapDelta24h
-                                : parseFloat(
-                                    (token as any).marketCapDelta24h || "0"
-                                  );
-                            return change >= 0
-                              ? `+${change.toFixed(1)}%`
-                              : `${change.toFixed(1)}%`;
-                          })()}
+                          {marketChange === null
+                            ? "—"
+                            : `${marketChange >= 0 ? "+" : ""}${marketChange.toFixed(
+                                1
+                              )}%`}
                         </div>
                       </div>
                     </div>

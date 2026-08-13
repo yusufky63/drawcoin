@@ -4,14 +4,36 @@ import React, { useState, useEffect, useCallback } from "react";
 import { formatNumber } from "../../utils/format";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
+interface LeaderboardUser {
+  address: string;
+  username?: string | null;
+  avatar_url?: string | null;
+  coins_created?: number | null;
+  total_volume_usd?: number | string | null;
+}
+
+interface LeaderboardResponse {
+  data?: LeaderboardUser[];
+  lastUpdated?: number;
+}
+
+function formatWalletAddress(address: string) {
+  if (address.length <= 12) return address;
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function formatUsdVolume(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") return "—";
+  const parsed = typeof value === "number" ? value : Number.parseFloat(value);
+  return Number.isFinite(parsed) ? `$${formatNumber(parsed)}` : "—";
+}
+
 export default function LeaderboardPage() {
   const [activeTab, setActiveTab] = useState<"creators" | "buyers">("creators");
-  const [creators, setCreators] = useState<any[]>([]);
-  const [buyers, setBuyers] = useState<any[]>([]);
+  const [creators, setCreators] = useState<LeaderboardUser[]>([]);
+  const [buyers, setBuyers] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [profiles, setProfiles] = useState<Record<string, any>>({});
-  const [zoraProfiles, setZoraProfiles] = useState<Record<string, any>>({});
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   const fetchData = useCallback(async (isRefresh = false) => {
@@ -20,14 +42,17 @@ export default function LeaderboardPage() {
 
     try {
       // Fetch Leaderboard Data
-      const refreshParam = isRefresh ? "&refresh=true" : "";
       const [creatorsRes, buyersRes] = await Promise.all([
-        fetch(`/api/leaderboard?type=creators&limit=50${refreshParam}`),
-        fetch(`/api/leaderboard?type=buyers&limit=50${refreshParam}`),
+        fetch("/api/leaderboard?type=creators&limit=50"),
+        fetch("/api/leaderboard?type=buyers&limit=50"),
       ]);
 
-      const creatorsData = await creatorsRes.json();
-      const buyersData = await buyersRes.json();
+      if (!creatorsRes.ok || !buyersRes.ok) {
+        throw new Error("Leaderboard data is temporarily unavailable.");
+      }
+
+      const creatorsData = (await creatorsRes.json()) as LeaderboardResponse;
+      const buyersData = (await buyersRes.json()) as LeaderboardResponse;
 
       setCreators(creatorsData.data || []);
       setBuyers(buyersData.data || []);
@@ -36,32 +61,6 @@ export default function LeaderboardPage() {
       setLastUpdated(
         Math.max(creatorsData.lastUpdated || 0, buyersData.lastUpdated || 0)
       );
-
-      // Extract all unique addresses for profiles
-      const allAddresses = new Set([
-        ...(creatorsData.data || []).map((c: any) => c.address),
-        ...(buyersData.data || []).map((b: any) => b.address),
-      ]);
-
-      if (allAddresses.size > 0) {
-        const addressesParam = Array.from(allAddresses).join(",");
-
-        // Fetch Profiles (Farcaster & Zora) in parallel
-        const [farcasterRes, zoraRes] = await Promise.all([
-          fetch(`/api/farcaster/users?addresses=${addressesParam}`),
-          fetch(`/api/zora/profiles?addresses=${addressesParam}`),
-        ]);
-
-        if (farcasterRes.ok) {
-          const profilesData = await farcasterRes.json();
-          setProfiles(profilesData);
-        }
-
-        if (zoraRes.ok) {
-          const zoraData = await zoraRes.json();
-          setZoraProfiles(zoraData);
-        }
-      }
     } catch (error) {
       console.error("Failed to fetch leaderboard:", error);
     } finally {
@@ -71,9 +70,12 @@ export default function LeaderboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, [fetchData]);
-  const renderTable = (data: any[], type: "creators" | "buyers") => (
+  const renderTable = (
+    data: LeaderboardUser[],
+    type: "creators" | "buyers"
+  ) => (
     <div className="overflow-x-auto -mx-4 md:mx-0">
       <table className="w-full min-w-[350px]">
         <thead>
@@ -94,34 +96,10 @@ export default function LeaderboardPage() {
         </thead>
         <tbody>
           {data.map((user, index) => {
-            const farcasterProfile = profiles[user.address?.toLowerCase()];
-            const zoraProfile = zoraProfiles[user.address?.toLowerCase()];
-
-            // Prioritize Zora profile data if available, fallback to Farcaster, then DB
-            const displayName =
-              zoraProfile?.displayName ||
-              farcasterProfile?.displayName ||
-              zoraProfile?.handle ||
-              farcasterProfile?.username ||
-              user.username ||
-              `${user.address.substring(0, 6)}...${user.address.substring(
-                user.address.length - 4
-              )}`;
-
-            const username =
-              zoraProfile?.handle ||
-              farcasterProfile?.username ||
-              user.username;
-
-            const avatarUrl =
-              zoraProfile?.avatar?.medium ||
-              zoraProfile?.avatar?.small ||
-              farcasterProfile?.pfpUrl ||
-              user.avatar_url;
-
-            // Social links
-            const twitterUsername =
-              zoraProfile?.socialAccounts?.twitter?.username;
+            const username = user.username?.trim() || null;
+            const walletLabel = formatWalletAddress(user.address);
+            const displayName = username || walletLabel;
+            const avatarUrl = user.avatar_url?.trim() || null;
 
             return (
               <tr
@@ -177,65 +155,27 @@ export default function LeaderboardPage() {
                           {displayName}
                         </div>
                       </div>
-                      {username && (
-                        <div className="text-[10px] md:text-xs text-art-gray-500 truncate max-w-[100px] md:max-w-[180px]">
-                          @{username}
-                        </div>
-                      )}
+                      <div className="text-[10px] md:text-xs text-art-gray-500 truncate max-w-[100px] md:max-w-[180px]">
+                        {walletLabel}
+                      </div>
                     </div>
                   </div>
                 </td>
                 <td className="px-2 py-3 text-right font-bold text-sm md:text-base text-art-gray-900 whitespace-nowrap">
                   {type === "creators"
-                    ? user.coins_created || 0
-                    : `$${formatNumber(user.total_volume_usd || 0)}`}
+                    ? (user.coins_created ?? "—")
+                    : formatUsdVolume(user.total_volume_usd)}
                 </td>
                 <td className="px-2 py-3 text-right">
-                  <div className="flex items-center justify-end space-x-1 md:space-x-2">
-                    {farcasterProfile?.username && (
-                      <a
-                        href={`https://warpcast.com/${farcasterProfile.username}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 md:p-2 text-art-gray-500 hover:text-purple-600 transition-colors"
-                        title="Farcaster"
-                      >
-                        <img
-                          src="https://warpcast.com/favicon.ico"
-                          alt="FC"
-                          className="w-3 h-3 md:w-4 md:h-4"
-                        />
-                      </a>
-                    )}
-                    {twitterUsername && (
-                      <a
-                        href={`https://twitter.com/${twitterUsername}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 md:p-2 text-art-gray-500 hover:text-blue-400 transition-colors"
-                        title="Twitter"
-                      >
-                        <svg
-                          className="w-3 h-3 md:w-4 md:h-4"
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z" />
-                        </svg>
-                      </a>
-                    )}
+                  <div className="flex items-center justify-end">
                     <a
                       href={`https://zora.co/${user.address}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center p-1.5 md:p-2 text-xs font-bold text-art-gray-700 bg-white border border-art-gray-300 rounded-lg hover:bg-art-gray-50 transition-colors"
+                      className="inline-flex items-center justify-center px-2 py-1.5 text-[10px] md:text-xs font-bold text-art-gray-700 bg-white border border-art-gray-300 rounded-lg hover:bg-art-gray-50 transition-colors"
                       title="View on Zora"
                     >
-                      <img
-                        src="https://pbs.twimg.com/profile_images/1912995896226443264/R9N6BIXd_400x400.jpg"
-                        alt="Zora"
-                        className="w-3 h-3 md:w-4 md:h-4 rounded-full"
-                      />
+                      Zora ↗
                     </a>
                   </div>
                 </td>
@@ -294,12 +234,12 @@ export default function LeaderboardPage() {
 
         {/* Tabs */}
         <div className="hand-drawn-card p-2">
-          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0">
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => setActiveTab("creators")}
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-bold transition-all whitespace-nowrap ${
+              className={`min-w-0 px-2 py-3 text-sm font-bold transition-all whitespace-nowrap sm:px-4 ${
                 activeTab === "creators"
-                  ? "hand-drawn-btn bg-blue-500 text-white border-blue-600"
+                  ? "hand-drawn-btn text-white"
                   : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"
               }`}
             >
@@ -309,7 +249,7 @@ export default function LeaderboardPage() {
             </button>
             <button
               onClick={() => setActiveTab("buyers")}
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-bold transition-all whitespace-nowrap ${
+              className={`min-w-0 px-2 py-3 text-sm font-bold transition-all whitespace-nowrap sm:px-4 ${
                 activeTab === "buyers"
                   ? "hand-drawn-btn bg-green-500 text-white border-green-600"
                   : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"

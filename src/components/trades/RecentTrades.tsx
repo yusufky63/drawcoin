@@ -31,15 +31,34 @@ export function RecentTrades({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    let requestInFlight = false;
+
     async function fetchTrades() {
+      if (
+        controller.signal.aborted ||
+        requestInFlight ||
+        document.visibilityState === "hidden"
+      ) {
+        return;
+      }
+
+      requestInFlight = true;
       try {
         setIsLoading(true);
 
-        const response = await getCoinSwaps({
-          address: tokenAddress,
-          chain: 8453,
-          first: 50,
-        });
+        const queryOptions = {
+          signal: controller.signal,
+          throwOnError: true,
+        } as unknown as NonNullable<Parameters<typeof getCoinSwaps>[1]>;
+        const response = await getCoinSwaps(
+          {
+            address: tokenAddress,
+            chain: 8453,
+            first: 50,
+          },
+          queryOptions
+        );
 
         if (!response.data?.zora20Token?.swapActivities?.edges) {
           setTrades([]);
@@ -66,16 +85,27 @@ export function RecentTrades({
         setTrades(formattedTrades);
         setError(null);
       } catch (err) {
-        console.error("Error fetching trades:", err);
+        if (controller.signal.aborted) return;
+        console.error("Error fetching recent Zora trades");
         setError("Failed to load recent trades");
       } finally {
-        setIsLoading(false);
+        requestInFlight = false;
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     }
 
-    fetchTrades();
-    const interval = setInterval(fetchTrades, 10000);
-    return () => clearInterval(interval);
+    void fetchTrades();
+    const interval = setInterval(fetchTrades, 30_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void fetchTrades();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [tokenAddress]);
 
   if (isLoading && trades.length === 0) {

@@ -1,72 +1,65 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ApiInputError, parseAddressList } from "@/lib/api/requestValidation";
+import { BoundedTtlCache } from "@/lib/server/boundedTtlCache";
 import { getZoraProfilesBulk } from "@/services/sdk/getProfiles.js";
 
-const cache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+export const dynamic = "force-dynamic";
+
+const profileCache = new BoundedTtlCache<unknown>(500, 30 * 60 * 1000);
+
+function json(body: unknown, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": status === 200 ? "public, s-maxage=300" : "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const addresses = searchParams.get("addresses");
-
-  if (!addresses) {
-    return NextResponse.json(
-      { error: "Addresses are required" },
-      { status: 400 }
+  let addresses: string[];
+  try {
+    addresses = parseAddressList(
+      request.nextUrl.searchParams.get("addresses"),
+      25
     );
+  } catch (error) {
+    if (error instanceof ApiInputError) return json({ error: error.message }, error.status);
+    return json({ error: "Invalid request." }, 400);
   }
 
-  const addressList = addresses.split(",").map((a) => a.trim().toLowerCase());
-
-  if (addressList.length === 0) {
-    return NextResponse.json({});
-  }
-
-  const now = Date.now();
-  const result: Record<string, any> = {};
+  const result: Record<string, unknown> = {};
   const missingAddresses: string[] = [];
-
-  // Check cache first
-  for (const addr of addressList) {
-    if (cache.has(addr)) {
-      const cached = cache.get(addr)!;
-      if (now - cached.timestamp < CACHE_TTL) {
-        result[addr] = cached.data;
-      } else {
-        missingAddresses.push(addr);
-      }
-    } else {
-      missingAddresses.push(addr);
-    }
+  for (const address of addresses) {
+    const cached = profileCache.get(address);
+    if (cached !== undefined) result[address] = cached;
+    else missingAddresses.push(address);
   }
 
-  // If all found in cache, return
-  if (missingAddresses.length === 0) {
-    return NextResponse.json(result);
-  }
+  if (missingAddresses.length === 0) return json(result);
 
   try {
-    // Fetch missing profiles
-    // We limit concurrency to 5 in the SDK function
-    const fetchedProfiles = (await getZoraProfilesBulk(
-      missingAddresses
-    )) as Record<string, any>;
+    const fetched = (await getZoraProfilesBulk(
+      missingAddresses,
+      3,
+      { maxRetries: 2, baseRetryDelay: 500, throwIfAllFailed: true }
+    )) as Record<string, unknown>;
 
-    // Update result and cache
-    for (const addr of missingAddresses) {
-      const profile = fetchedProfiles[addr];
-
-      // We cache even null results to avoid repeated failed fetches
-      cache.set(addr, { data: profile || null, timestamp: now });
-
-      if (profile) {
-        result[addr] = profile;
-      }
+    for (const address of missingAddresses) {
+      const profile = fetched[address] ?? null;
+      profileCache.set(address, profile);
+      result[address] = profile;
     }
-
-    return NextResponse.json(result);
+    return json(result);
   } catch (error) {
-    console.error("Error fetching Zora profiles:", error);
-    // Return partial results if possible
-    return NextResponse.json(result);
+    console.error("Zora profile enrichment failed", error);
+    return json(
+      {
+        error: "Zora profiles are temporarily unavailable.",
+        retryable: true,
+      },
+      503
+    );
   }
 }

@@ -1,5 +1,5 @@
 import React from "react";
-import { sdk as miniAppSdk } from "@farcaster/miniapp-sdk";
+import { openFarcasterComposer } from "@/utils/share";
 
 interface CoinShareModalProps {
   isOpen: boolean;
@@ -40,14 +40,15 @@ ${changeSign}${priceChange24h.toFixed(2)}% (24h)
 Hand-drawn art token on Base! 🎨✨`;
   };
 
-  const handleShareFarcaster = async () => {
+  const handleShareFarcaster = () => {
     try {
       const shareText = getShareText();
       const shareUrl = `https://drawcoin.app/coin/${tokenAddress}`;
 
-      await miniAppSdk.actions.composeCast({
+      openFarcasterComposer({
         text: shareText,
-        embeds: [shareUrl],
+        embed: shareUrl,
+        channelKey: "base",
       });
 
       onClose();
@@ -201,7 +202,7 @@ Hand-drawn art token on Base! 🎨✨`;
               }}
             >
               <div className="flex items-center justify-center">
-                Share
+                Share on Farcaster
               </div>
             </button>
 

@@ -25,6 +25,17 @@ export const CANVAS_COLORS = [
   "#A855F7", // Violet
 ];
 
+export const QUICK_CANVAS_COLORS = [
+  "#000000",
+  "#FFFFFF",
+  "#6B7280",
+  "#0052FF",
+  "#06B6D4",
+  "#10B981",
+  "#F59E0B",
+  "#EF4444",
+];
+
 export const PEN_TOOLS = [
   { id: "pen", label: "Pen", icon: "✏️", desc: "Thin & Precise" },
   { id: "brush", label: "Brush", icon: "🖌️", desc: "Thick & Soft" },
@@ -42,4 +53,3 @@ export const DEFAULT_LINE_WIDTH = 3;
 export const DEFAULT_FONT_SIZE = 24;
 export const DEFAULT_FONT_FAMILY = "Arial";
 export const DEFAULT_CANVAS_SIZE = 1024;
-

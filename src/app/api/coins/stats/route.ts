@@ -1,23 +1,30 @@
-import { NextResponse } from 'next/server';
-import { CoinService } from '../../../../services/coinService';
+import { NextResponse } from "next/server";
+import { CoinService } from "@/services/coinService";
 
 export async function GET() {
   try {
     const stats = await CoinService.getCoinStats();
 
-    return NextResponse.json({
-      success: true,
-      data: stats,
-    });
+    return NextResponse.json(
+      { success: true, data: stats },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=120",
+        },
+      }
+    );
   } catch (error) {
     console.error('Error fetching coin stats:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to fetch coin statistics',
-        details: error instanceof Error ? error.message : 'Unknown error'
+      {
+        success: false,
+        error: "Coin statistics are temporarily unavailable.",
+        retryable: true,
       },
-      { status: 500 }
+      {
+        status: 503,
+        headers: { "Cache-Control": "no-store", "Retry-After": "5" },
+      }
     );
   }
-} 
+}

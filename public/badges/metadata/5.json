@@ -1,0 +1,11 @@
+{
+  "name": "Ecosystem Builder",
+  "description": "Awarded for participating as both a verified DrawCoin creator and collector.",
+  "image": "https://drawcoin.app/badges/ecosystem-builder.svg",
+  "external_url": "https://drawcoin.app/missions",
+  "attributes": [
+    { "trait_type": "Mission", "value": "ecosystem-builder" },
+    { "trait_type": "Category", "value": "Community" },
+    { "trait_type": "Soulbound", "value": "Yes" }
+  ]
+}

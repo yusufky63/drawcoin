@@ -1,103 +1,86 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ApiInputError, parseAddressList } from "@/lib/api/requestValidation";
+import { BoundedTtlCache } from "@/lib/server/boundedTtlCache";
 
-const cache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+export const dynamic = "force-dynamic";
+
+interface NeynarUser {
+  username?: string;
+  display_name?: string;
+  pfp_url?: string;
+  fid?: number;
+}
+const profileCache = new BoundedTtlCache<unknown>(500, 30 * 60 * 1000);
+
+function json(body: unknown, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": status === 200 ? "public, s-maxage=300" : "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const addresses = searchParams.get("addresses");
-
-  if (!addresses) {
-    return NextResponse.json(
-      { error: "Addresses are required" },
-      { status: 400 }
+  let addresses: string[];
+  try {
+    addresses = parseAddressList(
+      request.nextUrl.searchParams.get("addresses"),
+      50
     );
-  }
-
-  const addressList = addresses.split(",").map((a) => a.trim().toLowerCase());
-
-  if (addressList.length === 0) {
-    return NextResponse.json({});
-  }
-
-  const now = Date.now();
-  const result: Record<string, any> = {};
-  const missingAddresses: string[] = [];
-
-  // Check cache first
-  for (const addr of addressList) {
-    if (cache.has(addr)) {
-      const cached = cache.get(addr)!;
-      if (now - cached.timestamp < CACHE_TTL) {
-        result[addr] = cached.data;
-      } else {
-        missingAddresses.push(addr);
-      }
-    } else {
-      missingAddresses.push(addr);
-    }
-  }
-
-  // If all found in cache, return
-  if (missingAddresses.length === 0) {
-    return NextResponse.json(result);
+  } catch (error) {
+    if (error instanceof ApiInputError) return json({ error: error.message }, error.status);
+    return json({ error: "Invalid request." }, 400);
   }
 
   const apiKey = process.env.NEYNAR_API_KEY;
-
   if (!apiKey) {
-    console.warn("NEYNAR_API_KEY is not set");
-    // Return what we have from cache if API key is missing
-    return NextResponse.json(result);
+    return json({ error: "Farcaster enrichment is not configured." }, 503);
   }
 
+  const result: Record<string, unknown> = {};
+  const missingAddresses: string[] = [];
+  for (const address of addresses) {
+    const cached = profileCache.get(address);
+    if (cached !== undefined) result[address] = cached;
+    else missingAddresses.push(address);
+  }
+
+  if (missingAddresses.length === 0) return json(result);
+
   try {
-    // Fetch missing addresses in chunks of 50 (API limit usually)
-    const chunkSize = 50;
-    for (let i = 0; i < missingAddresses.length; i += chunkSize) {
-      const chunk = missingAddresses.slice(i, i + chunkSize);
-      const addressesParam = chunk.join(",");
+    const upstream = new URL(
+      "https://api.neynar.com/v2/farcaster/user/bulk-by-address"
+    );
+    upstream.searchParams.set("addresses", missingAddresses.join(","));
+    const response = await fetch(upstream, {
+      cache: "no-store",
+      headers: { accept: "application/json", api_key: apiKey },
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!response.ok) throw new Error(`Neynar returned ${response.status}.`);
 
-      const response = await fetch(
-        `https://api.neynar.com/v2/farcaster/user/bulk-by-address?addresses=${addressesParam}`,
-        {
-          headers: {
-            accept: "application/json",
-            api_key: apiKey,
-          },
-          next: { revalidate: 1800 },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(`Neynar API error: ${response.statusText}`);
-        continue;
-      }
-
-      const data = await response.json();
-
-      // Process response
-      for (const addr of chunk) {
-        const user = data[addr]?.[0];
-        const userData = user
-          ? {
-              username: user.username,
-              displayName: user.display_name,
-              pfpUrl: user.pfp_url,
-              fid: user.fid,
-            }
-          : null;
-
-        // Update result and cache
-        result[addr] = userData;
-        cache.set(addr, { data: userData, timestamp: now });
-      }
+    const data = (await response.json()) as Record<string, NeynarUser[] | undefined>;
+    for (const address of missingAddresses) {
+      const user = data[address]?.[0];
+      const profile = user
+        ? {
+            username: user.username,
+            displayName: user.display_name,
+            pfpUrl: user.pfp_url,
+            fid: user.fid,
+          }
+        : null;
+      profileCache.set(address, profile);
+      result[address] = profile;
     }
-
-    return NextResponse.json(result);
+    return json(result);
   } catch (error) {
-    console.error("Error fetching Farcaster users:", error);
-    // Return partial results if possible
-    return NextResponse.json(result);
+    console.error("Farcaster profile enrichment failed", error);
+    return json(
+      { error: "Farcaster profiles are temporarily unavailable.", retryable: true },
+      503
+    );
   }
 }

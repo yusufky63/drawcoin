@@ -1,21 +1,71 @@
-import React, { useRef, forwardRef, useImperativeHandle, useEffect } from "react";
+import React, {
+  useCallback,
+  useRef,
+  forwardRef,
+  useImperativeHandle,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import { useCanvasState } from "./hooks/useCanvasState";
 import { useCanvasHistory } from "./hooks/useCanvasHistory";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { DesktopToolbar } from "./components/DesktopToolbar";
+import {
+  DesktopInspector,
+  DesktopToolbar,
+} from "./components/DesktopToolbar";
 import { MobileToolbar } from "./components/MobileToolbar";
 import { ClearConfirmModal } from "./components/ClearConfirmModal";
 import { TextInputOverlay } from "./components/TextInputOverlay";
-import { CustomCanvasProps, CustomCanvasRef, DrawingElement, Tool } from "./types";
-import { getMousePosition, calculateElementBounds, isPointInElement, isPointInsideShape } from "./utils/canvasUtils";
+import type {
+  CustomCanvasProps,
+  CustomCanvasRef,
+  DrawingElement,
+  ResizeHandle,
+  Tool,
+} from "./types";
+import { getMousePosition, calculateElementBounds, isPointInElement } from "./utils/canvasUtils";
 import { drawElement } from "./utils/drawingUtils";
+import {
+  appendEraserPoint,
+  createEraserElement,
+  ERASER_COLOR,
+  getEraserStrokeWidth,
+  isPointInEraserStroke,
+  restoreErasedBackground,
+} from "./utils/eraserUtils";
+import { applyCanvasFill } from "./utils/fillUtils";
 import { DEFAULT_CANVAS_SIZE, DRAG_THRESHOLD } from "./constants";
+import {
+  canvasHasContent,
+  createCanvasDraft,
+  restoreCanvasDraft,
+} from "./utils/draftUtils";
+
+const CONTENT_CHECK_SIZE = DEFAULT_CANVAS_SIZE;
 
 const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
-  ({ width = DEFAULT_CANVAS_SIZE, height = DEFAULT_CANVAS_SIZE }, ref) => {
+  ({ initialDraft, onDraftChange, interactionEnabled = true }, ref) => {
+    const canvasDescriptionId = useId();
+    const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const state = useCanvasState();
-    const history = useCanvasHistory();
+    const [imageRenderRevision, setImageRenderRevision] = useState(0);
+    const handleImageReady = useCallback(() => {
+      setImageRenderRevision((revision) => revision + 1);
+    }, []);
+    const activePointerIdRef = useRef<number | null>(null);
+    const restoredDraftRef = useRef<ReturnType<typeof restoreCanvasDraft> | null>(
+      null
+    );
+    if (restoredDraftRef.current === null) {
+      restoredDraftRef.current = restoreCanvasDraft(initialDraft);
+    }
+    const state = useCanvasState({
+      elements: restoredDraftRef.current.elements,
+      background: restoredDraftRef.current.canvas.background,
+    });
+    const history = useCanvasHistory(restoredDraftRef.current.elements);
+    const onDraftChangeRef = useRef(onDraftChange);
 
     // Destructure state for easier access
     const {
@@ -23,25 +73,89 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       textInput, showTextInput, textPosition, fontSize, fontFamily,
       showClearConfirm, canvasBackground, penStyle, selectedElement, 
       selectedElements, selectionBox, hoveredElement, dragOffset, 
-      resizeHandle, originalSize, customColor, isMobile, setIsDrawing, 
+      resizeHandle, originalSize, customColor, setIsDrawing,
       setTool, setColor, setElements, setCurrentElement, setTextInput, 
       setShowTextInput, setTextPosition, setFontSize, setFontFamily, 
       setShowClearConfirm, setPenStyle, setSelectedElement, setSelectedElements,
       setSelectionBox, setHoveredElement, setDragOffset, setResizeHandle, 
-      setOriginalSize, setCustomColor, setIsMobile, setLineWidth,
+      setOriginalSize, setCustomColor, setLineWidth,
       lastClickTime, lastClickElement, dragStartPos, isDragging, imageCache,
     } = state;
+    const activeColorRef = useRef(color);
 
-    // Check if mobile
+    const handleColorChange = useCallback(
+      (nextColor: string) => {
+        activeColorRef.current = nextColor;
+        setColor(nextColor);
+        setCustomColor(nextColor);
+      },
+      [setColor, setCustomColor]
+    );
+
     useEffect(() => {
-      setIsMobile(window.innerWidth < 768);
-      const handleResize = () => setIsMobile(window.innerWidth < 768);
-      window.addEventListener("resize", handleResize);
-      return () => window.removeEventListener("resize", handleResize);
-    }, [setIsMobile]);
+      activeColorRef.current = color;
+    }, [color]);
+
+    useEffect(() => {
+      onDraftChangeRef.current = onDraftChange;
+    }, [onDraftChange]);
+
+    useEffect(() => {
+      onDraftChangeRef.current?.(
+        createCanvasDraft(
+          elements,
+          canvasBackground,
+          DEFAULT_CANVAS_SIZE,
+          DEFAULT_CANVAS_SIZE
+        )
+      );
+    }, [canvasBackground, elements]);
+
+    useEffect(() => {
+      if (interactionEnabled) return;
+      const canvas = canvasRef.current;
+      const activePointerId = activePointerIdRef.current;
+      if (
+        canvas &&
+        activePointerId !== null &&
+        canvas.hasPointerCapture(activePointerId)
+      ) {
+        canvas.releasePointerCapture(activePointerId);
+      }
+      activePointerIdRef.current = null;
+      setIsDrawing(false);
+      setCurrentElement(null);
+      setShowTextInput(false);
+      setSelectionBox(null);
+      setResizeHandle(null);
+      setOriginalSize(null);
+      dragStartPos.current = null;
+      isDragging.current = false;
+    }, [
+      dragStartPos,
+      interactionEnabled,
+      isDragging,
+      setCurrentElement,
+      setIsDrawing,
+      setOriginalSize,
+      setResizeHandle,
+      setSelectionBox,
+      setShowTextInput,
+    ]);
+
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      if (interactionEnabled) {
+        container.removeAttribute("inert");
+      } else {
+        container.setAttribute("inert", "");
+      }
+    }, [interactionEnabled]);
 
     // Keyboard shortcuts
     useKeyboardShortcuts({
+      enabled: interactionEnabled,
       showTextInput,
       onUndo: handleUndo,
       onRedo: handleRedo,
@@ -68,20 +182,28 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-
       // Clear canvas
       ctx.fillStyle = canvasBackground;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw all elements
       elements.forEach((element) => {
-        drawElement(ctx, element, imageCache.current);
+        drawElement(ctx, element, imageCache.current, handleImageReady);
       });
 
       // Draw current element being created
       if (currentElement) {
-        drawElement(ctx, currentElement, imageCache.current);
+        drawElement(ctx, currentElement, imageCache.current, handleImageReady);
       }
+
+      // Eraser strokes clear pixels from prior artwork. Repaint only behind the
+      // scene so erased areas reveal the active canvas background.
+      restoreErasedBackground(
+        ctx,
+        ERASER_COLOR,
+        canvas.width,
+        canvas.height
+      );
 
       // Draw selection box for single element
       if (tool === "select" && selectedElement !== null && selectedElement < elements.length && selectedElements.length === 0) {
@@ -164,7 +286,7 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
           ctx.setLineDash([]);
         }
       }
-    }, [elements, currentElement, selectedElement, selectedElements, selectionBox, hoveredElement, canvasBackground, isDrawing, imageCache, tool]);
+    }, [elements, currentElement, selectedElement, selectedElements, selectionBox, hoveredElement, canvasBackground, isDrawing, imageCache, imageRenderRevision, handleImageReady, tool]);
 
     // Handlers
     function handleUndo() {
@@ -196,7 +318,7 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
 
       const newElement: DrawingElement = {
         type: "text",
-        color,
+        color: activeColorRef.current,
         lineWidth,
         text: textInput,
         fontSize,
@@ -216,55 +338,154 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       setSelectedElement(newElements.length - 1);
     }
 
-    function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-      const file = e.target.files?.[0];
-      if (!file) return;
+    async function ensureImagesReadyForExport() {
+      const imageSources = Array.from(
+        new Set(
+          elements.flatMap((element) =>
+            element.type === "image" && element.imageData
+              ? [element.imageData]
+              : []
+          )
+        )
+      );
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageDataUrl = event.target?.result as string;
-        const img = new Image();
-        img.onload = () => {
-          const maxSize = 300;
-          let w = img.naturalWidth;
-          let h = img.naturalHeight;
+      await Promise.all(
+        imageSources.map(
+          (source) =>
+            new Promise<void>((resolve) => {
+              const cachedImage = imageCache.current.get(source);
+              if (cachedImage?.complete) {
+                resolve();
+                return;
+              }
 
-          if (w > maxSize || h > maxSize) {
-            const ratio = w / h;
-            if (w > h) {
-              w = maxSize;
-              h = maxSize / ratio;
-            } else {
-              h = maxSize;
-              w = maxSize * ratio;
-            }
-          }
-
-          const newElement: DrawingElement = {
-            type: "image",
-            color,
-            lineWidth,
-            imageData: imageDataUrl,
-            startPoint: { x: 100, y: 100 },
-            width: w,
-            height: h,
-          };
-
-          const newElements = [...elements, newElement];
-          setElements(newElements);
-          history.addToHistory(newElements);
-          setTool("select");
-          setSelectedElement(newElements.length - 1);
-        };
-        img.src = imageDataUrl;
-      };
-      reader.readAsDataURL(file);
+              const image = cachedImage ?? new Image();
+              imageCache.current.set(source, image);
+              const finish = () => {
+                window.clearTimeout(timeoutId);
+                image.removeEventListener("load", finish);
+                image.removeEventListener("error", finish);
+                resolve();
+              };
+              image.addEventListener("load", finish, { once: true });
+              image.addEventListener("error", finish, { once: true });
+              const timeoutId = window.setTimeout(finish, 5_000);
+              if (!cachedImage) image.src = source;
+            })
+        )
+      );
     }
 
-    function handleDownload() {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const dataUrl = canvas.toDataURL("image/png");
+    async function createExportImage() {
+      if (!canvasRef.current) return null;
+      await ensureImagesReadyForExport();
+
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = DEFAULT_CANVAS_SIZE;
+      exportCanvas.height = DEFAULT_CANVAS_SIZE;
+      const exportContext = exportCanvas.getContext("2d");
+      if (!exportContext) return null;
+
+      exportContext.fillStyle = canvasBackground;
+      exportContext.fillRect(
+        0,
+        0,
+        DEFAULT_CANVAS_SIZE,
+        DEFAULT_CANVAS_SIZE
+      );
+      elements.forEach((element) => {
+        drawElement(exportContext, element, imageCache.current);
+      });
+      restoreErasedBackground(
+        exportContext,
+        ERASER_COLOR,
+        DEFAULT_CANVAS_SIZE,
+        DEFAULT_CANVAS_SIZE
+      );
+
+      return exportCanvas.toDataURL("image/png");
+    }
+
+    function hasCompositedContent() {
+      const analyticalResult = canvasHasContent(
+        elements,
+        DEFAULT_CANVAS_SIZE,
+        DEFAULT_CANVAS_SIZE,
+        canvasBackground
+      );
+      if (typeof document === "undefined") return analyticalResult;
+
+      const hasUnsettledImage = elements.some((element) => {
+        if (element.type !== "image" || !element.imageData) return false;
+        const image = imageCache.current.get(element.imageData);
+        return !image || !image.complete;
+      });
+      if (hasUnsettledImage) return analyticalResult;
+
+      try {
+        const blankCanvas = document.createElement("canvas");
+        const compositedCanvas = document.createElement("canvas");
+        blankCanvas.width = CONTENT_CHECK_SIZE;
+        blankCanvas.height = CONTENT_CHECK_SIZE;
+        compositedCanvas.width = CONTENT_CHECK_SIZE;
+        compositedCanvas.height = CONTENT_CHECK_SIZE;
+        const blankContext = blankCanvas.getContext("2d", {
+          willReadFrequently: true,
+        });
+        const compositedContext = compositedCanvas.getContext("2d", {
+          willReadFrequently: true,
+        });
+        if (!blankContext || !compositedContext) return analyticalResult;
+
+        blankContext.fillStyle = "#ffffff";
+        blankContext.fillRect(0, 0, CONTENT_CHECK_SIZE, CONTENT_CHECK_SIZE);
+        compositedContext.fillStyle = canvasBackground;
+        compositedContext.fillRect(
+          0,
+          0,
+          CONTENT_CHECK_SIZE,
+          CONTENT_CHECK_SIZE
+        );
+        const sceneScale = CONTENT_CHECK_SIZE / DEFAULT_CANVAS_SIZE;
+        compositedContext.save();
+        compositedContext.scale(sceneScale, sceneScale);
+        elements.forEach((element) => {
+          drawElement(compositedContext, element, imageCache.current);
+        });
+        restoreErasedBackground(
+          compositedContext,
+          ERASER_COLOR,
+          DEFAULT_CANVAS_SIZE,
+          DEFAULT_CANVAS_SIZE
+        );
+        compositedContext.restore();
+
+        const blankPixels = blankContext.getImageData(
+          0,
+          0,
+          CONTENT_CHECK_SIZE,
+          CONTENT_CHECK_SIZE
+        ).data;
+        const compositedPixels = compositedContext.getImageData(
+          0,
+          0,
+          CONTENT_CHECK_SIZE,
+          CONTENT_CHECK_SIZE
+        ).data;
+        for (let index = 0; index < blankPixels.length; index += 1) {
+          if (blankPixels[index] !== compositedPixels[index]) return true;
+        }
+        return false;
+      } catch {
+        // Cross-origin images can taint a canvas. The color/opacity-aware
+        // analytical check is the safe fallback in that case.
+        return analyticalResult;
+      }
+    }
+
+    async function handleDownload() {
+      const dataUrl = await createExportImage();
+      if (!dataUrl) return;
       const link = document.createElement("a");
       link.download = `drawing-${Date.now()}.png`;
       link.href = dataUrl;
@@ -273,29 +494,16 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
 
     // Expose methods via ref
     useImperativeHandle(ref, () => ({
-      exportImage: async () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return null;
-        
-        // Create a temporary canvas with exact dimensions
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = width;
-        tempCanvas.height = height;
-        const tempCtx = tempCanvas.getContext("2d");
-        if (!tempCtx) return null;
-
-        // Draw background
-        tempCtx.fillStyle = canvasBackground;
-        tempCtx.fillRect(0, 0, width, height);
-
-        // Draw all elements
-        elements.forEach((element) => {
-          drawElement(tempCtx, element, imageCache.current);
-        });
-
-        return tempCanvas.toDataURL("image/png");
-      },
+      exportImage: createExportImage,
       clearCanvas: handleClearConfirmed,
+      hasContent: hasCompositedContent,
+      getDraft: () =>
+        createCanvasDraft(
+          elements,
+          canvasBackground,
+          DEFAULT_CANVAS_SIZE,
+          DEFAULT_CANVAS_SIZE
+        ),
     }));
 
     const getPenStyleSettings = () => {
@@ -308,9 +516,15 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       }
     };
 
-    function handleMouseDown(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+      if (!interactionEnabled || !e.isPrimary) return;
+      e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
+      if (!canvas.hasPointerCapture(e.pointerId)) {
+        canvas.setPointerCapture(e.pointerId);
+      }
+      activePointerIdRef.current = e.pointerId;
       const point = getMousePosition(e, canvas);
 
       if (showTextInput && tool !== "text") {
@@ -336,7 +550,11 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
             const handleSize = 8;
             const hitPadding = 5;
 
-            const handles = [
+            const handles: Array<{
+              name: Exclude<ResizeHandle, null>;
+              x: number;
+              y: number;
+            }> = [
               { name: "tl", x: bounds.x - handleSize / 2, y: bounds.y - handleSize / 2 },
               { name: "tr", x: bounds.x + bounds.width - handleSize / 2, y: bounds.y - handleSize / 2 },
               { name: "bl", x: bounds.x - handleSize / 2, y: bounds.y + bounds.height - handleSize / 2 },
@@ -350,7 +568,7 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
                 point.y >= handle.y - hitPadding &&
                 point.y <= handle.y + handleSize + hitPadding
               ) {
-                setResizeHandle(handle.name as any);
+                setResizeHandle(handle.name);
                 setOriginalSize({ width: bounds.width, height: bounds.height });
                 setIsDrawing(true);
                 return;
@@ -373,6 +591,7 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
 
         // Find element at click position
         for (let i = elements.length - 1; i >= 0; i--) {
+          if (isPointInEraserStroke(point, elements[i])) break;
           if (isPointInElement(point, elements[i], ctx)) {
             const now = Date.now();
             const isDoubleClick = now - lastClickTime.current < 300 && lastClickElement.current === i;
@@ -386,7 +605,7 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
               setTextInput(elements[i].text || "");
               setFontSize(elements[i].fontSize || 24);
               setFontFamily(elements[i].fontFamily || "Arial");
-              setColor(elements[i].color);
+              handleColorChange(elements[i].color);
               setShowTextInput(true);
 
               const newElements = elements.filter((_, index) => index !== i);
@@ -438,73 +657,11 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       }
 
       if (tool === "fill") {
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        // Find element to fill (use precise inside check)
-        let elementFilled = false;
-        for (let i = elements.length - 1; i >= 0; i--) {
-          const element = elements[i];
-          
-          // Check fillable shapes
-          if (
-            element.type === "rectangle" ||
-            element.type === "circle" ||
-            element.type === "triangle" ||
-            element.type === "star"
-          ) {
-            // Use precise inside check for fill
-            if (isPointInsideShape(point, element)) {
-              const newElements = [...elements];
-              newElements[i] = {
-                ...element,
-                filled: true,
-                fillColor: color,
-              };
-              setElements(newElements);
-              history.addToHistory(newElements);
-              elementFilled = true;
-              break;
-            }
-          }
-          
-          // Check if clicked on line element
-          if (element.type === "line" && isPointInElement(point, element, ctx)) {
-            // Lines cannot be filled, just show a message or ignore
-            elementFilled = true;
-            break;
-          }
-        }
-        
-        if (elementFilled) return;
-
-        // If no shape was clicked, fill canvas background
-        const backgroundRect: DrawingElement = {
-          type: "rectangle",
-          startPoint: { x: 0, y: 0 },
-          endPoint: { x: width, y: height },
-          color: color,
-          lineWidth: 0,
-          filled: true,
-          fillColor: color,
-          opacity: 1,
-        };
-
-        // Remove any existing background rectangles (check by lineWidth: 0 and full canvas size)
-        const filteredElements = elements.filter((el) => {
-          if (el.type === "rectangle" && el.lineWidth === 0 && el.startPoint && el.endPoint) {
-            // Check if it's approximately full canvas (with small tolerance)
-            const isBackground =
-              Math.abs(el.startPoint.x) < 1 &&
-              Math.abs(el.startPoint.y) < 1 &&
-              Math.abs(el.endPoint.x - width) < 1 &&
-              Math.abs(el.endPoint.y - height) < 1;
-            return !isBackground; // Remove background rectangles
-          }
-          return true;
-        });
-
-        const newElements = [backgroundRect, ...filteredElements];
+        const newElements = applyCanvasFill(
+          elements,
+          point,
+          activeColorRef.current
+        );
         setElements(newElements);
         history.addToHistory(newElements);
         return;
@@ -516,19 +673,19 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
         const settings = getPenStyleSettings();
         setCurrentElement({
           type: "line",
-          color: color,
+          color: activeColorRef.current,
           lineWidth: settings.lineWidth,
           opacity: settings.opacity,
           points: [point],
         });
       } else if (tool === "eraser") {
-        // Eraser mode - we'll handle erasing in mouse move
-        setIsDrawing(true);
-        return;
+        setCurrentElement(
+          createEraserElement(point, getEraserStrokeWidth(lineWidth))
+        );
       } else {
         setCurrentElement({
-          type: tool as any,
-          color,
+          type: tool as DrawingElement["type"],
+          color: activeColorRef.current,
           lineWidth,
           opacity: 1,
           startPoint: point,
@@ -537,7 +694,9 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       }
     }
 
-    function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+      if (!interactionEnabled || !e.isPrimary) return;
+      e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
       const point = getMousePosition(e, canvas);
@@ -750,6 +909,7 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       // Hover detection (only for select tool)
       if (!isDrawing && tool === "select") {
         for (let i = elements.length - 1; i >= 0; i--) {
+          if (isPointInEraserStroke(point, elements[i])) break;
           if (isPointInElement(point, elements[i], ctx)) {
             setHoveredElement(i);
             return;
@@ -761,56 +921,25 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
         setHoveredElement(null);
       }
 
-      // Handle eraser - remove elements
+      // Eraser is stored as a compositing stroke so only touched pixels are
+      // cleared; the original line, shape, text, or image remains intact.
       if (tool === "eraser" && isDrawing) {
-        const eraserRadius = lineWidth * 3;
-        const newElements = elements.filter((element) => {
-          // Check if any point of the element is within eraser radius
-          if (element.points && element.points.length > 0) {
-            // For line elements, check each segment
-            for (let i = 0; i < element.points.length; i++) {
-              const p = element.points[i];
-              const dist = Math.sqrt(
-                Math.pow(point.x - p.x, 2) + Math.pow(point.y - p.y, 2)
-              );
-              if (dist <= eraserRadius) {
-                return false; // Remove this element
-              }
-            }
-          } else if (element.startPoint) {
-            // For other elements, check if eraser touches their bounds
-            const bounds = calculateElementBounds(element, ctx);
-            const isNearElement =
-              point.x >= bounds.x - eraserRadius &&
-              point.x <= bounds.x + bounds.width + eraserRadius &&
-              point.y >= bounds.y - eraserRadius &&
-              point.y <= bounds.y + bounds.height + eraserRadius;
-            
-            if (isNearElement) {
-              // More precise check based on element type
-              if (element.type === "text" || element.type === "image") {
-                return !isPointInElement(point, element, ctx);
-              }
-              return false; // Remove shapes if touched
-            }
-          }
-          return true; // Keep this element
-        });
-
-        if (newElements.length !== elements.length) {
-          setElements(newElements);
-        }
+        setCurrentElement((element) =>
+          element ? appendEraserPoint(element, point) : element
+        );
         return;
       }
 
-      if (!isDrawing || !currentElement) return;
+      if (!isDrawing) return;
 
       if (tool === "pen") {
-        setCurrentElement({
-          ...currentElement,
-          points: [...(currentElement.points || []), point],
-        });
+        setCurrentElement((element) =>
+          element
+            ? { ...element, points: [...(element.points ?? []), point] }
+            : element
+        );
       } else {
+        if (!currentElement) return;
         setCurrentElement({
           ...currentElement,
           endPoint: point,
@@ -818,7 +947,18 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       }
     }
 
-    function handleMouseUp() {
+    function handlePointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+      if (!e.isPrimary) return;
+      const canvas = canvasRef.current;
+      if (canvas?.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
+      activePointerIdRef.current = null;
+      if (!interactionEnabled) {
+        setIsDrawing(false);
+        setCurrentElement(null);
+        return;
+      }
       if (!isDrawing) return;
       setIsDrawing(false);
 
@@ -837,6 +977,7 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
           // Find all elements within selection box
           const selected: number[] = [];
           elements.forEach((element, idx) => {
+            if (element.type === "eraser") return;
             const bounds = calculateElementBounds(element, ctx);
             
             // Check if element is within selection box
@@ -868,9 +1009,13 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
         }
       }
 
-      // Eraser - add to history
+      // Commit one eraser gesture as one undo/redo operation.
       if (tool === "eraser") {
-        history.addToHistory([...elements]);
+        if (!currentElement) return;
+        const newElements = [...elements, currentElement];
+        setElements(newElements);
+        history.addToHistory(newElements);
+        setCurrentElement(null);
         return;
       }
 
@@ -882,37 +1027,88 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
       setCurrentElement(null);
     }
 
+    function handlePointerCancel(e: React.PointerEvent<HTMLCanvasElement>) {
+      if (!e.isPrimary) return;
+      const canvas = canvasRef.current;
+      if (canvas?.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
+      activePointerIdRef.current = null;
+
+      if (tool === "select" && (isDragging.current || resizeHandle !== null)) {
+        history.addToHistory(elements);
+      }
+
+      setIsDrawing(false);
+      setCurrentElement(null);
+      setSelectionBox(null);
+      setResizeHandle(null);
+      setOriginalSize(null);
+      dragStartPos.current = null;
+      isDragging.current = false;
+    }
+
     return (
-      <div className="w-full max-w-7xl mx-auto md:space-y-3">
-        <div className="flex flex-col md:flex-row md:gap-3 relative z-0">
-          <div className="flex-1">
-            <div className="hand-drawn-card overflow-hidden md:rounded-xl rounded-none" style={{ padding: 0 }}>
+      <div
+        ref={containerRef}
+        className={`mx-auto w-full max-w-[75rem] ${
+          interactionEnabled ? "" : "pointer-events-none"
+        }`}
+        role="group"
+        aria-label="Drawing workspace"
+        aria-disabled={!interactionEnabled}
+      >
+        <div className="relative z-0 flex flex-col lg:flex-row lg:items-start lg:justify-center lg:gap-3">
+          <div className="mx-auto min-w-0 w-full max-w-[40rem] lg:mx-0 lg:w-[min(calc(100dvh-12rem),calc(100vw-20rem),48rem)] lg:max-w-none">
+            <DesktopToolbar
+              tool={tool}
+              historyStep={history.historyStep}
+              historyLength={history.history.length}
+              onToolChange={setTool}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              onClear={() => setShowClearConfirm(true)}
+              onDownload={handleDownload}
+            />
+            <div
+              className="relative mt-2 aspect-square w-full overflow-hidden rounded-lg border-2 border-[#2d3748] bg-white shadow-[3px_3px_0_#171717] focus-within:ring-2 focus-within:ring-[#0052ff] focus-within:ring-offset-2 sm:rounded-xl lg:mt-3"
+            >
               <div 
-                className="w-full flex items-center justify-center bg-gray-50 relative" 
-                style={{ 
-                  margin: 0, 
-                  padding: 0,
-                  aspectRatio: "1 / 1",
-                  minHeight: isMobile ? "min(90vw, 600px)" : "auto",
-                }}
+                className="relative flex aspect-square w-full items-center justify-center bg-gray-50"
               >
+                <p id={canvasDescriptionId} className="sr-only">
+                  Interactive drawing canvas. Use the nearby toolbar to choose a
+                  tool, color, and stroke size, then draw with a pointer or touch.
+                </p>
                 <canvas
                   ref={canvasRef}
-                  width={width}
-                  height={height}
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
-                  onTouchStart={handleMouseDown}
-                  onTouchMove={handleMouseMove}
-                  onTouchEnd={handleMouseUp}
+                  width={DEFAULT_CANVAS_SIZE}
+                  height={DEFAULT_CANVAS_SIZE}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerCancel}
+                  role="img"
+                  aria-label="DrawCoin interactive drawing canvas"
+                  aria-describedby={canvasDescriptionId}
+                  tabIndex={interactionEnabled ? 0 : -1}
                   className="bg-white touch-none"
                   style={{
-                    cursor: tool === "pen" ? "crosshair" : tool === "eraser" ? "cell" : tool === "select" ? "pointer" : tool === "fill" ? "crosshair" : "default",
+                    cursor: !interactionEnabled
+                      ? "default"
+                      : tool === "pen"
+                        ? "crosshair"
+                        : tool === "eraser"
+                          ? "cell"
+                          : tool === "select"
+                            ? "pointer"
+                            : tool === "fill"
+                              ? "crosshair"
+                              : "default",
                     width: "100%",
                     height: "100%",
                     display: "block",
+                    touchAction: "none",
                   }}
                 />
 
@@ -942,39 +1138,29 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
               lineWidth={lineWidth}
               penStyle={penStyle}
               onToolChange={setTool}
-              onColorChange={setColor}
+              onColorChange={handleColorChange}
               onLineWidthChange={setLineWidth}
               onPenStyleChange={setPenStyle}
               onUndo={handleUndo}
               onRedo={handleRedo}
               onClear={() => setShowClearConfirm(true)}
               onDownload={handleDownload}
-              onImageUpload={handleImageUpload}
               historyStep={history.historyStep}
               historyLength={history.history.length}
             />
           </div>
 
-          <DesktopToolbar
+          <DesktopInspector
             tool={tool}
             color={color}
             customColor={customColor}
             lineWidth={lineWidth}
             penStyle={penStyle}
-            fontSize={fontSize}
-            fontFamily={fontFamily}
-            historyStep={history.historyStep}
-            historyLength={history.history.length}
             onToolChange={setTool}
-            onColorChange={setColor}
+            onColorChange={handleColorChange}
             onCustomColorChange={setCustomColor}
             onLineWidthChange={setLineWidth}
             onPenStyleChange={setPenStyle}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            onClear={() => setShowClearConfirm(true)}
-            onDownload={handleDownload}
-            onImageUpload={handleImageUpload}
           />
         </div>
 
@@ -991,5 +1177,4 @@ const CustomCanvas = forwardRef<CustomCanvasRef, CustomCanvasProps>(
 CustomCanvas.displayName = "CustomCanvas";
 
 export default CustomCanvas;
-export type { CustomCanvasRef, CustomCanvasProps };
-
+export type { CustomCanvasDraft, CustomCanvasRef, CustomCanvasProps } from "./types";

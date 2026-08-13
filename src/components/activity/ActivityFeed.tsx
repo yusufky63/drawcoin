@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
@@ -20,29 +20,35 @@ interface ActivityItem {
     image_url: string;
   };
   user?: {
-    username?: string;
-    avatar_url?: string;
-  };
+    username?: string | null;
+    avatar_url?: string | null;
+  } | null;
 }
 
 export default function ActivityFeed() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [profiles, setProfiles] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
 
-  const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const pageRef = useRef(0);
+  const loadingMoreRef = useRef(false);
+  const requestGenerationRef = useRef(0);
   const [filter, setFilter] = useState<"all" | "buy" | "sell" | "create">(
     "all"
   );
 
   const fetchActivity = useCallback(
     async (reset = false) => {
-      if (loadingMore && !reset) return;
+      if (loadingMoreRef.current && !reset) return;
+
+      const requestGeneration = reset
+        ? ++requestGenerationRef.current
+        : requestGenerationRef.current;
+      loadingMoreRef.current = true;
 
       try {
-        const currentPage = reset ? 0 : page;
+        const currentPage = reset ? 0 : pageRef.current;
         const limit = 20;
         const offset = currentPage * limit;
 
@@ -52,8 +58,13 @@ export default function ActivityFeed() {
         const res = await fetch(
           `/api/activity?limit=${limit}&offset=${offset}${typeParam}`
         );
+        if (!res.ok) {
+          throw new Error("Activity data is temporarily unavailable.");
+        }
         const data = await res.json();
         const newActivities: ActivityItem[] = data.data || [];
+
+        if (requestGeneration !== requestGenerationRef.current) return;
 
         if (newActivities.length < limit) {
           setHasMore(false);
@@ -64,64 +75,32 @@ export default function ActivityFeed() {
         setActivities((prev) =>
           reset ? newActivities : [...prev, ...newActivities]
         );
-        setPage((prev) => (reset ? 1 : prev + 1));
-
-        // Extract unique addresses for profile fetching
-        const uniqueAddresses = Array.from(
-          new Set(newActivities.map((a) => a.user_address))
-        );
-
-        if (uniqueAddresses.length > 0) {
-          // Fetch profiles (Farcaster & Zora)
-          const addressesParam = uniqueAddresses.join(",");
-
-          // Fetch in parallel but don't block UI
-          Promise.all([
-            fetch(`/api/farcaster/users?addresses=${addressesParam}`)
-              .then((r) => r.json())
-              .catch(() => ({})),
-            fetch(`/api/zora/profiles?addresses=${addressesParam}`)
-              .then((r) => r.json())
-              .catch(() => ({})),
-          ]).then(([farcasterData, zoraData]) => {
-            // Merge profiles
-            const mergedProfiles: Record<string, any> = {};
-            uniqueAddresses.forEach((addr) => {
-              const lowerAddr = addr.toLowerCase();
-              const fc = farcasterData[lowerAddr];
-              const zora = zoraData[lowerAddr];
-
-              mergedProfiles[lowerAddr] = {
-                displayName:
-                  zora?.displayName ||
-                  fc?.displayName ||
-                  zora?.handle ||
-                  fc?.username,
-                username: zora?.handle || fc?.username,
-                avatar:
-                  zora?.avatar?.medium || zora?.avatar?.small || fc?.pfpUrl,
-              };
-            });
-            setProfiles((prev) => ({ ...prev, ...mergedProfiles }));
-          });
-        }
+        pageRef.current = reset ? 1 : currentPage + 1;
       } catch (error) {
         console.error("Failed to fetch activity:", error);
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (requestGeneration === requestGenerationRef.current) {
+          loadingMoreRef.current = false;
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
-    [page, loadingMore, filter]
+    [filter]
   );
 
   useEffect(() => {
-    setPage(0);
+    pageRef.current = 0;
     setHasMore(true);
     setActivities([]);
     setLoading(true);
-    fetchActivity(true);
-  }, [filter]);
+    void fetchActivity(true);
+
+    return () => {
+      requestGenerationRef.current += 1;
+      loadingMoreRef.current = false;
+    };
+  }, [fetchActivity]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -188,10 +167,10 @@ export default function ActivityFeed() {
       ) : (
         <div className="space-y-3">
           {activities.map((activity) => {
-            const profile = profiles[activity.user_address.toLowerCase()];
             const displayName =
-              profile?.displayName || formatAddress(activity.user_address);
-            const avatarUrl = profile?.avatar;
+              activity.user?.username?.trim() ||
+              formatAddress(activity.user_address);
+            const avatarUrl = activity.user?.avatar_url?.trim() || null;
             const isBuy = activity.type === "buy";
             const isCreate = activity.type === "create";
 
@@ -244,7 +223,7 @@ export default function ActivityFeed() {
                           const date = new Date(dateStr);
                           if (isNaN(date.getTime())) return "";
                           return formatDistanceToNow(date, { addSuffix: true });
-                        } catch (e) {
+                        } catch {
                           return "";
                         }
                       })()}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Collector mission badge</title>
+  <desc id="desc">A hand-drawn purple badge with three collected coins.</desc>
+  <rect width="512" height="512" rx="104" fill="#ede9fe"/>
+  <path d="M84 99c75-54 275-53 344 18 52 54 47 249-9 306-62 63-268 62-337-3-58-55-55-277 2-321Z" fill="#fff" stroke="#4c1d95" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="257" cy="322" rx="139" ry="53" fill="#c4b5fd" stroke="#4c1d95" stroke-width="16"/>
+  <path d="M118 320v43c0 30 63 54 139 54s139-24 139-54v-43" fill="#a78bfa" stroke="#4c1d95" stroke-width="16" stroke-linejoin="round"/>
+  <ellipse cx="257" cy="251" rx="117" ry="48" fill="#ddd6fe" stroke="#4c1d95" stroke-width="16"/>
+  <path d="M140 250v42c0 27 53 48 117 48s117-21 117-48v-42" fill="#c4b5fd" stroke="#4c1d95" stroke-width="16" stroke-linejoin="round"/>
+  <ellipse cx="257" cy="184" rx="91" ry="42" fill="#fef3c7" stroke="#4c1d95" stroke-width="16"/>
+  <path d="M233 184h48m-24-24v48" fill="none" stroke="#4c1d95" stroke-width="13" stroke-linecap="round"/>
+</svg>

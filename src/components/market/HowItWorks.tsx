@@ -32,8 +32,8 @@ export default function HowItWorks() {
             </div>
             
             <div className="bg-white/60 p-2 md:p-3 rounded-art transform -rotate-0.5">
-              <p className="font-bold text-purple-800 mb-0.5">AI Generation</p>
-              <p className="text-xs">Describe your idea and AI creates it for you instantly</p>
+              <p className="font-bold text-purple-800 mb-0.5">Hand-drawn Only</p>
+              <p className="text-xs">Every new DrawCoin begins with artwork you draw yourself</p>
             </div>
 
             <div className="bg-white/60 p-2 md:p-3 rounded-art transform rotate-0.5">
@@ -164,7 +164,7 @@ export default function HowItWorks() {
       {/* Platform Note */}
       <div className="hand-drawn-card bg-gradient-to-r from-indigo-50 to-purple-50 border-2 border-indigo-300 p-3 md:p-4 text-center transform rotate-0.5">
         <p className="text-art-gray-700 text-xs md:text-base">
-          <span className="font-bold text-indigo-900">Works everywhere:</span> Mobile browsers, desktop, Farcaster, and BaseApp. 
+          <span className="font-bold text-indigo-900">Base App first:</span> DrawCoin&apos;s primary experience also works fully in mobile and desktop browsers.
           <span className="block mt-1 md:mt-2 text-indigo-700">Draw on your phone, trade on your computer, or do both anywhere!</span>
         </p>
       </div>

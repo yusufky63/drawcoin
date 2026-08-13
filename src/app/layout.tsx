@@ -27,8 +27,13 @@ const poppins = Poppins({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://drawcoin.app"),
-  title: "DrawCoin",
-  description: "Create and trade hand-drawn art tokens on Base.",
+  applicationName: "DrawCoin",
+  title: {
+    default: "DrawCoin - Draw, launch and collect on Base",
+    template: "%s | DrawCoin",
+  },
+  description:
+    "Draw original artwork, launch it as an onchain collectible through Zora, and discover creators on Base.",
   keywords: [
     "Base",
     "tokens",
@@ -40,54 +45,40 @@ export const metadata: Metadata = {
     "trading",
   ],
   authors: [{ name: "DrawCoin" }],
+  creator: "DrawCoin",
+  category: "art",
   manifest: "/manifest.json",
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "48x48", type: "image/x-icon" },
+      { url: "/icon.png", sizes: "1024x1024", type: "image/png" },
+    ],
+    apple: [{ url: "/icon.png", sizes: "1024x1024", type: "image/png" }],
   },
   openGraph: {
-    title: "DrawCoin",
-    description: "Create and trade hand-drawn art tokens on Base.",
+    title: "DrawCoin - Draw, launch and collect on Base",
+    description:
+      "Draw original artwork, launch it through Zora, and discover creators on Base.",
     type: "website",
     url: "https://drawcoin.app",
-    images: [
-      {
-        url: "https://drawcoin.app/opengraph-image.png",
-        width: 1200,
-        height: 630,
-        alt: "DrawCoin",
-      },
-    ],
+    siteName: "DrawCoin",
+    locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "DrawCoin",
-    description: "Create and trade hand-drawn art tokens on the Base",
-    images: ["https://drawcoin.app/opengraph-image.png"],
+    title: "DrawCoin - Draw, launch and collect on Base",
+    description:
+      "Draw original artwork, launch it through Zora, and discover creators on Base.",
   },
   other: {
     "base:app_id": "68ed631a346a76766395203c",
-    "fc:miniapp": JSON.stringify({
-      version: "next",
-      imageUrl: "https://drawcoin.app/opengraph-image.png",
-      button: {
-        title: "Draw Token",
-        action: {
-          type: "launch_frame",
-          name: "DrawCoin",
-          url: "https://drawcoin.app",
-          splashImageUrl: "https://drawcoin.app/logo.png",
-          splashBackgroundColor: "#ffffff",
-        },
-      },
-    }),
   },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#fff",
+  themeColor: "#0052ff",
 };
 
 export default function RootLayout({
@@ -100,14 +91,6 @@ export default function RootLayout({
       lang="en"
       className={`${playfair.variable} ${crimson.variable} ${poppins.variable}`}
     >
-      <head>
-        {/* Farcaster manifest */}
-        <link rel="farcaster-app-config" href="/.well-known/farcaster.json" />
-
-        {/* Allow embedding from anywhere */}
-        <meta httpEquiv="X-Frame-Options" content="ALLOWALL" />
-        <meta httpEquiv="Content-Security-Policy" content="frame-ancestors *" />
-      </head>
       <body>
         <Providers>
           <ArtHeader />

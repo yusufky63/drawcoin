@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   useAccount,
   useWalletClient,
@@ -18,6 +18,10 @@ import TradeSuccessModal from "../market/TradeSuccessModal";
 import { useWatchlist } from "../../hooks/useWatchlist";
 import CoinShareModal from "./CoinShareModal";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
+import {
+  isZoraTradeWalletSupported,
+  ZORA_TRADE_EOA_ONLY_MESSAGE,
+} from "../../lib/zoraTradeSafety";
 
 // New Components
 import { CoinHeader } from "./details/CoinHeader";
@@ -33,7 +37,7 @@ interface CoinDetailPageProps {
 
 export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const router = useRouter();
-  const { address, isConnected } = useAccount();
+  const { address, connector, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
@@ -49,19 +53,10 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const [ethBalance, setEthBalance] = useState<string>("0");
   const [tokenBalance, setTokenBalance] = useState<string>("0");
   const [ethPrice, setEthPrice] = useState<number>(0);
-  const [selectedCurrency, setSelectedCurrency] = useState<"ETH" | "USDC">(
-    "ETH"
-  );
-  const [usdcBalance, setUsdcBalance] = useState<string>("0");
-  const [showTokenSelect, setShowTokenSelect] = useState(false);
-  const [availableTokens, setAvailableTokens] = useState<
-    Array<{ symbol: string; address: string; balance: string }>
-  >([]);
   const [marketData, setMarketData] = useState<any>(null);
   const [poolAddress, setPoolAddress] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [isCreator, setIsCreator] = useState<boolean>(false);
 
   // Helper function to resolve price numbers
   const resolvePriceNumber = (value: any) => {
@@ -84,9 +79,8 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   };
 
   const isFavorite = isWatchlisted(token.contract_address);
-
-  // Token addresses on Base
-  const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+  const tokenContractAddress = token.contract_address;
+  const isTradeWalletSupported = isZoraTradeWalletSupported(connector?.id);
 
   // Initial loading - removed artificial delay
   useEffect(() => {
@@ -147,7 +141,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   }, []);
 
   // Fetch Balances
-  const fetchBalances = async () => {
+  const fetchBalances = useCallback(async () => {
     if (!address || !publicClient) return;
 
     try {
@@ -157,59 +151,35 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
 
       // Token Balance
       const tokenBal = await publicClient.readContract({
-        address: token.contract_address as `0x${string}`,
+        address: tokenContractAddress as `0x${string}`,
         abi: erc20Abi,
         functionName: "balanceOf",
         args: [address],
       });
-      setTokenBalance(parseFloat(formatEther(tokenBal as bigint)).toFixed(4));
+      setTokenBalance(formatEther(tokenBal as bigint));
 
-      // USDC Balance
-      const usdcBal = await publicClient.readContract({
-        address: USDC_ADDRESS,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      });
-      setUsdcBalance(parseFloat(formatEther(usdcBal as bigint)).toFixed(4));
-
-      // Update available tokens list
-      setAvailableTokens([
-        {
-          symbol: "ETH",
-          address: "0x0000000000000000000000000000000000000000",
-          balance: parseFloat(formatEther(ethBal)).toFixed(4),
-        },
-        {
-          symbol: "USDC",
-          address: USDC_ADDRESS,
-          balance: parseFloat(formatEther(usdcBal as bigint)).toFixed(4),
-        },
-      ]);
-
-      // Check Creator Status
-      if (token.creatorAddress) {
-        setIsCreator(
-          address.toLowerCase() === token.creatorAddress.toLowerCase()
-        );
-      }
     } catch (error) {
       console.error("Error fetching balances:", error);
     }
-  };
+  }, [address, publicClient, tokenContractAddress]);
 
   useEffect(() => {
     if (isConnected) {
-      fetchBalances();
-      const interval = setInterval(fetchBalances, 30000);
+      void fetchBalances();
+      const interval = setInterval(() => void fetchBalances(), 30000);
       return () => clearInterval(interval);
     }
-  }, [isConnected, address, token.contract_address]);
+  }, [isConnected, fetchBalances]);
 
   // Handle Trade
   const handleTrade = async () => {
     if (!isConnected) {
       toast.error("Please connect your wallet");
+      return;
+    }
+
+    if (!isTradeWalletSupported) {
+      toast.error(ZORA_TRADE_EOA_ONLY_MESSAGE);
       return;
     }
 
@@ -231,7 +201,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       if (chainId !== 8453) {
         try {
           await switchChain({ chainId: 8453 });
-        } catch (switchError) {
+        } catch {
           toast.error("Please switch to Base network");
           return;
         }
@@ -249,8 +219,8 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
         walletClient,
         publicClient,
         account: address!,
+        walletConnectorId: connector?.id ?? "",
         switchChain,
-        creatorAddress: token.creator_address || null,
       };
 
       console.log("Executing trade with params:", tradeParams);
@@ -302,38 +272,12 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const usdValue = amount
     ? parseFloat(amount) *
       (tradeType === "buy"
-        ? selectedCurrency === "ETH"
-          ? ethPrice
-          : 1 // USDC is approx $1
+        ? ethPrice
         : parseFloat(marketData?.tokenPrice?.priceInUsdc || "0"))
     : 0;
 
-  // Max Balance for Slider - with Creator restrictions
-  const maxBalance = (() => {
-    if (tradeType === "buy") {
-      return selectedCurrency === "ETH"
-        ? parseFloat(ethBalance)
-        : parseFloat(usdcBalance);
-    } else {
-      // Sell case
-      const currentTokenBalance = parseFloat(tokenBalance);
-
-      if (isCreator) {
-        // Creator restriction: 10M tokens are reserved (locked)
-        const CREATOR_RESERVED_TOKENS = 10_000_000;
-        const availableTokens = Math.max(
-          0,
-          currentTokenBalance - CREATOR_RESERVED_TOKENS
-        );
-
-        // Use 99.5% of available tokens to prevent precision errors
-        return availableTokens * 0.995;
-      } else {
-        // Regular user: use 99.9% to prevent precision errors
-        return currentTokenBalance * 0.999;
-      }
-    }
-  })();
+  const maxBalance =
+    tradeType === "buy" ? parseFloat(ethBalance) : parseFloat(tokenBalance);
 
   // Show skeleton on initial load
   if (initialLoading) {
@@ -511,16 +455,10 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
               setShowSlippageSettings={setShowSlippageSettings}
               ethBalance={ethBalance}
               tokenBalance={tokenBalance}
-              usdcBalance={usdcBalance}
-              selectedCurrency={selectedCurrency}
-              setSelectedCurrency={setSelectedCurrency}
-              showTokenSelect={showTokenSelect}
-              setShowTokenSelect={setShowTokenSelect}
-              availableTokens={availableTokens}
               handleTrade={handleTrade}
               loading={loading}
               isConnected={isConnected}
-              isCreator={isCreator}
+              isTradeWalletSupported={isTradeWalletSupported}
               usdValue={usdValue}
               maxBalance={maxBalance}
             />

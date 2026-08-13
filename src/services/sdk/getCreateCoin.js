@@ -9,8 +9,11 @@ import {
   CreateConstants,
 } from "@zoralabs/coins-sdk";
 import { base } from "viem/chains";
+import { normalizeAdditionalOwners } from "../../lib/create/additionalOwners.js";
+import { assertIpfsMetadataURI } from "../../lib/create/metadataUri.js";
 import { showError } from "../../utils/toastUtils";
-import { getBuilderCodeSuffix } from "../../lib/builderCode";
+
+export { normalizeAdditionalOwners };
 
 /**
  * Creates a Zora coin using the updated SDK's createCoin function
@@ -20,11 +23,8 @@ import { getBuilderCodeSuffix } from "../../lib/builderCode";
  * @param {string} params.uri - Metadata URI (IPFS URI recommended)
  * @param {string} params.payoutRecipient - Address that receives creator earnings
  * @param {Array<string>} [params.owners] - Optional array of owner addresses
- * @param {bigint} [params.initialPurchaseWei] - Optional initial purchase amount (for backward compatibility)
  * @param {string} [params.platformReferrer] - Optional platform referrer address for earning referral fees
  * @param {string} [params.currency] - Optional currency ("ETH", "ZORA", "CREATOR_COIN", or "CREATOR_COIN_OR_ZORA")
- * @param {string} [params.startingMarketCap] - Optional starting market cap ("LOW" or "HIGH")
- * @param {string} [params.smartWalletRouting] - Optional smart wallet routing ("AUTO" or "DISABLE")
  * @param {number} [params.chainId] - Optional chain ID (defaults to current wallet chain)
  * @param {Object} walletClient - Viem wallet client
  * @param {Object} publicClient - Viem public client
@@ -37,11 +37,8 @@ export async function createZoraCoin(
     uri,
     payoutRecipient,
     owners = [],
-    initialPurchaseWei = 0n,
     platformReferrer,
     currency,
-    startingMarketCap,
-    smartWalletRouting,
     chainId,
   },
   walletClient,
@@ -57,10 +54,6 @@ export async function createZoraCoin(
     if (!walletClient || !publicClient) {
       throw new Error("Wallet client and public client are required");
     }
-
-    // Validate metadata URI content before creating the coin
-    // Note: Metadata validation is now handled automatically by the SDK
-    console.log("Metadata URI:", uri);
 
     // Get wallet chain ID or use provided chainId
     const walletChainId = await walletClient.getChainId();
@@ -88,100 +81,34 @@ export async function createZoraCoin(
           : CreateConstants.ContentCoinCurrencies.ETH;
     }
 
-    console.log(
-      "Selected currency:",
-      selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA
-        ? "ZORA"
-        : "ETH",
-    );
+    const metadataURI = assertIpfsMetadataURI(uri);
+    const additionalOwners = normalizeAdditionalOwners(owners, payoutRecipient);
 
-    // Prepare coin parameters according to new SDK v2 format
+    // Prepare coin parameters according to the Coins SDK content-coin format.
     const coinParams = {
       creator: payoutRecipient, // New SDK requires 'creator' field
       name,
       symbol,
-      metadata: { type: "RAW_URI", uri }, // New SDK requires metadata object
+      metadata: { type: "RAW_URI", uri: metadataURI },
       currency: selectedCurrency,
-      ...(startingMarketCap && { startingMarketCap }), // Add starting market cap if provided
-      ...(smartWalletRouting && { smartWalletRouting }), // Add smart wallet routing if provided
       ...(chainId && { chainId }),
       ...(platformReferrer && { platformReferrer }),
-      ...(owners && owners.length > 0 && { additionalOwners: owners }), // Changed from 'owners' to 'additionalOwners'
+      ...(additionalOwners.length > 0 && { additionalOwners }),
       ...(payoutRecipient && { payoutRecipientOverride: payoutRecipient }), // New field name
       skipMetadataValidation: true, // Skip SDK validation since we already uploaded to IPFS
       // Note: initialPurchase is no longer supported in new SDK
       // Users will need to make separate purchase after creation
     };
 
-    // Remove chainId from coinParams as it's already included above
-    // The new SDK handles chainId differently
-
-    console.log("=== COIN CREATION PARAMETERS (SDK v2) ===");
-    console.log("Creator:", payoutRecipient);
-    console.log("Name:", name);
-    console.log("Symbol:", symbol);
-    console.log("Metadata URI:", uri);
-    console.log(
-      "Currency:",
-      selectedCurrency === CreateConstants.ContentCoinCurrencies.ZORA
-        ? "ZORA"
-        : "ETH",
-    );
-    console.log("Starting Market Cap:", startingMarketCap || "Not specified");
-    console.log("Smart Wallet Routing:", smartWalletRouting || "Not specified");
-    console.log("Platform Referrer:", platformReferrer);
-    console.log("Additional Owners:", owners);
-    console.log("Chain ID:", chainId);
-    console.log(
-      "Skip Metadata Validation:",
-      true,
-      "(Already uploaded to IPFS)",
-    );
-    console.log("Note: Initial purchase is no longer supported in SDK v2");
-    console.log("Final coinParams:", coinParams);
-
-    // Get current gas price for optimization
-    const currentGasPrice = await publicClient.getGasPrice();
-    console.log("Current gas price:", currentGasPrice.toString(), "wei");
-    console.log(
-      "Current gas price:",
-      (Number(currentGasPrice) / 1e9).toFixed(2),
-      "gwei",
-    );
-
-    // Use the SDK's createCoin function with new parameter structure
-    // Wrap walletClient to append ERC-8021 Builder Code suffix for Base attribution
-    const builderSuffix = getBuilderCodeSuffix();
-    const walletClientWithSuffix = builderSuffix
-      ? new Proxy(walletClient, {
-          get(target, prop) {
-            if (prop === "sendTransaction") {
-              return async (args) => {
-                const data = args.data || "0x";
-                const newData = data + builderSuffix.slice(2);
-                return target.sendTransaction({ ...args, data: newData });
-              };
-            }
-            return target[prop];
-          },
-        })
-      : walletClient;
-
+    // Wagmi's Base client appends the ERC-8021 Builder Code data suffix.
     const result = await createCoin({
       call: coinParams,
-      walletClient: walletClientWithSuffix,
+      walletClient,
       publicClient: publicClient,
       options: {
         skipValidateTransaction: false, // Enable validation to get proper gas estimate
-        gasMultiplier: 1.1, // Use 10% buffer instead of default
       },
     });
-
-    console.log("=== COIN CREATION SUCCESS ===");
-    console.log("Transaction Hash:", result.hash);
-    console.log("Coin Address:", result.address);
-    console.log("Deployment Details:", result.deployment);
-    console.log("Full Result:", result);
 
     return result;
   } catch (error) {

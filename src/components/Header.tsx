@@ -1,19 +1,21 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import {
-  detectEnvironment,
-  getBaseAppContext,
-  getFarcasterUserContext,
-} from "../utils/wallet";
-import dynamic from "next/dynamic";
-
-// Dynamic import for TokenTicker
-const TokenTicker = dynamic(() => import("./market/TokenTicker"), {
-  ssr: false,
-});
+  BadgeCheck,
+  BriefcaseBusiness,
+  ChevronDown,
+  Compass,
+  Heart,
+  LogOut,
+  Plus,
+  WalletCards,
+  X,
+} from "lucide-react";
+import TokenTicker from "./market/TokenTicker";
 
 interface HeaderProps {
   activeTab?: string;
@@ -28,21 +30,79 @@ interface UserInfo {
   pfpUrl?: string;
 }
 
+const desktopNavigation = [
+  { href: "/", id: "explore", label: "Explore" },
+  { href: "/markets", id: "markets", label: "Markets" },
+  { href: "/create", id: "create", label: "Create" },
+  { href: "/leaderboard", id: "leaderboard", label: "Leaderboard" },
+  { href: "/missions", id: "missions", label: "Missions" },
+] as const;
+
+const desktopButtonBase =
+  "inline-flex min-h-10 items-center justify-center whitespace-nowrap rounded-[16px_4px_13px_8px] px-3 text-[13px] font-bold no-underline transition-[color,background-color,border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--base-blue)] focus-visible:ring-offset-2 xl:px-4 xl:text-sm";
+const desktopButtonActive =
+  "-rotate-[0.4deg] border-[2.5px] border-solid border-[#2d3748] bg-[var(--base-blue)] text-white shadow-[3px_3px_0_#2d3748] hover:-translate-y-0.5 hover:bg-[var(--base-blue-hover)] hover:shadow-[4px_4px_0_#2d3748] active:translate-y-px active:shadow-[1px_1px_0_#2d3748]";
+const desktopButtonInactive =
+  "rotate-[0.35deg] border-[2.5px] border-dashed border-[#c6cbca] bg-white text-[#2d3748] hover:-translate-y-0.5 hover:-rotate-[0.4deg] hover:border-[#aeb5b3] hover:bg-[#2d3748]/[0.04]";
+const desktopPrimaryButton =
+  "-rotate-[0.35deg] border-[2.5px] border-solid border-[#23324a] bg-[var(--base-blue)] text-white shadow-[3px_3px_0_#23324a] hover:-translate-y-0.5 hover:bg-[var(--base-blue-hover)] hover:shadow-[4px_4px_0_#23324a] active:translate-y-px active:shadow-[1px_1px_0_#23324a]";
+
+const mobileNavigation = [
+  { href: "/", id: "explore", label: "Explore", Icon: Compass },
+  { href: "/watchlist", id: "watchlist", label: "Watch", Icon: Heart },
+  { href: "/create", id: "create", label: "Create", Icon: Plus },
+  {
+    href: "/portfolio",
+    id: "portfolio",
+    label: "Portfolio",
+    Icon: BriefcaseBusiness,
+  },
+  {
+    href: "/missions",
+    id: "missions",
+    label: "Missions",
+    Icon: BadgeCheck,
+  },
+] as const;
+
 export default function ArtHeader({
   activeTab = "explore",
   userName,
 }: HeaderProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const [currentTab, setCurrentTab] = useState(activeTab);
   const [userInfo, setUserInfo] = useState<UserInfo>({});
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const walletModalRef = useRef<HTMLDivElement>(null);
+  const walletModalCloseRef = useRef<HTMLButtonElement>(null);
+  const walletModalOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const accountMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const accountMenuFirstItemRef = useRef<HTMLButtonElement>(null);
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
 
+  const handleDisconnect = async () => {
+    try {
+      await fetch("/api/auth/siwe/session", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+    } catch (error) {
+      console.warn("Wallet session sign-out failed", error);
+    } finally {
+      setShowAccountMenu(false);
+      disconnect();
+      setUserInfo({});
+    }
+  };
+
   // Update currentTab based on pathname
   useEffect(() => {
+    setShowAccountMenu(false);
+
     if (pathname === "/") {
       setCurrentTab("explore");
     } else if (pathname === "/create") {
@@ -53,704 +113,601 @@ export default function ArtHeader({
       setCurrentTab("watchlist");
     } else if (pathname === "/leaderboard") {
       setCurrentTab("leaderboard");
+    } else if (pathname === "/markets") {
+      setCurrentTab("markets");
+    } else if (pathname === "/missions") {
+      setCurrentTab("missions");
     } else if (pathname === "/how-it-works") {
       setCurrentTab("info");
     } else if (pathname === "/live-canvas") {
       setCurrentTab("live-canvas");
     } else if (pathname.startsWith("/coin/")) {
       setCurrentTab("explore"); // Coin detail pages are part of explore
+    } else {
+      // Never carry an active navigation style across unrelated routes.
+      setCurrentTab("");
     }
   }, [pathname]);
 
-  // Auto-connect in Farcaster Mini App
+  // Prefer Base identity (Basename), then enrich with an optional Farcaster
+  // social profile when no Basename is available.
   useEffect(() => {
-    if (
-      (userInfo.type === "farcaster" || userInfo.type === "basename") &&
-      !isConnected &&
-      connectors.length > 0
-    ) {
-      console.log("Auto-connecting in Farcaster Mini App...");
-      connect({ connector: connectors[0] });
-    }
-  }, [userInfo.type, isConnected, connectors, connect]);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 6_500);
+    let isCurrent = true;
 
-  // Fetch user info based on environment
-  useEffect(() => {
     const fetchUserInfo = async () => {
-      // If userName prop is provided, use it
       if (userName) {
-        setUserInfo({ name: userName, type: "custom" });
+        if (isCurrent) {
+          setUserInfo({ name: userName, type: "custom" });
+        }
         return;
       }
 
-      const environment = detectEnvironment();
+      if (!isConnected || !address) {
+        if (isCurrent) {
+          setUserInfo({});
+        }
+        return;
+      }
+
+      setUserInfo({});
 
       try {
-        // 1. Check for BaseApp environment
-        if (environment === "baseapp") {
-          const baseAppContext = await getBaseAppContext();
-          if (baseAppContext?.basename) {
-            setUserInfo({
-              name: baseAppContext.basename,
-              type: "basename",
-              fid: baseAppContext.fid,
-            });
-            return;
-          }
+        // These are optional labels, not navigation prerequisites. Resolve
+        // them concurrently so a slow ENS RPC cannot delay social fallback.
+        const [basenameData, socialData] = await Promise.all([
+          fetch(`/api/basenames?address=${encodeURIComponent(address)}`, {
+            signal: controller.signal,
+          }).then(async (response) =>
+            response.ok
+              ? ((await response.json()) as { basename?: string | null })
+              : null
+          ),
+          fetch(`/api/farcaster/user?address=${encodeURIComponent(address)}`, {
+            signal: controller.signal,
+          }).then(async (response) =>
+            response.ok
+              ? ((await response.json()) as {
+            user?: {
+              username?: string;
+              displayName?: string;
+              fid?: number;
+              pfpUrl?: string;
+            };
+                })
+              : null
+          ),
+        ]);
+
+        if (!isCurrent) return;
+        if (basenameData?.basename) {
+          setUserInfo({ name: basenameData.basename, type: "basename" });
+          return;
+        }
+        if (socialData?.user) {
+          setUserInfo({
+            name: socialData.user.username || socialData.user.displayName,
+            type: "farcaster",
+            fid: socialData.user.fid,
+            pfpUrl: socialData.user.pfpUrl,
+          });
+          return;
         }
 
-        // 2. Check for Farcaster environment (Frame/Mini-app)
-        if (environment === "farcaster" || environment === "baseapp") {
-          const farcasterContext = await getFarcasterUserContext();
-          if (farcasterContext?.username || farcasterContext?.displayName) {
-            setUserInfo({
-              name: farcasterContext.username || farcasterContext.displayName,
-              type: "farcaster",
-              fid: farcasterContext.fid,
-              pfpUrl: farcasterContext.pfpUrl,
-            });
-            return;
-          }
+        if (isCurrent) {
+          setUserInfo({});
         }
-
-        // 3. If connected via wallet in browser, check for Farcaster profile via API
-        if (isConnected && address) {
-          try {
-            const response = await fetch(
-              `/api/farcaster/user?address=${address}`
-            );
-            const data = await response.json();
-
-            if (data.user) {
-              setUserInfo({
-                name: data.user.username || data.user.displayName,
-                type: "farcaster",
-                fid: data.user.fid,
-                pfpUrl: data.user.pfpUrl,
-              });
-              return;
-            }
-          } catch (err) {
-            console.error("Error fetching Farcaster user from API:", err);
-          }
-        }
-
-        // Reset if no user info found
-        setUserInfo({});
       } catch (error) {
-        console.error("Error fetching user info:", error);
+        if (
+          isCurrent &&
+          !(error instanceof DOMException && error.name === "AbortError")
+        ) {
+          console.error("Error fetching user info:", error);
+          setUserInfo({});
+        }
       }
     };
 
-    fetchUserInfo();
+    void fetchUserInfo();
+
+    return () => {
+      isCurrent = false;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [userName, isConnected, address]);
+
+  useEffect(() => {
+    if (!showWalletModal) return;
+
+    const dialog = walletModalRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      walletModalCloseRef.current?.focus();
+    });
+
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowWalletModal(false);
+        return;
+      }
+
+      if (event.key !== "Tab" || !dialog) return;
+
+      const focusableElements = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.getClientRects().length > 0);
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleDialogKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleDialogKeyDown);
+      document.body.style.overflow = previousOverflow;
+      window.requestAnimationFrame(() => walletModalOpenerRef.current?.focus());
+    };
+  }, [showWalletModal]);
+
+  useEffect(() => {
+    if (!showAccountMenu) return;
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      accountMenuFirstItemRef.current?.focus();
+    });
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+
+      if (
+        !accountMenuRef.current?.contains(target) &&
+        !accountMenuButtonRef.current?.contains(target)
+      ) {
+        setShowAccountMenu(false);
+      }
+    };
+
+    const handleAccountMenuKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      setShowAccountMenu(false);
+      window.requestAnimationFrame(() => accountMenuButtonRef.current?.focus());
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleAccountMenuKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleAccountMenuKeyDown);
+    };
+  }, [showAccountMenu]);
 
   return (
     <>
       {/* Sticky Container for Ticker and Header */}
       <div className="sticky top-0 z-50">
-        {/* Background Filler to mask gap */}
-        <div className="absolute top-0 left-0 right-0 h-24 bg-[#fcfcfc] -z-10"></div>
-
-        {/* Token Ticker - Above everything */}
         <TokenTicker />
 
         {/* Desktop Header */}
-        <header
-          className="hidden md:block mb-2"
-          style={{
-            border: "3px solid #2d3748",
-            borderBottom: "3px solid #2d3748",
-            borderTop: "none",
-            borderLeft: "none",
-            borderRight: "none",
-            borderRadius: "0 0 25px 10px",
-            transform: "rotate(-0.5deg)",
-            boxShadow: "5px 5px 0 #2d3748",
-            background: "linear-gradient(135deg, #ffffff, #f7fafc)",
-          }}
-        >
-          <div className="max-w-7xl mx-auto px-4 ">
-            <div className="flex justify-between items-center h-20">
-              {/* Brand */}
-              <div className="flex items-center space-x-4">
-                <div className="flex flex-col items-start transform rotate-1">
-                  <Link
-                    href="/"
-                    className="text-2xl font-bold text-art-gray-900 transform -rotate-1"
-                    style={{
-                      textShadow: "1px 1px 0 #2d3748",
-                      color: "#1a202c",
-                    }}
-                  >
+        <header className="mb-2 hidden border-b-2 border-[#d8dde3] bg-white shadow-[0_4px_12px_rgba(45,55,72,0.08)] lg:block">
+          <div className="mx-auto max-w-[1600px] px-4 xl:px-6">
+            <div className="flex h-[70px] items-center justify-between gap-3 xl:gap-5">
+              <div className="flex min-w-0 items-center gap-3 xl:gap-5">
+                <Link
+                  href="/"
+                  aria-label="DrawCoin home, powered by Zora"
+                  className="flex shrink-0 rotate-[0.5deg] flex-col items-start leading-none text-[#1a202c]"
+                >
+                  <span className="-rotate-[0.5deg] text-[22px] font-extrabold tracking-[-0.045em] [text-shadow:1px_1px_0_#2d3748] xl:text-2xl">
                     DrawCoin
-                  </Link>
-                  <div
-                    className="text-xs text-art-gray-500 transform rotate-1"
-                    style={{
-                      fontSize: "10px",
-                      opacity: 0.7,
-                      marginTop: "-2px",
-                    }}
-                  >
+                  </span>
+                  <span className="mt-0.5 text-[9px] font-normal tracking-[-0.01em] text-[#718096] opacity-75 xl:text-[10px]">
                     powered by Zora
-                  </div>
-                </div>
+                  </span>
+                </Link>
 
-                {/* Navigation */}
-                <nav className="flex space-x-4">
-                  <Link
-                    href="/"
-                    className={`text-sm font-medium transition-all duration-200 ${
-                      currentTab === "explore"
-                        ? "hand-drawn-btn"
-                        : "hand-drawn-btn-dotted"
-                    }`}
-                    style={{
-                      padding: "0.5rem 1rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Explore
-                  </Link>
+                <nav
+                  aria-label="Primary navigation"
+                  className="flex min-w-0 items-center gap-1.5 xl:gap-2.5"
+                >
+                  {desktopNavigation.map((item) => {
+                    const isActive = currentTab === item.id;
+                    const isMissions = item.id === "missions";
+                    const isCreate = item.id === "create";
 
-                  <Link
-                    href="/create"
-                    className={`text-sm font-medium transition-all duration-200 ${
-                      currentTab === "create"
-                        ? "hand-drawn-btn"
-                        : "hand-drawn-btn-dotted"
-                    }`}
-                    style={{
-                      padding: "0.5rem 1rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Create
-                  </Link>
-                  <Link
-                    href="/portfolio"
-                    className={`text-sm font-medium transition-all duration-200 ${
-                      currentTab === "portfolio"
-                        ? "hand-drawn-btn"
-                        : "hand-drawn-btn-dotted"
-                    }`}
-                    style={{
-                      padding: "0.5rem 1rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Portfolio
-                  </Link>
-                  <Link
-                    href="/leaderboard"
-                    className={`text-sm font-medium transition-all duration-200 ${
-                      currentTab === "leaderboard"
-                        ? "hand-drawn-btn"
-                        : "hand-drawn-btn-dotted"
-                    }`}
-                    style={{
-                      padding: "0.5rem 1rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Leaderboard
-                  </Link>
+                    return (
+                      <Link
+                        key={item.id}
+                        href={item.href}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`${desktopButtonBase} ${
+                          isCreate
+                            ? isActive
+                              ? `${desktopPrimaryButton} ring-2 ring-[#9ab7ff] ring-offset-2`
+                              : desktopButtonInactive
+                            : isActive
+                            ? desktopButtonActive
+                            : desktopButtonInactive
+                        } ${isMissions ? "hidden xl:inline-flex" : ""}`}
+                      >
+                        {isCreate ? (
+                          <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
+                        ) : null}
+                        {item.label}
+                      </Link>
+                    );
+                  })}
                 </nav>
               </div>
 
-              {/* User Info and Wallet */}
-              <div className="flex items-center space-x-4">
-                {/* Info and Watchlist Buttons */}
-                <div className="flex items-center space-x-2">
-                  <Link
-                    href="/watchlist"
-                    className={`text-sm font-medium transition-all duration-200 ${
-                      currentTab === "watchlist"
-                        ? "hand-drawn-btn"
-                        : "hand-drawn-btn-dotted"
-                    }`}
-                    style={{
-                      padding: "0.5rem 1rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    Watchlist
-                  </Link>
-                </div>
+              <div className="flex shrink-0 items-center gap-2 xl:gap-3">
+                {isConnected && address ? (
+                  <>
+                    <Link
+                      href="/watchlist"
+                      aria-label="Watchlist"
+                      title="Watchlist"
+                      aria-current={
+                        currentTab === "watchlist" ? "page" : undefined
+                      }
+                      className={`${desktopButtonBase} gap-2 px-3 ${
+                        currentTab === "watchlist"
+                          ? desktopButtonActive
+                          : desktopButtonInactive
+                      }`}
+                    >
+                      <Heart aria-hidden="true" className="h-4 w-4" />
+                      <span className="hidden xl:inline">Watchlist</span>
+                    </Link>
 
-                <div className="flex items-center space-x-2">
-                  {isConnected && address ? (
-                    <div className="flex items-center space-x-2">
-                      <div
-                        className="flex items-center space-x-2 bg-art-gray-100 px-3 py-2 rounded-art transform -rotate-1"
-                        style={{
-                          border: "2px solid #2d3748",
-                          borderRadius: "8px 3px 6px 4px",
-                          boxShadow: "2px 2px 0 #2d3748",
-                        }}
-                      >
-                        {userInfo.type === "farcaster" && userInfo.pfpUrl ? (
-                          <img
-                            src={userInfo.pfpUrl}
-                            alt={userInfo.name}
-                            className="w-5 h-5 rounded-full border border-art-gray-300"
-                          />
-                        ) : (
-                          <div className="flex items-center space-x-1">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            <span className="text-xs text-green-600 font-medium">
-                              Connected
-                            </span>
-                          </div>
-                        )}
-
-                        <span className="font-mono text-sm text-art-gray-900">
-                          {userInfo.name
-                            ? userInfo.type === "farcaster"
-                              ? `@${userInfo.name}`
-                              : userInfo.name
-                            : `${address.substring(0, 6)}...${address.substring(
-                                address.length - 4
-                              )}`}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => disconnect()}
-                        className="p-2 hover:bg-art-gray-800 rounded-art transition-colors hand-drawn-btn"
-                        title="Disconnect Wallet"
-                        style={{
-                          border: "2px solid #2d3748",
-                          borderRadius: "6px 2px 4px 3px",
-                          transform: "rotate(0.5deg)",
-                          boxShadow: "2px 2px 0 #2d3748",
-                          backgroundColor: "#2d3748",
-                        }}
-                      >
-                        <svg
-                          className="w-4 h-4 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => {
-                          if (
-                            userInfo.type === "farcaster" ||
-                            userInfo.type === "basename"
-                          ) {
-                            // Farcaster'da otomatik connect
-                            if (connectors.length > 0) {
-                              connect({ connector: connectors[0] });
-                            }
-                          } else {
-                            // Normal browser'da wallet selection modal
-                            setShowWalletModal(true);
+                    <div
+                      className="relative"
+                      onBlur={(event) => {
+                        const nextTarget = event.relatedTarget;
+                        if (
+                          !(nextTarget instanceof Node) ||
+                          !event.currentTarget.contains(nextTarget)
+                        ) {
+                          setShowAccountMenu(false);
+                        }
+                      }}
+                    >
+                      <div className="flex min-h-10 -rotate-[0.25deg] items-stretch overflow-visible rounded-[16px_4px_13px_8px] border-[2.5px] border-solid border-[#2d3748] bg-white shadow-[2px_3px_0_#2d3748]">
+                        <Link
+                          href="/portfolio"
+                          aria-current={
+                            currentTab === "portfolio" ? "page" : undefined
                           }
-                        }}
-                        disabled={isPending}
-                        className="hand-drawn-btn text-sm font-bold px-3 py-1 disabled:opacity-50"
-                        style={{
-                          padding: "0.5rem 1rem",
-                          transform: "rotate(-0.5deg)",
-                        }}
-                      >
-                        {isPending ? "Connecting..." : "Connect Wallet"}
-                      </button>
-                      <div className="text-xs text-art-gray-500 max-w-32">
-                        {userInfo.type === "farcaster" ||
-                        userInfo.type === "basename"
-                          ? "Wallet auto-connects in Farcaster"
-                          : ""}
+                          className={`inline-flex items-center gap-1.5 rounded-l-[12px] border-r-2 border-[#2d3748] px-2.5 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--base-blue)] xl:px-3 ${
+                            currentTab === "portfolio"
+                              ? "bg-[var(--base-blue)] text-white"
+                              : "bg-white text-[#2d3748] hover:bg-[#f5f7fa]"
+                          }`}
+                        >
+                          <BriefcaseBusiness
+                            aria-hidden="true"
+                            className="h-4 w-4"
+                          />
+                          <span className="hidden 2xl:inline">Portfolio</span>
+                        </Link>
+
+                        <button
+                          ref={accountMenuButtonRef}
+                          type="button"
+                          aria-haspopup="menu"
+                          aria-expanded={showAccountMenu}
+                          aria-controls="desktop-account-menu"
+                          onClick={() =>
+                            setShowAccountMenu((isOpen) => !isOpen)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "ArrowDown") {
+                              event.preventDefault();
+                              setShowAccountMenu(true);
+                            }
+                          }}
+                          className={`flex min-w-0 items-center gap-2 rounded-r-[9px] px-2.5 text-[#2d3748] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--base-blue)] xl:px-3 ${
+                            showAccountMenu
+                              ? "bg-[#eef3ff]"
+                              : "bg-white hover:bg-[#f5f7fa]"
+                          }`}
+                        >
+                          {userInfo.type === "farcaster" && userInfo.pfpUrl ? (
+                            <Image
+                              src={userInfo.pfpUrl}
+                              alt={userInfo.name || "Wallet profile"}
+                              width={20}
+                              height={20}
+                              unoptimized
+                              className="h-5 w-5 rounded-full border border-art-gray-300"
+                            />
+                          ) : (
+                            <span
+                              aria-hidden="true"
+                              className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                            />
+                          )}
+                          <span className="sr-only">Wallet connected.</span>
+                          <span className="max-w-[90px] truncate font-mono text-[11px] xl:max-w-[116px]">
+                            {userInfo.name
+                              ? userInfo.type === "farcaster"
+                                ? `@${userInfo.name}`
+                                : userInfo.name
+                              : `${address.substring(
+                                  0,
+                                  6
+                                )}...${address.substring(address.length - 4)}`}
+                          </span>
+                          <ChevronDown
+                            aria-hidden="true"
+                            className={`h-3.5 w-3.5 shrink-0 transition-transform ${
+                              showAccountMenu ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
                       </div>
+
+                      {showAccountMenu && (
+                        <div
+                          ref={accountMenuRef}
+                          id="desktop-account-menu"
+                          role="menu"
+                          aria-label="Account menu"
+                          onKeyDown={(event) => {
+                            if (
+                              event.key !== "ArrowDown" &&
+                              event.key !== "ArrowUp" &&
+                              event.key !== "Home" &&
+                              event.key !== "End"
+                            ) {
+                              return;
+                            }
+
+                            const menuItems = Array.from(
+                              event.currentTarget.querySelectorAll<HTMLElement>(
+                                '[role="menuitem"]'
+                              )
+                            );
+                            if (menuItems.length === 0) return;
+
+                            event.preventDefault();
+                            const currentIndex = menuItems.indexOf(
+                              document.activeElement as HTMLElement
+                            );
+                            let nextIndex = 0;
+
+                            if (event.key === "End") {
+                              nextIndex = menuItems.length - 1;
+                            } else if (event.key === "ArrowDown") {
+                              nextIndex = (currentIndex + 1) % menuItems.length;
+                            } else if (event.key === "ArrowUp") {
+                              nextIndex =
+                                (currentIndex - 1 + menuItems.length) %
+                                menuItems.length;
+                            }
+
+                            menuItems[nextIndex]?.focus();
+                          }}
+                          className="absolute right-0 top-[calc(100%+0.625rem)] z-[60] w-48 rounded-xl border-2 border-[#2d3748] bg-white p-1.5 shadow-[4px_4px_0_#2d3748]"
+                        >
+                          <button
+                            ref={accountMenuFirstItemRef}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void handleDisconnect()}
+                            className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-art-gray-700 transition-colors hover:bg-art-gray-100 hover:text-art-gray-900"
+                          >
+                            <LogOut aria-hidden="true" className="h-4 w-4" />
+                            Disconnect
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-expanded={showWalletModal}
+                    onClick={(event) => {
+                      walletModalOpenerRef.current = event.currentTarget;
+                      setShowWalletModal(true);
+                    }}
+                    disabled={isPending}
+                    className={`${desktopButtonBase} ${desktopPrimaryButton} disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    {isPending ? "Connecting..." : "Connect Wallet"}
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </header>
 
         {/* Mobile Header */}
-        <header
-          className="md:hidden mb-2"
-          style={{
-            border: "3px solid #2d3748",
-            borderBottom: "3px solid #2d3748",
-            borderTop: "none",
-            borderLeft: "none",
-            borderRight: "none",
-            borderRadius: "0 0 25px 10px",
-            transform: "rotate(-0.5deg)",
-            boxShadow: "5px 5px 0 #2d3748",
-            background: "linear-gradient(135deg, #ffffff, #f7fafc)",
-          }}
-        >
-          <div className="px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col items-start transform rotate-1">
-                <Link
-                  href="/"
-                  className="text-lg font-bold text-art-gray-900 transform -rotate-1"
-                  style={{
-                    textShadow: "1px 1px 0 #2d3748",
-                    color: "#1a202c",
-                  }}
-                >
-                  DrawCoin
-                </Link>
-                <div
-                  className="text-xs text-art-gray-500 transform rotate-1"
-                  style={{
-                    fontSize: "8px",
-                    opacity: 0.7,
-                    marginTop: "-1px",
-                  }}
-                >
-                  powered by Zora
-                </div>
-              </div>
+        <header className="mb-2 border-b-2 border-[#2d3748] bg-white shadow-[0_2px_0_#d1d5db] lg:hidden">
+          <div className="flex h-14 items-center justify-between gap-3 px-4">
+            <Link
+              href="/"
+              aria-label="DrawCoin home, powered by Zora"
+              className="flex shrink-0 flex-col items-start leading-none text-art-gray-900"
+            >
+              <span className="text-xl font-extrabold tracking-[-0.03em]">
+                DrawCoin
+              </span>
+              <span className="mt-1 text-[8px] font-semibold tracking-[0.05em] text-art-gray-500">
+                Powered by Zora
+              </span>
+            </Link>
 
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => router.push("/how-it-works")}
-                  className="p-1.5 text-art-gray-500 hover:text-art-gray-900 transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            {isConnected && address ? (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <div className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-art-gray-300 bg-art-gray-50 px-2.5">
+                  {userInfo.type === "farcaster" && userInfo.pfpUrl ? (
+                    <Image
+                      src={userInfo.pfpUrl}
+                      alt={userInfo.name || "Wallet profile"}
+                      width={20}
+                      height={20}
+                      unoptimized
+                      className="h-5 w-5 shrink-0 rounded-full border border-art-gray-300"
                     />
-                  </svg>
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                    />
+                  )}
+                  <span className="sr-only">Wallet connected</span>
+                  <span className="max-w-[112px] truncate font-mono text-xs text-art-gray-900 sm:max-w-[156px]">
+                    {userInfo.name
+                      ? userInfo.type === "farcaster"
+                        ? `@${userInfo.name}`
+                        : userInfo.name
+                      : `${address.substring(0, 4)}...${address.substring(
+                          address.length - 4
+                        )}`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleDisconnect()}
+                  aria-label="Disconnect wallet"
+                  title="Disconnect wallet"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#2d3748] bg-[#2d3748] text-white transition-colors hover:bg-art-gray-700"
+                >
+                  <LogOut aria-hidden="true" className="h-4 w-4" />
                 </button>
-                {isConnected && address ? (
-                  <div className="flex items-center space-x-2">
-                    <div
-                      className="flex items-center space-x-2 bg-art-gray-100 px-2 py-1 rounded-art transform -rotate-1"
-                      style={{
-                        border: "2px solid #2d3748",
-                        borderRadius: "6px 2px 4px 3px",
-                        boxShadow: "2px 2px 0 #2d3748",
-                      }}
-                    >
-                      {userInfo.type === "farcaster" && userInfo.pfpUrl && (
-                        <img
-                          src={userInfo.pfpUrl}
-                          alt={userInfo.name}
-                          className="w-4 h-4 rounded-full border border-art-gray-300 mr-1"
-                        />
-                      )}
-                      <span className="font-mono text-xs text-art-gray-900">
-                        {userInfo.type === "farcaster" && userInfo.name
-                          ? `@${userInfo.name}`
-                          : `${address.substring(0, 4)}...${address.substring(
-                              address.length - 4
-                            )}`}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => disconnect()}
-                      className="p-1.5 hover:bg-art-gray-800 rounded-art transition-colors hand-drawn-btn"
-                      title="Disconnect Wallet"
-                      style={{
-                        border: "2px solid #2d3748",
-                        borderRadius: "4px 1px 3px 2px",
-                        transform: "rotate(0.5deg)",
-                        boxShadow: "1px 1px 0 #2d3748",
-                        backgroundColor: "#2d3748",
-                      }}
-                    >
-                      <svg
-                        className="w-3 h-3 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-end space-y-1">
-                    <button
-                      onClick={() => {
-                        if (
-                          userInfo.type === "farcaster" ||
-                          userInfo.type === "basename"
-                        ) {
-                          // Farcaster'da otomatik connect
-                          if (connectors.length > 0) {
-                            connect({ connector: connectors[0] });
-                          }
-                        } else {
-                          // Normal browser'da wallet selection modal
-                          setShowWalletModal(true);
-                        }
-                      }}
-                      disabled={isPending}
-                      className="hand-drawn-btn text-xs font-bold px-2 py-1 disabled:opacity-50"
-                      style={{
-                        padding: "0.25rem 0.5rem",
-                        transform: "rotate(-0.5deg)",
-                      }}
-                    >
-                      {isPending ? "Connecting..." : "Connect"}
-                    </button>
-                    <div className="text-xs text-art-gray-500 text-right max-w-20">
-                      {userInfo.type === "farcaster" ||
-                      userInfo.type === "basename"
-                        ? "Auto-connects"
-                        : ""}
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
+            ) : (
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={showWalletModal}
+                onClick={(event) => {
+                  walletModalOpenerRef.current = event.currentTarget;
+                  setShowWalletModal(true);
+                }}
+                disabled={isPending}
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border-2 border-[#2d3748] bg-[var(--base-blue)] px-3 text-xs font-bold text-white shadow-[2px_2px_0_#2d3748] hover:bg-[var(--base-blue-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <WalletCards aria-hidden="true" className="h-4 w-4" />
+                {isPending ? "Connecting..." : "Connect"}
+              </button>
+            )}
           </div>
         </header>
       </div>
 
       {/* Mobile Bottom Navigation */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 pb-[env(safe-area-inset-bottom)]"
-        style={{
-          border: "2px solid #2d3748",
-          borderTop: "3px solid #2d3748",
-          borderBottom: "none",
-          borderLeft: "none",
-          borderRight: "none",
-          borderRadius: "25px 10px 0 0",
-          transform: "rotate(0.5deg)",
-          boxShadow: "0 -2px 10px rgba(0,0,0,0.1)",
-          background: "linear-gradient(135deg, #ffffff, #f7fafc)",
-        }}
+        aria-label="Mobile navigation"
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-art-gray-300 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_18px_rgba(17,24,39,0.08)] lg:hidden"
       >
-        <div className="relative pt-3 pb-2 px-4">
-          {/* Grid for 4 buttons (excluding create) */}
-          <div className="grid grid-cols-4 gap-2">
-            {/* Explore */}
-            <Link
-              href="/"
-              className={`flex flex-col items-center py-1.5 px-2 rounded-lg transition-all duration-200 ${
-                currentTab === "explore"
-                  ? "bg-art-gray-900 text-white"
-                  : "bg-white text-art-gray-600"
-              }`}
-              style={{
-                border: "1.5px solid #2d3748",
-                borderRadius: "10px 3px 8px 5px",
-                transform:
-                  currentTab === "explore"
-                    ? "rotate(-0.8deg)"
-                    : "rotate(0.3deg)",
-                boxShadow:
-                  currentTab === "explore"
-                    ? "2px 2px 0 #2d3748"
-                    : "1.5px 1.5px 0 #2d3748",
-                textDecoration: "none",
-              }}
-            >
-              <svg
-                className="w-5 h-5 mb-0.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                style={{ strokeWidth: 2 }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-              <span className="text-[10px] font-bold">Explore</span>
-            </Link>
+        <div className="mx-auto grid h-[68px] max-w-lg grid-cols-5 px-2">
+          {mobileNavigation.map(({ href, id, label, Icon }) => {
+            const isActive = currentTab === id;
+            const isCreate = id === "create";
 
-            {/* Watchlist */}
-            <Link
-              href="/watchlist"
-              className={`flex flex-col items-center py-1.5 px-2 rounded-lg transition-all duration-200 ${
-                currentTab === "watchlist"
-                  ? "bg-art-gray-900 text-white"
-                  : "bg-white text-art-gray-600"
-              }`}
-              style={{
-                border: "1.5px solid #2d3748",
-                borderRadius: "8px 5px 10px 3px",
-                transform:
-                  currentTab === "watchlist"
-                    ? "rotate(0.8deg)"
-                    : "rotate(-0.3deg)",
-                boxShadow:
-                  currentTab === "watchlist"
-                    ? "2px 2px 0 #2d3748"
-                    : "1.5px 1.5px 0 #2d3748",
-                textDecoration: "none",
-              }}
-            >
-              <svg
-                className="w-5 h-5 mb-0.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                style={{ strokeWidth: 2 }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                />
-              </svg>
-              <span className="text-[10px] font-bold">Watch</span>
-            </Link>
+            if (isCreate) {
+              return (
+                <Link
+                  key={id}
+                  href={href}
+                  aria-label="Create a DrawCoin"
+                  aria-current={isActive ? "page" : undefined}
+                  className="relative flex min-w-0 flex-col items-center justify-end rounded-xl pb-1.5 text-[var(--base-blue)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--base-blue)] focus-visible:ring-offset-2"
+                >
+                  <span
+                    className={`absolute top-[-20px] inline-flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#2d3748] shadow-[2px_3px_0_#2d3748] transition-[color,background-color,transform,box-shadow] ${
+                      isActive
+                        ? "-translate-y-0.5 scale-105 bg-[var(--base-blue)] text-white ring-2 ring-[#9ab7ff] ring-offset-2"
+                        : "bg-white text-[var(--base-blue)] hover:-translate-y-0.5 hover:bg-[var(--base-blue-soft)]"
+                    }`}
+                  >
+                    <Icon aria-hidden="true" className="h-6 w-6" strokeWidth={2.5} />
+                  </span>
+                  <span className="text-[10px] font-bold">{label}</span>
+                </Link>
+              );
+            }
 
-            {/* Portfolio */}
-            <Link
-              href="/portfolio"
-              className={`flex flex-col items-center py-1.5 px-2 rounded-lg transition-all duration-200 ${
-                currentTab === "portfolio"
-                  ? "bg-art-gray-900 text-white"
-                  : "bg-white text-art-gray-600"
-              }`}
-              style={{
-                border: "1.5px solid #2d3748",
-                borderRadius: "10px 3px 8px 5px",
-                transform:
-                  currentTab === "portfolio"
-                    ? "rotate(-0.8deg)"
-                    : "rotate(0.3deg)",
-                boxShadow:
-                  currentTab === "portfolio"
-                    ? "2px 2px 0 #2d3748"
-                    : "1.5px 1.5px 0 #2d3748",
-                textDecoration: "none",
-              }}
-            >
-              <svg
-                className="w-5 h-5 mb-0.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                style={{ strokeWidth: 2 }}
+            return (
+              <Link
+                key={id}
+                href={href}
+                aria-current={isActive ? "page" : undefined}
+                className={`relative mx-1 my-2 flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 transition-colors ${
+                  isActive
+                    ? "bg-[var(--base-blue-soft)] text-[var(--base-blue)]"
+                    : "text-art-gray-500 hover:bg-art-gray-50 hover:text-art-gray-900"
+                }`}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                {isActive && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -top-2 h-[3px] w-8 rounded-b-full bg-[var(--base-blue)]"
+                  />
+                )}
+                <Icon
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                  strokeWidth={isActive ? 2.5 : 2}
                 />
-              </svg>
-              <span className="text-[10px] font-bold">Portfolio</span>
-            </Link>
-
-            {/* Leaderboard */}
-            <Link
-              href="/leaderboard"
-              className={`flex flex-col items-center py-1.5 px-2 rounded-lg transition-all duration-200 ${
-                currentTab === "leaderboard"
-                  ? "bg-art-gray-900 text-white"
-                  : "bg-white text-art-gray-600"
-              }`}
-              style={{
-                border: "1.5px solid #2d3748",
-                borderRadius: "8px 5px 10px 3px",
-                transform:
-                  currentTab === "leaderboard"
-                    ? "rotate(-0.8deg)"
-                    : "rotate(-0.3deg)",
-                boxShadow:
-                  currentTab === "leaderboard"
-                    ? "2px 2px 0 #2d3748"
-                    : "1.5px 1.5px 0 #2d3748",
-                textDecoration: "none",
-              }}
-            >
-              <svg
-                className="w-5 h-5 mb-0.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                style={{ strokeWidth: 2 }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                />
-              </svg>
-              <span className="text-[10px] font-bold">Top</span>
-            </Link>
-          </div>
-
-          {/* Create Button - Centered and Floating Above */}
-          <Link
-            href="/create"
-            className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center transition-all duration-200"
-            style={{
-              top: "-20px",
-              textDecoration: "none",
-            }}
-          >
-            <div
-              className={`w-14 h-14 flex items-center justify-center ${
-                currentTab === "create"
-                  ? "bg-art-gray-900 text-white"
-                  : "bg-gradient-to-br from-white to-art-gray-100 text-art-gray-900"
-              }`}
-              style={{
-                border: "2.5px solid #2d3748",
-                borderRadius: "50% 40% 50% 40%",
-                transform:
-                  currentTab === "create"
-                    ? "rotate(-1.5deg) scale(1.03)"
-                    : "rotate(0.8deg)",
-                boxShadow: "3px 3px 0 #2d3748",
-              }}
-            >
-              <svg
-                className="w-7 h-7"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                style={{ strokeWidth: 2.5 }}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-            </div>
-          </Link>
+                <span className="max-w-full truncate text-[10px] font-semibold">
+                  {label}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
 
       {/* Wallet Selection Modal */}
       {showWalletModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowWalletModal(false);
+            }
+          }}
+        >
           <div
+            ref={walletModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wallet-dialog-title"
+            aria-describedby="wallet-dialog-description"
+            tabIndex={-1}
+            onMouseDown={(event) => event.stopPropagation()}
             className="bg-white p-6 rounded-lg max-w-md w-full mx-4"
             style={{
               border: "3px solid #2d3748",
@@ -760,65 +717,66 @@ export default function ArtHeader({
             }}
           >
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-art-gray-900">
-                Connect Wallet
+              <h3
+                id="wallet-dialog-title"
+                className="text-lg font-bold text-art-gray-900"
+              >
+                Connect to DrawCoin
               </h3>
               <button
+                ref={walletModalCloseRef}
+                type="button"
                 onClick={() => setShowWalletModal(false)}
-                className="text-art-gray-500 hover:text-art-gray-700"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-art-gray-500 transition-colors hover:bg-art-gray-100 hover:text-art-gray-700"
+                aria-label="Close wallet selection"
               >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
+                <X aria-hidden="true" className="h-6 w-6" />
               </button>
             </div>
 
+            <p
+              id="wallet-dialog-description"
+              className="mb-4 text-sm leading-5 text-art-gray-600"
+            >
+              Choose a wallet to continue on Base.
+            </p>
+
             <div className="space-y-3">
-              {connectors
-                .filter((connector) => connector.id !== "farcasterMiniApp")
-                .map((connector) => (
-                  <button
-                    key={connector.id}
-                    onClick={() => {
-                      connect({ connector });
-                      setShowWalletModal(false);
-                    }}
-                    disabled={isPending}
-                    className="w-full p-3 border-2 border-art-gray-300 rounded-lg hover:border-art-gray-500 transition-colors text-left disabled:opacity-50"
-                    style={{
-                      borderRadius: "8px 3px 6px 4px",
-                      transform: "rotate(0.5deg)",
-                    }}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-art-gray-100 rounded-full flex items-center justify-center">
-                        <div className="w-4 h-4 bg-art-gray-400 rounded-full"></div>
+              {connectors.map((connector) => (
+                <button
+                  type="button"
+                  key={connector.id}
+                  onClick={() => {
+                    connect({ connector });
+                    setShowWalletModal(false);
+                  }}
+                  disabled={isPending}
+                  className="w-full p-3 border-2 border-art-gray-300 rounded-lg hover:border-art-gray-500 transition-colors text-left disabled:opacity-50"
+                  style={{
+                    borderRadius: "8px 3px 6px 4px",
+                    transform: "rotate(0.5deg)",
+                  }}
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-art-gray-100 text-art-gray-600">
+                      <WalletCards aria-hidden="true" className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-art-gray-900">
+                        {connector.name}
                       </div>
-                      <div>
-                        <div className="font-medium text-art-gray-900">
-                          {connector.name}
-                        </div>
-                        <div className="text-sm text-art-gray-500">
-                          {connector.id === "injected" &&
-                            "MetaMask, Brave, etc."}
-                          {connector.id === "walletConnect" && "Mobile wallets"}
-                          {connector.id === "coinbaseWallet" &&
-                            "Coinbase Wallet"}
-                        </div>
+                      <div className="text-sm text-art-gray-500">
+                        {connector.id === "baseAccount" && "Passkey wallet"}
+                        {connector.id === "injected" &&
+                          "MetaMask, Brave, etc."}
+                        {connector.id === "walletConnect" && "Mobile wallets"}
+                        {connector.id === "coinbaseWallet" &&
+                          "Coinbase Wallet"}
                       </div>
                     </div>
-                  </button>
-                ))}
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>

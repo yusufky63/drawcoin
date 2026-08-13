@@ -1,5 +1,5 @@
 import React from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useWatchlist } from "../../hooks/useWatchlist";
 import { SafeImage } from "../ui/SafeImage";
 
@@ -23,12 +23,18 @@ interface ExploreSectionProps {
   type?: "watchlist" | "ai" | "hand-drawn";
 }
 
+function formatCompactUsd(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return "—";
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
 export default function ExploreSection({
   title,
   tokens,
 }: ExploreSectionProps) {
   const { watchlist, toggleWatchlist } = useWatchlist();
-  const router = useRouter();
   const watchlistSet = new Set(watchlist.map((a) => a.toLowerCase()));
 
   if (!tokens || tokens.length === 0) return null;
@@ -41,13 +47,20 @@ export default function ExploreSection({
     const isFavorite = watchlistSet.has(token.contract_address.toLowerCase());
 
     return (
-      <div
+      <article
         key={token.contract_address}
-        className={`group relative p-3 items-center gap-3 hover:bg-blue-50/30 transition-colors cursor-pointer ${
+        className={`group relative p-3 items-center gap-3 hover:bg-blue-50/30 focus-within:bg-blue-50/30 transition-colors ${
           isMobileHidden ? "hidden md:flex" : "flex"
         }`}
-        onClick={() => router.push(`/coin/${token.contract_address}`)}
       >
+        <Link
+          href={`/coin/${token.contract_address}`}
+          aria-label={`View ${token.name} details`}
+          className="absolute inset-0 z-10 focus-visible:ring-4 focus-visible:ring-blue-500 focus-visible:ring-inset"
+        >
+          <span className="sr-only">View {token.name} details</span>
+        </Link>
+
         {/* Rank */}
         <div className="w-6 text-center font-black text-art-gray-300 text-lg italic">
           {index + 1}
@@ -80,18 +93,12 @@ export default function ExploreSection({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
             {/* MC */}
             <span className="text-[10px] font-black text-art-gray-600">
-              MC: $
-              {(token.market_cap || 0) >= 1000000
-                ? ((token.market_cap || 0) / 1000000).toFixed(1) + "M"
-                : ((token.market_cap || 0) / 1000).toFixed(1) + "K"}
+              MC: {formatCompactUsd(token.market_cap)}
             </span>
 
             {/* VOL */}
             <span className="text-[10px] font-black text-art-gray-600  border-art-gray-200 pl-2 hidden sm:inline-block">
-              VOL: $
-              {(token.volume_24h || 0) >= 1000000
-                ? ((token.volume_24h || 0) / 1000000).toFixed(1) + "M"
-                : ((token.volume_24h || 0) / 1000).toFixed(1) + "K"}
+              VOL: {formatCompactUsd(token.volume_24h)}
             </span>
 
             {/* Holders */}
@@ -103,11 +110,18 @@ export default function ExploreSection({
 
         {/* Action */}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             toggleWatchlist(token.contract_address);
           }}
-          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-colors ${
+          aria-label={
+            isFavorite
+              ? `Remove ${token.name} from watchlist`
+              : `Add ${token.name} to watchlist`
+          }
+          aria-pressed={isFavorite}
+          className={`relative z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-colors ${
             isFavorite ? "text-red-500" : "text-art-gray-400 hover:text-red-400"
           }`}
         >
@@ -127,7 +141,7 @@ export default function ExploreSection({
             {token.watchlist_count || 0}
           </span>
         </button>
-      </div>
+      </article>
     );
   }
 
@@ -138,12 +152,12 @@ export default function ExploreSection({
         <h3 className="text-lg font-black text-art-gray-900 uppercase tracking-wider flex items-center gap-2">
           {title}
         </h3>
-        <button
-          onClick={() => router.push("/most-watchlisted")}
+        <Link
+          href="/most-watchlisted"
           className="text-xs font-bold text-art-gray-400 hover:text-art-gray-900 uppercase tracking-widest transition-colors hover:underline"
         >
           View Full →
-        </button>
+        </Link>
       </div>
 
       {/* List Rows - 2 Column Grid */}

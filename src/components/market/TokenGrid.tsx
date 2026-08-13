@@ -1,13 +1,17 @@
 import React from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Coin } from "../../lib/supabase";
+import {
+  getCreatorDisplayLabel,
+  normalizeCreatorAddress,
+} from "../../lib/creatorIdentity";
 import TokenCard from "./TokenCard";
 import { WatchlistPriceHint } from "../../hooks/useWatchlist";
+import { CreationTypeBadge } from "./CreationTypeBadge";
 
 interface TokenGridProps {
   tokens: Coin[];
   onTrade: (token: Coin) => void;
-  onView: (token: Coin) => void;
   loading?: boolean;
   viewMode?: "grid" | "list";
   showBalance?: boolean; // Optional prop to show user balance
@@ -18,12 +22,12 @@ interface TokenGridProps {
   ) => void; // Callback from parent
   watchlistStats?: Record<string, number>; // NEW: Watchlist counts map
   onCreatorClick?: (creatorAddress: string) => void; // NEW: Callback for creator click
+  creatorBasenames?: Record<string, string | null>;
 }
 
 export default function TokenGrid({
   tokens,
   onTrade,
-  onView,
   loading = false,
   viewMode = "grid",
   showBalance = false,
@@ -31,8 +35,8 @@ export default function TokenGrid({
   onToggleWatchlist,
   watchlistStats,
   onCreatorClick,
+  creatorBasenames,
 }: TokenGridProps) {
-  const router = useRouter();
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-2">
@@ -98,6 +102,19 @@ export default function TokenGrid({
           const isFavorite =
             watchlistSet?.has(token.contract_address.toLowerCase()) || false;
           const watchlistCount = watchlistStats?.[token.contract_address] || 0;
+          const creatorAddress = token.creator_address;
+          const normalizedCreatorAddress =
+            normalizeCreatorAddress(creatorAddress);
+          const creatorProfile = (
+            token as Coin & { creatorProfile?: { handle?: string | null } }
+          ).creatorProfile;
+          const creatorLabel = getCreatorDisplayLabel({
+            address: creatorAddress,
+            persistedName: creatorProfile?.handle ?? token.creator_name ?? null,
+            resolvedBasename: normalizedCreatorAddress
+              ? creatorBasenames?.[normalizedCreatorAddress]
+              : null,
+          });
 
           // Helper for price hint
           const resolvePriceNumber = (value: any) => {
@@ -120,14 +137,23 @@ export default function TokenGrid({
           };
 
           return (
-            <div
-              key={token.id}
-              className="hand-drawn-card relative p-2 md:p-3 cursor-pointer group flex items-center gap-3"
-              onClick={() => router.push(`/coin/${token.contract_address}`)}
+            <article
+              key={token.id || token.contract_address}
+              className="hand-drawn-card relative p-2 md:p-3 group flex items-center gap-3"
               style={{
                 transform: `rotate(${index % 2 === 0 ? "-0.2deg" : "0.2deg"})`,
               }}
             >
+              <Link
+                href={`/coin/${token.contract_address}`}
+                aria-label={`View ${(token as any).name || token.name || "token"} details`}
+                className="absolute inset-0 z-10 rounded-art focus-visible:ring-4 focus-visible:ring-blue-500 focus-visible:ring-inset"
+              >
+                <span className="sr-only">
+                  View {(token as any).name || token.name || "token"} details
+                </span>
+              </Link>
+
               {/* NEW Badge */}
               {(token as any).isNew && (
                 <div className="absolute -top-2 -right-2 z-50 bg-yellow-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full transform rotate-12 shadow-sm border border-white">
@@ -169,13 +195,11 @@ export default function TokenGrid({
                 </div>
 
                 {/* Creation Type Badge (Overlaid on Image for List View) */}
-                {token.creation_type && (
-                  <div className="absolute -bottom-1 -right-1 bg-white border border-art-gray-900 text-[8px] px-1.5 py-0.5 rounded-sm font-bold shadow-sm z-10 whitespace-nowrap">
-                    {token.creation_type === "ai"
-                      ? "AI Generated"
-                      : "Hand Drawn"}
-                  </div>
-                )}
+                <CreationTypeBadge
+                  creationType={token.creation_type}
+                  compact
+                  className="absolute -bottom-1 -right-1 z-20"
+                />
               </div>
 
               {/* Token Info */}
@@ -190,19 +214,21 @@ export default function TokenGrid({
                 </div>
 
                 {/* Creator Info */}
-                {(token as any).creatorProfile?.handle && (
-                  <p
-                    className="text-[10px] text-art-gray-500 truncate transform -rotate-0.5 hover:text-blue-500 hover:underline cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onCreatorClick && token.creator_address) {
-                        onCreatorClick(token.creator_address);
-                      }
-                    }}
-                  >
-                    by {(token as any).creatorProfile.handle}
-                  </p>
-                )}
+                {creatorLabel &&
+                  (onCreatorClick && creatorAddress ? (
+                    <button
+                      type="button"
+                      className="relative z-20 block max-w-full text-left text-[10px] text-art-gray-500 truncate transform -rotate-0.5 hover:text-blue-500 hover:underline focus-visible:text-blue-600 focus-visible:underline"
+                      onClick={() => onCreatorClick(creatorAddress)}
+                      aria-label={`View creator ${creatorLabel}`}
+                    >
+                      by {creatorLabel}
+                    </button>
+                  ) : (
+                    <p className="text-[10px] text-art-gray-500 truncate transform -rotate-0.5">
+                      by {creatorLabel}
+                    </p>
+                  ))}
 
                 {/* Market Data Grid (Mini Version) */}
                 <div className="flex gap-2 mt-1">
@@ -212,20 +238,9 @@ export default function TokenGrid({
                   >
                     <div className="text-[10px] md:text-sm font-bold text-art-gray-900">
                       {(() => {
-                        // Market Cap is usually derived from price * supply or stored directly
-                        // For now, let's assume current_price is the market cap proxy or we use a specific field if available
-                        // But wait, the DB schema has current_price, volume_24h.
-                        // Market Cap isn't explicitly in the DB schema shown in the plan, but usually it's price * supply.
-                        // However, the previous code used `marketCap` from `token` which might come from Zora API mixin.
-                        // If it's from DB, we might need to calculate it or use what's there.
-                        // Let's safe guard:
-                        const mc =
-                          (token as any).marketCap ||
-                          (token.current_price || 0) *
-                            (token.total_supply || 0);
-                        if (!mc) return "-";
-                        const num =
-                          typeof mc === "number" ? mc : parseFloat(mc);
+                        const mc = (token as any).marketCap;
+                        const num = Number(mc);
+                        if (!Number.isFinite(num) || num <= 0) return "—";
                         return num >= 1000000
                           ? `$${(num / 1000000).toFixed(1)}M`
                           : num >= 1000
@@ -244,9 +259,14 @@ export default function TokenGrid({
                     <div className="text-[10px] md:text-sm font-bold text-art-gray-900">
                       {(() => {
                         const vol = token.volume_24h;
-                        if (!vol) return "-";
-                        const num =
-                          typeof vol === "number" ? vol : parseFloat(vol);
+                        const num = Number(vol);
+                        if (
+                          vol === null ||
+                          vol === undefined ||
+                          !Number.isFinite(num) ||
+                          num <= 0
+                        )
+                          return "—";
                         return num >= 1000000
                           ? `$${(num / 1000000).toFixed(1)}M`
                           : num >= 1000
@@ -263,7 +283,16 @@ export default function TokenGrid({
                     style={{ borderRadius: "5px 7px 4px 6px" }}
                   >
                     <div className="text-[10px] md:text-sm font-bold text-art-gray-900">
-                      {(token as any).holders || 0}
+                      {(() => {
+                        const holders = (token as any).holders;
+                        const count = Number(holders);
+                        return holders === null ||
+                          holders === undefined ||
+                          !Number.isFinite(count) ||
+                          count < 0
+                          ? "—"
+                          : count.toLocaleString();
+                      })()}
                     </div>
                     <div className="text-[8px] md:text-xs text-art-gray-400">
                       HOLDERS
@@ -277,11 +306,7 @@ export default function TokenGrid({
                 <div
                   className={`text-sm font-bold ${(() => {
                     const priceChange = (token as any).marketCapDelta24h;
-                    // Handle both number and string
-                    const val =
-                      typeof priceChange === "number"
-                        ? priceChange
-                        : parseFloat(priceChange || "0");
+                    const val = Number(priceChange);
                     if (val > 0) return "text-green-600";
                     if (val < 0) return "text-red-600";
                     return "text-art-gray-500";
@@ -289,19 +314,19 @@ export default function TokenGrid({
                 >
                   {(() => {
                     const priceChange = (token as any).marketCapDelta24h;
-                    const val =
-                      typeof priceChange === "number"
-                        ? priceChange
-                        : parseFloat(priceChange || "0");
-                    return val
+                    const val = Number(priceChange);
+                    return priceChange !== null &&
+                      priceChange !== undefined &&
+                      Number.isFinite(val)
                       ? `${val >= 0 ? "+" : ""}${val.toFixed(1)}%`
-                      : "0%";
+                      : "—";
                   })()}
                 </div>
 
                 <div className="flex items-center gap-2">
                   {/* Watchlist Button */}
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onToggleWatchlist) {
@@ -311,7 +336,14 @@ export default function TokenGrid({
                         );
                       }
                     }}
-                    className={`flex items-center gap-1 px-2 py-1.5 rounded-full transition-colors shadow-sm ${
+                    aria-label={
+                      isFavorite
+                        ? `Remove ${(token as any).name || token.name || "token"} from watchlist`
+                        : `Add ${(token as any).name || token.name || "token"} to watchlist`
+                    }
+                    aria-pressed={isFavorite}
+                    disabled={!onToggleWatchlist}
+                    className={`relative z-20 flex items-center gap-1 px-2 py-1.5 rounded-full transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50 ${
                       isFavorite
                         ? "bg-white/90 text-red-500"
                         : "bg-white/90 text-art-gray-400 hover:text-red-400"
@@ -340,11 +372,12 @@ export default function TokenGrid({
 
                   {/* Trade Button (Hand Drawn Style) */}
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onTrade(token);
                     }}
-                    className="hand-drawn-btn text-xs font-bold py-1.5 px-3 transform rotate-1 hover:scale-105 transition-transform duration-200"
+                    className="relative z-20 hand-drawn-btn text-xs font-bold py-1.5 px-3 transform rotate-1 hover:scale-105 transition-transform duration-200"
                     style={{
                       borderRadius: "8px 6px 12px 4px",
                       backgroundColor: "#48bb78",
@@ -355,7 +388,7 @@ export default function TokenGrid({
                   </button>
                 </div>
               </div>
-            </div>
+            </article>
           );
         })}
       </div>
@@ -369,12 +402,16 @@ export default function TokenGrid({
           key={token.id || token.contract_address}
           token={token}
           onTrade={onTrade}
-          onView={onView}
           showBalance={showBalance}
           watchlistSet={watchlistSet}
           onToggleWatchlist={onToggleWatchlist}
           watchlistCount={watchlistStats?.[token.contract_address] || 0}
           onCreatorClick={onCreatorClick}
+          creatorBasename={
+            creatorBasenames?.[
+              normalizeCreatorAddress(token.creator_address) ?? ""
+            ] ?? null
+          }
         />
       ))}
     </div>

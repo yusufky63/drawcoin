@@ -1,13 +1,21 @@
 import { useState, useRef } from "react";
 import { DrawingElement, Tool, PenStyle, ResizeHandle, Point } from "../types";
 import { DEFAULT_LINE_WIDTH, DEFAULT_FONT_SIZE, DEFAULT_FONT_FAMILY } from "../constants";
+import { cloneDrawingElements } from "../utils/draftUtils";
 
-export const useCanvasState = () => {
+interface InitialCanvasState {
+  elements: DrawingElement[];
+  background: string;
+}
+
+export const useCanvasState = (initialState?: InitialCanvasState) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState("#000000");
   const [lineWidth, setLineWidth] = useState(DEFAULT_LINE_WIDTH);
-  const [elements, setElements] = useState<DrawingElement[]>([]);
+  const [elements, setElements] = useState<DrawingElement[]>(() =>
+    cloneDrawingElements(initialState?.elements ?? [])
+  );
   const [currentElement, setCurrentElement] = useState<DrawingElement | null>(null);
   const [startPoint, setStartPoint] = useState<Point | null>(null);
   const [textInput, setTextInput] = useState("");
@@ -17,7 +25,9 @@ export const useCanvasState = () => {
   const [fontFamily, setFontFamily] = useState(DEFAULT_FONT_FAMILY);
   const [isMobile, setIsMobile] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [canvasBackground, setCanvasBackground] = useState("#ffffff");
+  const [canvasBackground, setCanvasBackground] = useState(
+    () => initialState?.background ?? "#ffffff"
+  );
   const [penStyle, setPenStyle] = useState<PenStyle>("pen");
   const [selectedElement, setSelectedElement] = useState<number | null>(null);
   const [selectedElements, setSelectedElements] = useState<number[]>([]);
@@ -95,4 +105,3 @@ export const useCanvasState = () => {
     imageCache,
   };
 };
-

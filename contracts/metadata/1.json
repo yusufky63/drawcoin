@@ -1,0 +1,11 @@
+{
+  "name": "First Stroke",
+  "description": "Awarded for creating a verified DrawCoin on Base.",
+  "image": "https://drawcoin.app/badges/first-stroke.svg",
+  "external_url": "https://drawcoin.app/missions",
+  "attributes": [
+    { "trait_type": "Mission", "value": "first-stroke" },
+    { "trait_type": "Category", "value": "Creator" },
+    { "trait_type": "Soulbound", "value": "Yes" }
+  ]
+}

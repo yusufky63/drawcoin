@@ -1,18 +1,19 @@
 {
   "name": "DrawCoin",
   "short_name": "DrawCoin",
-  "description": "Create and trade hand-drawn art tokens on the Base",
+  "description": "Draw, launch and collect original artwork on Base.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#3182ce",
-  "theme_color": "#3182ce",
+  "background_color": "#fafafa",
+  "theme_color": "#0052ff",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/logo.png",
-      "sizes": "any",
+      "src": "/icon.png",
+      "sizes": "1024x1024",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

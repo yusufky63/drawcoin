@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Curator mission badge</title>
+  <desc id="desc">A hand-drawn green badge with five curated stars.</desc>
+  <rect width="512" height="512" rx="104" fill="#dcfce7"/>
+  <path d="M83 107c70-66 283-64 350 4 55 56 50 257-11 315-65 61-270 55-337-8-55-52-56-260-2-311Z" fill="#fff" stroke="#14532d" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m256 120 38 76 84 12-61 59 15 84-76-40-75 40 14-84-60-59 84-12 37-76Z" fill="#86efac" stroke="#14532d" stroke-width="16" stroke-linejoin="round"/>
+  <path d="m112 153 13 26 29 4-21 20 5 29-26-14-26 14 5-29-21-20 29-4 13-26Zm288 0 13 26 29 4-21 20 5 29-26-14-26 14 5-29-21-20 29-4 13-26ZM132 337l13 27 29 4-21 20 5 29-26-14-26 14 5-29-21-20 29-4 13-27Zm248 0 13 27 29 4-21 20 5 29-26-14-26 14 5-29-21-20 29-4 13-27Z" fill="#fef3c7" stroke="#14532d" stroke-width="10" stroke-linejoin="round"/>
+</svg>

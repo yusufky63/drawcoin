@@ -3,6 +3,8 @@
  * are downloaded and pinned to IPFS. Metadata JSON always references ipfs://.
  */
 
+import { decodeDataImageUrl } from "@/lib/ipfs/security";
+import { buildZoraCoinMetadata } from "@/lib/zora/metadata";
 import { storeToIPFS } from "./pinata";
 
 /**
@@ -66,45 +68,43 @@ export function validateIpfsUri(uri) {
  * @param {string} description Token description
  */
 export async function processImageAndUploadToIPFS(imageUrl, name, symbol, description) {
-  if (!imageUrl) throw new Error("Image URL is required");
+  const image = decodeDataImageUrl(imageUrl);
+  const blob = new Blob([image.bytes], { type: image.mimeType });
+  return processImageBlobAndUploadToIPFS(blob, name, symbol, description);
+}
+
+export async function processImageBlobAndUploadToIPFS(blob, name, symbol, description) {
+  if (!blob || !(blob instanceof Blob)) throw new Error("Image data is required");
   if (!name) throw new Error("Token name is required");
   if (!symbol) throw new Error("Token symbol is required");
 
-  // 1) Download/parse image
-  let blob;
-  if (imageUrl.startsWith('data:')) {
-    // Handle data URI (e.g., Gemini returns base64 data URL)
-    const match = imageUrl.match(/^data:(.*?);base64,(.*)$/);
-    if (!match) throw new Error('Invalid data URL');
-    const mime = match[1] || 'image/png';
-    const base64 = match[2];
-    const buffer = Buffer.from(base64, 'base64');
-    blob = new Blob([buffer], { type: mime });
-  } else {
-    const resp = await fetch(imageUrl, { mode: 'cors' });
-    if (!resp.ok) throw new Error(`Image fetch failed: ${resp.status}`);
-    blob = await resp.blob();
-  }
-
-  // 2) Upload image to IPFS
-  const ext = (blob.type && blob.type.split('/')[1]) || 'png';
-  const safeName = `${(name || 'token').toString().slice(0,32)}_${(symbol || '').toString().slice(0,16)}.${ext}`;
+  const extensions = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+  };
+  const ext = extensions[blob.type];
+  if (!ext) throw new Error("Unsupported image type");
+  const safeBaseName = `${name}_${symbol}`
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "drawcoin";
+  const safeName = `${safeBaseName}.${ext}`;
   const uploaded = await storeToIPFS(blob, safeName);
   if (!uploaded?.url?.startsWith('ipfs://')) throw new Error('IPFS image upload failed');
   const imageIpfsUrl = uploaded.url;
 
-  // 3) Create metadata with ipfs:// image
-  const metadata = {
+  const metadata = buildZoraCoinMetadata({
     name,
     symbol,
-    description: description || `${name} (${symbol}) - A token created with DrawCoin`,
+    description,
     image: imageIpfsUrl,
-  };
+  });
   const jsonBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
-  const metadataRes = await storeToIPFS(jsonBlob, `${metadata.name}_metadata.json`);
+  const metadataRes = await storeToIPFS(jsonBlob, `${safeBaseName}_metadata.json`);
   if (!metadataRes?.url?.startsWith('ipfs://')) throw new Error('IPFS metadata upload failed');
 
-  // 4) Return metadata ipfs:// and a gateway display URL for the image
   return {
     ipfsUrl: metadataRes.url,
     displayUrl: getIPFSDisplayUrl(imageIpfsUrl),

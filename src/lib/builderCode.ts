@@ -1,7 +1,7 @@
 /**
  * @fileoverview Base Builder Codes (ERC-8021) utility
  * Provides dataSuffix for attributing DrawCoin transactions on Base.
- * @see https://docs.base.org/base-chain/builder-codes/app-developers
+ * @see https://docs.base.org/apps/builder-codes/app-developers
  */
 
 import { Attribution } from "ox/erc8021";

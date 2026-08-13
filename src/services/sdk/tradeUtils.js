@@ -3,7 +3,7 @@
  * @module tradeUtils
  */
 
-import { parseEther, parseUnits, formatEther, formatUnits } from "viem";
+import { formatEther, formatUnits } from "viem";
 
 /**
  * Gets the correct ZORA token address from SDK
@@ -82,10 +82,9 @@ export async function validateCoinForTrade(coinAddress) {
 /**
  * Extracts trade event from transaction logs
  * @param {object} receipt - Transaction receipt
- * @param {string} direction - Trade direction
  * @returns {object|null} Trade event details
  */
-export const extractTradeFromLogs = (receipt, direction) => {
+export const extractTradeFromLogs = (receipt) => {
   try {
     // Use getCoinCreateFromLogs as a fallback - the new SDK may not have trade log extraction
     // We'll extract the trade info manually from receipt logs
@@ -257,7 +256,6 @@ export const checkTokenBalance = async (
  * @param {string} tradeType - Trade type ('buy' or 'sell')
  * @param {bigint} amount - Trade amount
  * @param {object} publicClient - Viem public client
- * @param {string} creatorAddress - Optional creator address for creator validation
  * @returns {Promise<object>} Validation result
  */
 export const validateTradeBalance = async (
@@ -265,8 +263,7 @@ export const validateTradeBalance = async (
   coinAddress,
   tradeType,
   amount,
-  publicClient,
-  creatorAddress = null
+  publicClient
 ) => {
   try {
     if (!userAddress || !userAddress.startsWith("0x")) {
@@ -310,35 +307,14 @@ export const validateTradeBalance = async (
         publicClient
       );
 
-      // Check if user is the creator and apply 10M token restriction
-      let availableBalance = tokenBalance;
-      let isCreator = false;
-
-      if (
-        creatorAddress &&
-        userAddress.toLowerCase() === creatorAddress.toLowerCase()
-      ) {
-        isCreator = true;
-        const initialSupply = 10n * 10n ** 6n * 10n ** 18n; // 10M tokens in wei
-        availableBalance =
-          tokenBalance > initialSupply ? tokenBalance - initialSupply : 0n;
-      }
-
-      if (availableBalance < amount) {
-        const balanceMessage = isCreator
-          ? `Insufficient sellable balance. As creator, you cannot sell the initial 10M tokens. Available: ${formatUnits(
-              availableBalance,
-              18
-            )}, required: ${formatUnits(amount, 18)}`
-          : `Insufficient token balance. Your balance: ${formatUnits(
-              tokenBalance,
-              18
-            )}, required: ${formatUnits(amount, 18)}`;
-
+      if (tokenBalance < amount) {
         return {
           isValid: false,
-          currentBalance: availableBalance,
-          message: balanceMessage,
+          currentBalance: tokenBalance,
+          message: `Insufficient token balance. Your balance: ${formatUnits(
+            tokenBalance,
+            18
+          )}, required: ${formatUnits(amount, 18)}`,
         };
       }
 

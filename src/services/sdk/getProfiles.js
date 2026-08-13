@@ -7,17 +7,39 @@ import { getProfile, getProfileBalances, setApiKey } from "@zoralabs/coins-sdk";
 // Import getCoinDetails from our local file instead
 import { getCoinDetails } from "./getCoins";
 
-// Import getCoinDetails to use in verifyAddressType function
-setApiKey(process.env.ZORA_API_KEY);
+// Import getCoinDetails to use in verifyAddressType function. The key is
+// server-only; browser queries use the SDK's anonymous allowance.
+const serverApiKey =
+  typeof window === "undefined" ? process.env.ZORA_API_KEY : undefined;
+if (serverApiKey) setApiKey(serverApiKey);
+
+const safeZoraQueryError = (error) => ({
+  name: error instanceof Error ? error.name : "UnknownError",
+  status:
+    error && typeof error === "object" && "status" in error
+      ? error.status
+      : undefined,
+  code:
+    error && typeof error === "object" && "code" in error
+      ? error.code
+      : undefined,
+});
 /**
  * Fetches Zora profile with simple retry mechanism
  * @param {string} identifier - Wallet address or profile handle
  * @param {boolean} isHandle - Whether the identifier is a handle (true) or wallet address (false)
  * @returns {Promise<object>} Profile details
  */
-export const getZoraProfile = async (identifier, isHandle = false) => {
-  const maxRetries = 10;
-  const baseRetryDelay = 3000;
+export const getZoraProfile = async (
+  identifier,
+  _isHandle = false,
+  options = {},
+) => {
+  const maxRetries = Math.max(1, Math.min(3, options.maxRetries ?? 3));
+  const baseRetryDelay = Math.max(
+    250,
+    Math.min(2_000, options.baseRetryDelay ?? 1_000),
+  );
   let currentAttempt = 0;
 
   while (currentAttempt < maxRetries) {
@@ -26,13 +48,9 @@ export const getZoraProfile = async (identifier, isHandle = false) => {
       const response = await getProfile(
         {
           identifier: identifier,
-          chainId: 8453,
-          isHandle: isHandle,
         },
         {
-          headers: {
-            "api-key": process.env.ZORA_API_KEY,
-          },
+          throwOnError: true,
         }
       );
 
@@ -56,7 +74,10 @@ export const getZoraProfile = async (identifier, isHandle = false) => {
           const waitMatch = errorMessage.match(/try again in (\d+) seconds/i);
           const waitSec =
             waitMatch && waitMatch[1] ? parseInt(waitMatch[1], 10) : 0;
-          const waitTime = waitSec > 0 ? waitSec * 1000 + 1000 : baseRetryDelay;
+          const waitTime = Math.min(
+            2_500,
+            waitSec > 0 ? waitSec * 1000 + 250 : baseRetryDelay,
+          );
 
           console.log(
             `Profile rate limit, retrying in ${waitTime / 1000}s (${
@@ -102,7 +123,10 @@ export const getZoraProfile = async (identifier, isHandle = false) => {
       }
 
       // Yeniden denenebilir hata değilse, hatayı fırlat
-      console.error("Non-retryable profile fetch error:", error);
+      console.error(
+        "Non-retryable profile fetch error",
+        safeZoraQueryError(error)
+      );
       throw error;
     }
   }
@@ -125,8 +149,8 @@ export const getProfileBalance = async (
   count = 100,
   after = undefined
 ) => {
-  const maxRetries = 5; // Increased max retries
-  const baseRetryDelay = 3000;
+  const maxRetries = 2;
+  const baseRetryDelay = 1000;
   let currentAttempt = 0;
 
   while (currentAttempt < maxRetries) {
@@ -142,12 +166,10 @@ export const getProfileBalance = async (
           identifier: walletAddress,
           count: count,
           after: after,
-          chainId: 8453,
+          chainIds: [8453],
         },
         {
-          headers: {
-            "api-key": process.env.ZORA_API_KEY,
-          },
+          throwOnError: true,
         }
       );
 
@@ -165,7 +187,7 @@ export const getProfileBalance = async (
         // Handle specific "Rate limit exceeded for direct queries" error
         if (errorMessage.includes("Rate limit exceeded for direct queries")) {
           // Special handling for this exact error message
-          const waitTime = 10000; // 10 seconds
+          const waitTime = 2000;
           console.warn(
             `[getProfileBalance] Direct queries rate limit hit: "${errorMessage}". Waiting for ${
               waitTime / 1000
@@ -200,9 +222,9 @@ export const getProfileBalance = async (
             waitSec === 0 ||
             errorMessage.toLowerCase().includes("direct queries")
           ) {
-            waitTime = 10000; // 10 saniye
+            waitTime = 2000;
             console.log(
-              "[getProfileBalance] Direct queries or try again in 0 seconds error, waiting for 10s"
+              "[getProfileBalance] Rate limited, waiting briefly before retry"
             );
           } else {
             waitTime = waitSec > 0 ? waitSec * 1000 + 500 : baseRetryDelay;
@@ -246,14 +268,9 @@ export const getProfileBalance = async (
       );
       return response;
     } catch (error) {
-      // Log detailed error information to help with debugging
       console.warn(
-        `[getProfileBalance] Error (${currentAttempt + 1}/${maxRetries}):`,
-        {
-          status: error.status,
-          message: error.message,
-          stack: error.stack?.substring(0, 200), // Only log first part of stack trace
-        }
+        `[getProfileBalance] Error (${currentAttempt + 1}/${maxRetries})`,
+        safeZoraQueryError(error)
       );
 
       currentAttempt++;
@@ -263,7 +280,7 @@ export const getProfileBalance = async (
         error.message &&
         error.message.includes("Rate limit exceeded for direct queries")
       ) {
-        const waitTime = 10000; // 10 seconds
+        const waitTime = 2000;
         console.warn(
           `[getProfileBalance] Direct queries rate limit error caught with 500 status. Waiting for ${
             waitTime / 1000
@@ -463,7 +480,7 @@ export async function verifyAddressType(address) {
         }
       }
 
-      console.error("Type verification error:", error);
+      console.error("Type verification error", safeZoraQueryError(error));
       throw error;
     }
   }
@@ -479,20 +496,29 @@ export async function verifyAddressType(address) {
  * @param {number} concurrency - Number of concurrent requests (default: 5)
  * @returns {Promise<Object>} Map of address -> profile data
  */
-export const getZoraProfilesBulk = async (addresses, concurrency = 5) => {
+export const getZoraProfilesBulk = async (
+  addresses,
+  concurrency = 3,
+  options = {},
+) => {
   const results = {};
   const uniqueAddresses = [...new Set(addresses.map((a) => a.toLowerCase()))];
+  let failureCount = 0;
 
   // Process in chunks to limit concurrency
   for (let i = 0; i < uniqueAddresses.length; i += concurrency) {
     const chunk = uniqueAddresses.slice(i, i + concurrency);
     const promises = chunk.map(async (address) => {
       try {
-        const profile = await getZoraProfile(address);
+        const profile = await getZoraProfile(address, false, {
+          maxRetries: options.maxRetries ?? 2,
+          baseRetryDelay: options.baseRetryDelay ?? 500,
+        });
         if (profile) {
           results[address] = profile;
         }
       } catch (error) {
+        failureCount += 1;
         console.warn(`Failed to fetch profile for ${address}:`, error.message);
         // Continue even if one fails
       }
@@ -504,6 +530,14 @@ export const getZoraProfilesBulk = async (addresses, concurrency = 5) => {
     if (i + concurrency < uniqueAddresses.length) {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
+  }
+
+  if (
+    options.throwIfAllFailed === true &&
+    uniqueAddresses.length > 0 &&
+    failureCount === uniqueAddresses.length
+  ) {
+    throw new Error("All Zora profile lookups failed.");
   }
 
   return results;

@@ -22,6 +22,62 @@ const initializeApiKey = () => {
 // Call initialization on module load
 initializeApiKey();
 
+const ZORA_BATCH_SIZE = 20;
+
+const getAddressKey = (address) =>
+  typeof address === "string" ? address.toLowerCase() : address;
+
+/**
+ * The generated Zora client resolves non-2xx responses as
+ * `{ error, response }` unless `throwOnError` is enabled. Convert that result
+ * into an Error while retaining the HTTP status used by our retry policy.
+ */
+const unwrapSdkResponse = (response, context) => {
+  if (response?.error === undefined) {
+    return response;
+  }
+
+  const sdkError = response.error;
+  const status = response.response?.status;
+  const sdkMessage =
+    typeof sdkError === "string"
+      ? sdkError
+      : sdkError && typeof sdkError === "object" && "message" in sdkError
+        ? sdkError.message
+        : undefined;
+  const error = new Error(
+    sdkMessage ||
+      `${context}${Number.isInteger(status) ? ` (HTTP ${status})` : ""}`
+  );
+
+  error.status = status;
+  error.response = response.response;
+  error.sdkError = sdkError;
+  throw error;
+};
+
+const isAbortedRequest = (error, signal) =>
+  signal?.aborted === true || error?.name === "AbortError";
+
+/**
+ * Collapse duplicate addresses without reordering the first occurrence.
+ * Batch results are keyed by lowercase address, so duplicate inputs have
+ * always represented one output entry.
+ */
+const uniqueAddressesInOrder = (addresses) => {
+  const seen = new Set();
+  const unique = [];
+
+  for (const address of addresses) {
+    const key = getAddressKey(address);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(address);
+  }
+
+  return unique;
+};
+
 /**
  * API request retry mechanism
  * @param {Function|string} urlOrFn - API URL or function to call
@@ -93,11 +149,13 @@ const retryFetch = async (
  */
 export async function fetchCoinDetails(address) {
   const fetchCoinData = async () => {
-    const response = await getCoin({
-      address,
-      chain: 8453,
-      
-    });
+    const response = unwrapSdkResponse(
+      await getCoin({
+        address,
+        chain: 8453,
+      }),
+      "Failed to fetch coin details"
+    );
     return response.data?.zora20Token;
   };
 
@@ -126,12 +184,15 @@ export const fetchCoinComments = async (
       throw new Error("Valid coin address required to load comments");
     }
 
-    const response = await getCoinComments({
-      address: coinAddress,
-      chain: 8453,
-      count: count,
-      after: after,
-    });
+    const response = unwrapSdkResponse(
+      await getCoinComments({
+        address: coinAddress,
+        chain: 8453,
+        count: count,
+        after: after,
+      }),
+      "Failed to fetch coin comments"
+    );
 
     if (!response?.data?.zora20Token?.zoraComments) {
       throw new Error("Failed to fetch comment data");
@@ -188,13 +249,18 @@ export const extractTradeFromLogs = (receipt, direction) => {
  * @param {number} chain - Chain ID
  * @returns {Promise<object>} Coin details
  */
-export const getCoinDetails = async (address, chain = 8453) => {
+export const getCoinDetails = async (address, chain = 8453, options = {}) => {
+  const maxRetries = Math.max(1, Math.min(3, options.maxRetries ?? 3));
+  const retryDelay = Math.max(250, Math.min(2_000, options.retryDelay ?? 750));
   const fetchCoinData = async () => {
     try {
-      const response = await getCoin({
-        address,
-        chain,
-      });
+      const response = unwrapSdkResponse(
+        await getCoin({
+          address,
+          chain,
+        }),
+        "Failed to fetch coin details"
+      );
 
       if (!response?.data?.zora20Token) {
         throw new Error("Failed to fetch coin details");
@@ -209,7 +275,7 @@ export const getCoinDetails = async (address, chain = 8453) => {
   };
 
   try {
-    return await retryFetch(fetchCoinData);
+    return await retryFetch(fetchCoinData, {}, maxRetries, retryDelay);
   } catch (error) {
     console.error("Error fetching coin details:", error);
     throw error;
@@ -232,7 +298,10 @@ export const getCoinsBatch = async (addresses = [], chain = 8453, concurrency = 
   for (const chunk of chunks) {
     const results = await Promise.all(chunk.map(async (addr) => {
       try {
-        const res = await getCoin({ address: addr, chain });
+        const res = unwrapSdkResponse(
+          await getCoin({ address: addr, chain }),
+          `Failed to fetch coin ${addr}`
+        );
         return { addr, data: res?.data?.zora20Token || null };
       } catch (e) {
         console.warn("Batch getCoin failed for", addr, e?.message || e);
@@ -248,60 +317,95 @@ export const getCoinsBatch = async (addresses = [], chain = 8453, concurrency = 
 
 /**
  * Fetch multiple coins using Zora SDK's getCoins function (batch of specific addresses)
- * @param {string[]} addresses - List of token addresses (max 20)
+ * @param {string[]} addresses - List of token addresses
  * @param {number} chain - Chain ID (default: 8453)
+ * @param {{fallbackToIndividual?: boolean, signal?: AbortSignal}} options
  * @returns {Promise<Record<string, any>>} Map of address -> zora20Token (or null)
  */
-export const getCoinsBatchSDK = async (addresses = [], chain = 8453) => {
-  try {
-    if (addresses.length === 0) {
-      console.warn("No addresses provided to getCoinsBatchSDK");
-      return {};
-    }
+export const getCoinsBatchSDK = async (
+  addresses = [],
+  chain = 8453,
+  options = {}
+) => {
+  if (addresses.length === 0) {
+    return {};
+  }
 
-    // Limit to 20 coins per request (Zora API limit)
-    const limitedAddresses = addresses.slice(0, 20);
-    
-    const coins = limitedAddresses.map(address => ({
+  const uniqueAddresses = uniqueAddressesInOrder(addresses);
+  const out = {};
+
+  // Initialize every requested key up front so a partial API response cannot
+  // make an address disappear from the result.
+  for (const address of uniqueAddresses) {
+    out[getAddressKey(address)] = null;
+  }
+
+  for (let index = 0; index < uniqueAddresses.length; index += ZORA_BATCH_SIZE) {
+    const chunk = uniqueAddresses.slice(index, index + ZORA_BATCH_SIZE);
+    const coins = chunk.map((address) => ({
       chainId: chain,
       collectionAddress: address,
     }));
 
-    const response = await getCoins({ coins });
-    
-    const out = {};
-    
-    // Process each coin in the response
-    response.data?.zora20Tokens?.forEach((coin, index) => {
-      if (coin && coin.address) {
-        out[coin.address.toLowerCase()] = coin;
-      }
-    });
+    try {
+      const response = unwrapSdkResponse(
+        await getCoins(
+          { coins },
+          options.signal ? { signal: options.signal } : undefined
+        ),
+        "Failed to fetch a Zora coin batch"
+      );
 
-    // Fill in nulls for addresses that weren't found
-    limitedAddresses.forEach(addr => {
-      if (!out[addr.toLowerCase()]) {
-        out[addr.toLowerCase()] = null;
+      response.data?.zora20Tokens?.forEach((coin) => {
+        if (coin?.address) {
+          out[getAddressKey(coin.address)] = coin;
+        }
+      });
+    } catch (error) {
+      if (isAbortedRequest(error, options.signal)) {
+        throw error;
       }
-    });
 
-    return out;
-  } catch (error) {
-    console.error("Error fetching coins batch with SDK:", error);
-    
-    // Fallback to individual requests
-    const out = {};
-    for (const addr of addresses.slice(0, 20)) {
-      try {
-        const res = await getCoin({ address: addr, chain });
-        out[addr.toLowerCase()] = res?.data?.zora20Token || null;
-      } catch (e) {
-        console.warn("Fallback getCoin failed for", addr, e?.message || e);
-        out[addr.toLowerCase()] = null;
+      console.error("Error fetching Zora coin batch:", error);
+      if (options.fallbackToIndividual === false) {
+        throw error;
+      }
+
+      // Isolate a failed chunk: successful chunks remain available and only
+      // the affected addresses fall back to individual queries.
+      let successfulFallbacks = 0;
+      for (const address of chunk) {
+        try {
+          const response = unwrapSdkResponse(
+            await getCoin(
+              { address, chain },
+              options.signal ? { signal: options.signal } : undefined
+            ),
+            `Failed to fetch coin ${address}`
+          );
+          out[getAddressKey(address)] = response.data?.zora20Token || null;
+          successfulFallbacks += 1;
+        } catch (fallbackError) {
+          if (isAbortedRequest(fallbackError, options.signal)) {
+            throw fallbackError;
+          }
+          console.warn(
+            "Fallback getCoin failed for",
+            address,
+            fallbackError?.message || fallbackError
+          );
+        }
+      }
+
+      // If the fallback transport failed for the whole chunk, surface the
+      // original batch error so the outer bounded retry policy can run.
+      if (successfulFallbacks === 0) {
+        throw error;
       }
     }
-    return out;
   }
+
+  return out;
 };
 
 /**
@@ -339,4 +443,4 @@ export const searchTokenByAddress = async (address) => {
       error: error.message || "Failed to fetch token"
     };
   }
-}; 
+};

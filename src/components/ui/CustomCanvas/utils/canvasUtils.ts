@@ -1,4 +1,4 @@
-import { DrawingElement, Point } from "../types";
+import type { DrawingElement, Point } from "../types.ts";
 
 export const getTextDimensions = (
   ctx: CanvasRenderingContext2D,
@@ -24,24 +24,17 @@ export const getTextDimensions = (
 };
 
 export const getMousePosition = (
-  e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>,
+  e: React.PointerEvent<HTMLCanvasElement>,
   canvas: HTMLCanvasElement
 ): Point => {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
 
-  if ("touches" in e) {
-    return {
-      x: (e.touches[0].clientX - rect.left) * scaleX,
-      y: (e.touches[0].clientY - rect.top) * scaleY,
-    };
-  } else {
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-    };
-  }
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY,
+  };
 };
 
 export const calculateElementBounds = (
@@ -119,6 +112,8 @@ export const isPointInElement = (
   element: DrawingElement,
   ctx: CanvasRenderingContext2D
 ): boolean => {
+  if (element.type === "eraser") return false;
+
   if (element.type === "image" && element.startPoint) {
     const w = element.width || 200;
     const h = element.height || 200;
@@ -300,4 +295,3 @@ export const isPointInsideShape = (
 
   return false;
 };
-

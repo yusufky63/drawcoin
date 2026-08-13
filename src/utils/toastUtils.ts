@@ -7,7 +7,6 @@ export const TOAST_IDS = {
   CREATE: 'create-toast',
   APPROVE: 'approve-toast',
   IPFS: 'ipfs-toast',
-  AI_GENERATE: 'ai-generate',
   WALLET_ERROR: 'wallet-error',
   FORM_ERROR: 'form-error',
   BALANCE_ERROR: 'balance-error',
@@ -54,10 +53,6 @@ export const ERROR_MESSAGES = {
   IPFS_UPLOAD_FAILED: 'Failed to upload image. Please try again.',
   IPFS_INVALID_URL: 'Invalid image URL',
   
-  // AI errors
-  AI_GENERATION_FAILED: 'Failed to generate AI art. Please try again.',
-  AI_INVALID_PROMPT: 'Please enter a valid description',
-  
   // Form errors
   FORM_INCOMPLETE: 'Please complete all required fields',
   FORM_INVALID: 'Please check your input and try again',
@@ -75,7 +70,6 @@ export const SUCCESS_MESSAGES = {
   CREATE_SUCCESS: 'Token created successfully!',
   APPROVE_SUCCESS: 'Approval completed successfully!',
   IPFS_UPLOAD_SUCCESS: 'Image uploaded successfully!',
-  AI_GENERATION_SUCCESS: 'AI art generated successfully!',
 } as const;
 
 // Loading messages
@@ -85,7 +79,6 @@ export const LOADING_MESSAGES = {
   CREATING: 'Creating token...',
   APPROVING: 'Approving tokens...',
   UPLOADING: 'Uploading image...',
-  AI_GENERATING: 'Generating AI art...',
   LOADING: 'Loading...',
 } as const;
 
@@ -269,17 +262,4 @@ export const showIPFSMessages = {
     showSuccess(SUCCESS_MESSAGES.IPFS_UPLOAD_SUCCESS, TOAST_IDS.IPFS),
   
   error: (error: any) => showError(error, 'IPFS upload'),
-};
-
-/**
- * Shows AI-specific messages
- */
-export const showAIMessages = {
-  loading: () => 
-    showLoading(LOADING_MESSAGES.AI_GENERATING, TOAST_IDS.AI_GENERATE),
-  
-  success: () => 
-    showSuccess(SUCCESS_MESSAGES.AI_GENERATION_SUCCESS, TOAST_IDS.AI_GENERATE),
-  
-  error: (error: any) => showError(error, 'AI generation'),
 };

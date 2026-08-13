@@ -1,4 +1,31 @@
+import "server-only";
+
 import axios from "axios";
+
+const getSafePinataErrorDetails = (error) => {
+  if (!axios.isAxiosError(error)) {
+    return { kind: "unexpected_error" };
+  }
+
+  const status = error.response?.status;
+  const code = error.code;
+
+  return {
+    kind: "pinata_request_failed",
+    ...(Number.isInteger(status) && status >= 100 && status <= 599
+      ? { status }
+      : {}),
+    ...(typeof code === "string" && /^[a-zA-Z0-9_-]{1,64}$/.test(code)
+      ? { code }
+      : {}),
+  };
+};
+
+const logPinataError = (message, error) => {
+  // AxiosError carries the full request config, including Authorization.
+  // Never send the raw error object or its headers to application logs.
+  console.error(message, getSafePinataErrorDetails(error));
+};
 
 // Pinata API anahtarı
 const PINATA_JWT = process.env.PINATA_JWT;
@@ -158,7 +185,7 @@ const uploadToIPFS = async (data, options = {}) => {
         } catch (error) {
           // Hata durumunda pending işareti kaldır
           ipfsCache.uploads.delete(`pending_${cacheKey}`);
-          console.error("IPFS upload failed:", error);
+          logPinataError("IPFS upload failed", error);
           reject(error);
         }
       };
@@ -172,7 +199,7 @@ const uploadToIPFS = async (data, options = {}) => {
 
     return uploadPromise;
   } catch (error) {
-    console.error("IPFS upload failed:", error);
+    logPinataError("IPFS upload failed", error);
     throw new Error("IPFS upload failed");
   }
 };
@@ -204,7 +231,7 @@ export const uploadImageToIPFS = async (imageFile) => {
 
     return imageUrl;
   } catch (error) {
-    console.error("Image upload failed:", error);
+    logPinataError("Image upload failed", error);
     throw new Error("Image upload failed");
   }
 };
@@ -305,7 +332,7 @@ export const createAndUploadCoinMetadata = async (
 
     return metadataUrl;
   } catch (error) {
-    console.error("Metadata upload failed:", error);
+    logPinataError("Metadata upload failed", error);
     throw new Error("Metadata upload failed");
   }
 };
@@ -326,11 +353,35 @@ export const storeToIPFS = async (blob, fileName = null) => {
     );
   }
 
+  const maximumBytes = blob.type === "application/json" ? 64 * 1024 : 4 * 1024 * 1024;
+  const allowedTypes = new Set([
+    "application/json",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ]);
+  if (!allowedTypes.has(blob.type)) {
+    throw new Error("Unsupported IPFS upload type");
+  }
+  if (blob.size === 0 || blob.size > maximumBytes) {
+    throw new Error("IPFS upload exceeds the allowed size");
+  }
+
   try {
     // Blob verisini FormData olarak hazırla
     const formData = new FormData();
-    const finalFileName =
-      fileName || `image_${Date.now()}.${blob.type.split("/")[1] || "png"}`;
+    const extensions = {
+      "application/json": "json",
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+    const requestedBaseName = (fileName || `drawcoin_${Date.now()}`)
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "drawcoin";
+    const finalFileName = `${requestedBaseName}.${extensions[blob.type]}`;
     formData.append(
       "file",
       new File([blob], finalFileName, { type: blob.type || "image/png" })
@@ -343,10 +394,11 @@ export const storeToIPFS = async (blob, fileName = null) => {
       "https://api.pinata.cloud/pinning/pinFileToIPFS",
       formData,
       {
-        maxBodyLength: Infinity,
+        timeout: 20_000,
+        maxBodyLength: 6 * 1024 * 1024,
+        maxContentLength: 1024 * 1024,
         headers: {
           Authorization: `Bearer ${PINATA_JWT}`,
-          "Content-Type": "multipart/form-data",
         },
       }
     );
@@ -359,12 +411,12 @@ export const storeToIPFS = async (blob, fileName = null) => {
 
     return { url, hash };
   } catch (error) {
-    console.error("IPFS blob upload failed:", error);
-    if (error.response?.status === 401) {
+    logPinataError("IPFS blob upload failed", error);
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new Error(
         "IPFS upload failed: Invalid API key. Please check your PINATA_JWT environment variable."
       );
     }
-    throw new Error(`Blob IPFS upload failed: ${error.message}`);
+    throw new Error("Blob IPFS upload failed");
   }
 };

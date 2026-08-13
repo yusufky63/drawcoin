@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { COIN_CARD_COLUMNS, type Coin } from "./coinService";
 
 export interface TransactionData {
   tx_hash: string;
@@ -18,8 +19,13 @@ export interface PortfolioItem {
   average_buy_price_usd: number;
   total_invested_usd: number;
   realized_pnl_usd: number;
-  token_details?: any; // Joined from drawcoins
+  token_details?: Record<string, unknown>; // Joined from drawcoins
 }
+
+type WatchlistedCoin = Coin & {
+  price_change_24h?: number;
+  watchlist_count?: number;
+};
 
 export class AnalyticsService {
   /**
@@ -34,89 +40,29 @@ export class AnalyticsService {
     try {
       console.log("[AnalyticsService] Recording transaction:", data);
 
-      // 1. Ensure user exists in users table (create if not exists)
-      const { error: userError } = await supabase.from("users").upsert(
-        {
-          address: data.user_address,
-          last_active: new Date().toISOString(),
-        },
-        {
-          onConflict: "address",
-          ignoreDuplicates: false,
-        }
-      );
-
-      if (userError) {
-        console.error("[AnalyticsService] User upsert error:", userError);
+      if (data.type === "create") {
+        // Coin creation is verified and recorded by /api/coins/create together
+        // with the official Zora CoinCreatedV4 event.
+        return true;
       }
 
-      // 2. Insert Transaction
-      // The DB Trigger 'trigger_update_portfolio' and 'trigger_update_user_stats'
-      // will handle portfolio and stats updates automatically.
-      const transactionData = {
-        tx_hash: data.tx_hash,
-        user_address: data.user_address,
-        token_address: data.token_address,
-        type: data.type,
-        amount_token: data.amount_token || 0,
-        amount_eth: data.amount_eth || 0,
-        amount_usd: data.amount_usd || 0,
-        price_eth: data.price_eth || 0,
-        price_usd: data.price_usd || 0,
-      };
+      const response = await fetch("/api/transactions/record", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tx_hash: data.tx_hash,
+          user_address: data.user_address,
+          token_address: data.token_address,
+          type: data.type,
+        }),
+      });
 
-      const { error: txError } = await supabase
-        .from("transactions")
-        .insert(transactionData);
-
-      if (txError) {
-        console.error("[AnalyticsService] Transaction insert error:", txError);
-        throw txError;
-      }
-
-      // 3. TRIGGERED UPDATE: Update the coin's price in DB immediately
-      // This ensures the user sees the impact of their trade instantly on the UI
-      try {
-        // We import dynamically to avoid circular dependencies if any
-        const { getCoinDetails } = await import("./sdk/getCoins");
-        const { CoinService } = await import("./coinService");
-
-        // Fetch live data from Zora
-        const zoraData: any = await getCoinDetails(data.token_address);
-        const details = zoraData?.zora20Token || zoraData;
-
-        if (details) {
-          // Note: Zora SDK structure varies, ensure we get the right price field.
-          // Usually 'priceInPoolToken' or derived from market cap / supply.
-          // For now, we'll use the data we have. If 'price' is available in details, use it.
-
-          // Actually, let's use the same logic as the Cron Job for consistency
-          const tokenPrice = parseFloat(
-            details.tokenPrice?.priceInPoolToken || "0"
-          );
-          const volume = parseFloat(
-            details.volume24h || details.totalVolume || "0"
-          );
-          const supply = parseFloat(details.totalSupply || "0");
-          const holders = details.uniqueHolders || 0;
-
-          await CoinService.updateCoinPrice(
-            data.token_address,
-            isNaN(tokenPrice) ? 0 : tokenPrice,
-            isNaN(volume) ? 0 : volume,
-            isNaN(supply) ? 0 : supply,
-            holders
-          );
-          console.log(
-            `[AnalyticsService] Triggered update for ${data.token_address}`
-          );
-        }
-      } catch (updateError) {
-        console.error(
-          "[AnalyticsService] Failed to trigger coin update:",
-          updateError
-        );
-        // Don't fail the transaction record just because the background update failed
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(body?.error || "Base transaction verification failed.");
       }
 
       return true;
@@ -153,12 +99,75 @@ export class AnalyticsService {
    */
   static async getPortfolio(address: string): Promise<PortfolioItem[]> {
     try {
-      // 1. Fetch all user balances from Zora SDK
+      // 1. Fetch Zora balances page-by-page with bounded, cursor-safe pagination.
       const zoraBalancesModule = await import("../services/portfolioService");
-      const { balances: zoraBalances } =
-        await zoraBalancesModule.getUserBalances(address, 100);
+      const zoraBalances: Array<{
+        balance?: string | number;
+        coin?: {
+          address?: string;
+          name?: string;
+          symbol?: string;
+          mediaContent?: {
+            previewImage?: { medium?: string; small?: string };
+          };
+          marketCap?: unknown;
+          marketCapDelta24h?: unknown;
+          volume24h?: unknown;
+          totalVolume?: unknown;
+          uniqueHolders?: unknown;
+        };
+      }> = [];
+      const seenBalanceAddresses = new Set<string>();
+      const seenCursors = new Set<string>();
+      const pageSize = 100;
+      const maxPages = 20;
+      let cursor: string | undefined;
 
-      if (!zoraBalances || zoraBalances.length === 0) {
+      for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
+        const page = (await zoraBalancesModule.getUserBalances(
+          address,
+          pageSize,
+          cursor
+        )) as {
+          balances?: typeof zoraBalances;
+          hasMore?: boolean;
+          nextCursor?: unknown;
+        };
+
+        for (const balance of page.balances ?? []) {
+          const tokenAddress = balance.coin?.address?.toLowerCase();
+          if (!tokenAddress || seenBalanceAddresses.has(tokenAddress)) continue;
+
+          seenBalanceAddresses.add(tokenAddress);
+          zoraBalances.push(balance);
+        }
+
+        if (!page.hasMore) break;
+        if (pageNumber === maxPages - 1) {
+          console.warn(
+            `Stopped Zora portfolio pagination after ${maxPages} pages.`
+          );
+          break;
+        }
+
+        const nextCursor =
+          typeof page.nextCursor === "string" && page.nextCursor.trim()
+            ? page.nextCursor
+            : undefined;
+        if (
+          !nextCursor ||
+          nextCursor === cursor ||
+          seenCursors.has(nextCursor)
+        ) {
+          console.warn("Stopped Zora portfolio pagination on an invalid cursor.");
+          break;
+        }
+
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
+      }
+
+      if (zoraBalances.length === 0) {
         return [];
       }
 
@@ -180,8 +189,14 @@ export class AnalyticsService {
         ])
       );
 
-      // 3. Filter Zora balances for tokens on our platform
-      const portfolioItems: PortfolioItem[] = [];
+      // 3. Filter Zora balances for tokens on our platform.
+      type PlatformToken = NonNullable<typeof platformTokens>[number];
+      const matchedBalances: Array<{
+        tokenAddress: string;
+        balance: number;
+        platformToken: PlatformToken;
+        zoraBalance: (typeof zoraBalances)[number];
+      }> = [];
 
       for (const zoraBalance of zoraBalances) {
         const tokenAddress = zoraBalance.coin?.address?.toLowerCase();
@@ -192,50 +207,82 @@ export class AnalyticsService {
         if (!platformToken) continue;
 
         // Get on-chain balance
-        const balance = parseFloat(zoraBalance.balance || "0") / 1e18;
-        if (balance <= 0) continue;
+        const balance =
+          Number.parseFloat(String(zoraBalance.balance ?? "0")) / 1e18;
+        if (!Number.isFinite(balance) || balance <= 0) continue;
 
-        // Try to get transaction history for this token to calculate avg price
-        // We can now use the portfolio table which is automatically updated by triggers
-        const { data: portfolioData } = await supabase
-          .from("portfolio")
-          .select("average_buy_price_usd, total_invested_usd, realized_pnl_usd")
-          .eq("user_address", address)
-          .eq("token_address", tokenAddress)
-          .single();
-
-        const avgPrice = portfolioData?.average_buy_price_usd || 0;
-        const totalInvested = portfolioData?.total_invested_usd || 0;
-        const realizedPnl = portfolioData?.realized_pnl_usd || 0;
-
-        portfolioItems.push({
-          token_address: tokenAddress,
-          balance: balance,
-          average_buy_price_usd: avgPrice,
-          total_invested_usd: totalInvested,
-          realized_pnl_usd: realizedPnl,
-          token_details: {
-            ...platformToken,
-            name: zoraBalance.coin?.name || platformToken.name,
-            symbol: zoraBalance.coin?.symbol || platformToken.symbol,
-            // Use CDN-optimized image from Zora instead of raw IPFS
-            image_url:
-              zoraBalance.coin?.mediaContent?.previewImage?.medium ||
-              zoraBalance.coin?.mediaContent?.previewImage?.small ||
-              platformToken.image_url,
-            // Include full Zora coin data for additional information
-            zora_data: zoraBalance.coin,
-            // Map market data fields for UI consistency
-            marketCap: zoraBalance.coin?.marketCap,
-            change24h: zoraBalance.coin?.marketCapDelta24h,
-            volume24h:
-              zoraBalance.coin?.volume24h || zoraBalance.coin?.totalVolume,
-            holders: zoraBalance.coin?.uniqueHolders,
-          },
+        matchedBalances.push({
+          tokenAddress,
+          balance,
+          platformToken,
+          zoraBalance,
         });
       }
 
-      return portfolioItems;
+      if (matchedBalances.length === 0) return [];
+
+      // 4. Load all persisted cost-basis rows in one query instead of N .single() calls.
+      const tokenAddresses = matchedBalances.map((item) => item.tokenAddress);
+      const { data: portfolioRows, error: portfolioError } = await supabase
+        .from("portfolio")
+        .select(
+          "token_address, average_buy_price_usd, total_invested_usd, realized_pnl_usd"
+        )
+        .eq("user_address", address)
+        .in("token_address", tokenAddresses);
+
+      if (portfolioError) {
+        console.error("Error fetching portfolio cost basis:", portfolioError);
+      }
+
+      const portfolioRowsMap = new Map(
+        (portfolioRows ?? []).map((row) => [
+          row.token_address.toLowerCase(),
+          row,
+        ])
+      );
+      const toFiniteNumber = (value: unknown) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+
+      return matchedBalances.map(
+        ({ tokenAddress, balance, platformToken, zoraBalance }) => {
+          const portfolioData = portfolioRowsMap.get(tokenAddress);
+
+          return {
+            token_address: tokenAddress,
+            balance,
+            average_buy_price_usd: toFiniteNumber(
+              portfolioData?.average_buy_price_usd
+            ),
+            total_invested_usd: toFiniteNumber(
+              portfolioData?.total_invested_usd
+            ),
+            realized_pnl_usd: toFiniteNumber(
+              portfolioData?.realized_pnl_usd
+            ),
+            token_details: {
+              ...platformToken,
+              name: zoraBalance.coin?.name || platformToken.name,
+              symbol: zoraBalance.coin?.symbol || platformToken.symbol,
+              // Use CDN-optimized image from Zora instead of raw IPFS
+              image_url:
+                zoraBalance.coin?.mediaContent?.previewImage?.medium ||
+                zoraBalance.coin?.mediaContent?.previewImage?.small ||
+                platformToken.image_url,
+              // Include full Zora coin data for additional information
+              zora_data: zoraBalance.coin,
+              // Map market data fields for UI consistency
+              marketCap: zoraBalance.coin?.marketCap,
+              change24h: zoraBalance.coin?.marketCapDelta24h,
+              volume24h:
+                zoraBalance.coin?.volume24h || zoraBalance.coin?.totalVolume,
+              holders: zoraBalance.coin?.uniqueHolders,
+            },
+          };
+        }
+      );
     } catch (error) {
       console.error("❌ Failed to get portfolio:", error);
       return [];
@@ -281,9 +328,15 @@ export class AnalyticsService {
   /**
    * Get Leaderboard
    */
-  static async getLeaderboard(type: "volume" | "created", limit: number = 10) {
+  static async getLeaderboard(
+    type: "volume" | "created",
+    limit: number = 10,
+    options?: { throwOnError?: boolean }
+  ) {
     try {
-      let query = supabase.from("users").select("*");
+      let query = supabase
+        .from("users")
+        .select("address, username, avatar_url, coins_created, total_buy_volume");
 
       if (type === "volume") {
         // Now we can use the total_buy_volume column directly
@@ -297,6 +350,7 @@ export class AnalyticsService {
       if (error) throw error;
       return data || [];
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get leaderboard:", error);
       return [];
     }
@@ -305,12 +359,15 @@ export class AnalyticsService {
   /**
    * Get Top Buyers (by USD volume)
    */
-  static async getTopBuyers(limit: number = 10) {
+  static async getTopBuyers(
+    limit: number = 10,
+    options?: { throwOnError?: boolean }
+  ) {
     try {
       // OPTIMIZED: Use the pre-calculated total_buy_volume column from users table
       const { data, error } = await supabase
         .from("users")
-        .select("address, total_buy_volume")
+        .select("address, username, avatar_url, total_buy_volume")
         .order("total_buy_volume", { ascending: false })
         .limit(limit);
 
@@ -319,9 +376,12 @@ export class AnalyticsService {
       // Map to expected format
       return (data || []).map((user) => ({
         address: user.address,
-        total_volume_usd: user.total_buy_volume || 0,
+        username: user.username,
+        avatar_url: user.avatar_url,
+        total_volume_usd: user.total_buy_volume,
       }));
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get top buyers:", error);
       return [];
     }
@@ -330,7 +390,10 @@ export class AnalyticsService {
   /**
    * Get Top Tokens (by Holders)
    */
-  static async getTopTokens(limit: number = 10) {
+  static async getTopTokens(
+    limit: number = 10,
+    options?: { throwOnError?: boolean }
+  ) {
     try {
       const { data, error } = await supabase
         .from("drawcoins")
@@ -341,6 +404,7 @@ export class AnalyticsService {
       if (error) throw error;
       return data || [];
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get top tokens:", error);
       return [];
     }
@@ -349,18 +413,25 @@ export class AnalyticsService {
   /**
    * Get Most Watchlisted Tokens
    */
-  static async getMostWatchlisted(limit: number = 10, offset: number = 0) {
+  static async getMostWatchlisted(
+    limit: number = 10,
+    offset: number = 0,
+    options?: { throwOnError?: boolean }
+  ): Promise<WatchlistedCoin[]> {
     try {
       const { data, error } = await supabase
         .from("drawcoins")
-        .select("*")
+        .select(COIN_CARD_COLUMNS)
         .gt("watchlist_count", 0)
         .order("watchlist_count", { ascending: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false })
         .range(offset, offset + limit - 1);
 
       if (error) throw error;
-      return data || [];
+      return (data ?? []) as unknown as WatchlistedCoin[];
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get most watchlisted tokens:", error);
       return [];
     }
@@ -369,7 +440,10 @@ export class AnalyticsService {
   /**
    * Get Top AI Art Tokens
    */
-  static async getTopAI(limit: number = 10) {
+  static async getTopAI(
+    limit: number = 10,
+    options?: { throwOnError?: boolean }
+  ) {
     try {
       const { data, error } = await supabase
         .from("drawcoins")
@@ -381,6 +455,7 @@ export class AnalyticsService {
       if (error) throw error;
       return data || [];
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get top AI tokens:", error);
       return [];
     }
@@ -389,7 +464,10 @@ export class AnalyticsService {
   /**
    * Get Top Hand-Drawn Tokens
    */
-  static async getTopHandDrawn(limit: number = 10) {
+  static async getTopHandDrawn(
+    limit: number = 10,
+    options?: { throwOnError?: boolean }
+  ) {
     try {
       const { data, error } = await supabase
         .from("drawcoins")
@@ -401,6 +479,7 @@ export class AnalyticsService {
       if (error) throw error;
       return data || [];
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get top hand-drawn tokens:", error);
       return [];
     }
@@ -437,7 +516,8 @@ export class AnalyticsService {
   static async getRecentTransactions(
     limit: number = 20,
     offset: number = 0,
-    type?: "buy" | "sell" | "create"
+    type?: "buy" | "sell" | "create",
+    options?: { throwOnError?: boolean }
   ) {
     try {
       let query = supabase
@@ -460,6 +540,7 @@ export class AnalyticsService {
       if (error) throw error;
       return data || [];
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get recent transactions:", error);
       return [];
     }

@@ -1,0 +1,11 @@
+{
+  "name": "Creator Journey",
+  "description": "Awarded for three verified DrawCoin creations on Base.",
+  "image": "https://drawcoin.app/badges/creator-journey.svg",
+  "external_url": "https://drawcoin.app/missions",
+  "attributes": [
+    { "trait_type": "Mission", "value": "creator-journey" },
+    { "trait_type": "Category", "value": "Creator" },
+    { "trait_type": "Soulbound", "value": "Yes" }
+  ]
+}

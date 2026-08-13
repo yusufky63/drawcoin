@@ -41,6 +41,10 @@ export default function HowItWorksModal({ isOpen, onClose }: HowItWorksModalProp
 
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          <p className="mb-6 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <strong>Built for Base App:</strong> Base Account is the recommended
+            wallet, with standard mobile and desktop browsers supported too.
+          </p>
           <div className="space-y-6">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 rounded-full bg-art-gray-900 text-white flex items-center justify-center font-bold flex-shrink-0 transform rotate-2">
@@ -49,7 +53,7 @@ export default function HowItWorksModal({ isOpen, onClose }: HowItWorksModalProp
               <div>
                 <h3 className="font-bold text-lg text-art-gray-800">Draw & Create</h3>
                 <p className="text-art-gray-600 text-sm">
-                  Use our canvas to draw your unique token image. AI helps you refine your art!
+                  Use the DrawCoin canvas to create your own hand-drawn token image.
                 </p>
               </div>
             </div>
@@ -98,7 +102,7 @@ export default function HowItWorksModal({ isOpen, onClose }: HowItWorksModalProp
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-art-gray-600 hover:text-[#855DCD] transition-colors transform hover:scale-110 duration-200"
-                title="Farcaster"
+                title="Farcaster (optional social)"
               >
                 <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M18.24.24H5.76A5.52 5.52 0 0 0 .24 5.76v12.48a5.52 5.52 0 0 0 5.52 5.52h12.48a5.52 5.52 0 0 0 5.52-5.52V5.76a5.52 5.52 0 0 0-5.52-5.52Zm3.72 18a3.72 3.72 0 0 1-3.72 3.72H5.76A3.72 3.72 0 0 1 2.04 18.24V5.76a3.72 3.72 0 0 1 3.72-3.72h12.48a3.72 3.72 0 0 1 3.72 3.72v12.48Z"/>

@@ -5,11 +5,11 @@
   "rules": {
     "@typescript-eslint/no-unused-vars": 1,
     "@typescript-eslint/no-explicit-any": 1,
-    "react/no-unescaped-entities": "on",
-    "react-hooks/exhaustive-deps": "on",
-    "react/display-name": "on",
-    "@next/next/no-img-element": "on",
-    "@typescript-eslint/prefer-ts-expect-error": "on",
+    "react/no-unescaped-entities": "warn",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/display-name": "warn",
+    "@next/next/no-img-element": "warn",
+    "@typescript-eslint/prefer-ts-expect-error": "warn",
     "@typescript-eslint/ban-ts-comment": 1
   }
 }

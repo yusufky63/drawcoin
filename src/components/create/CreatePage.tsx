@@ -1,32 +1,58 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import {
   useAccount,
   useWalletClient,
   usePublicClient,
   useSwitchChain,
 } from "wagmi";
-import { createToken } from "../../lib/functions/createToken";
+import {
+  createToken,
+  syncCreatedToken,
+  type CoinRecordStatus,
+} from "../../lib/functions/createToken";
 import {
   showCreateMessages,
   showIPFSMessages,
-  showAIMessages,
   showError,
 } from "../../utils/toastUtils";
-import CustomCanvas, { CustomCanvasRef } from "../ui/CustomCanvas";
+import CustomCanvas, {
+  type CustomCanvasDraft,
+  type CustomCanvasRef,
+} from "../ui/CustomCanvas";
 import HandDrawnIcon from "../ui/HandDrawnIcon";
 import SuccessModal from "./SuccessModal";
 import { toast } from "react-hot-toast";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
+import { useWalletSession } from "@/hooks/useWalletSession";
+import { normalizeAdditionalOwners } from "@/lib/create/additionalOwners";
+import { DRAWCOIN_PLATFORM_REFERRER } from "@/lib/drawcoinPlatform";
+import {
+  clearCreateDraft,
+  clearPendingCreation,
+  loadCreateDraft,
+  loadPendingCreation,
+  saveCreateDraft,
+  savePendingCreation,
+  type PendingCreationV1,
+} from "@/lib/create/draftStorage";
 
 interface CreatePageProps {
   onSuccess?: (tokenAddress: string) => void;
 }
 
+const STEP_LABELS = ["Draw your art", "Add details", "Create token"] as const;
+
 export default function CreatePage({ onSuccess }: CreatePageProps) {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
-  const { switchChain } = useSwitchChain();
+  const { switchChainAsync } = useSwitchChain();
+  const {
+    session,
+    status: sessionStatus,
+    signIn,
+  } = useWalletSession();
   const customCanvasRef = React.useRef<CustomCanvasRef>(null);
 
   // Form state
@@ -42,209 +68,96 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const [ownersAddresses, setOwnersAddresses] = useState<string[]>([]);
   const [ownerInputValue, setOwnerInputValue] = useState<string>("");
   const [selectedCurrency] = useState<number>(0); // ZORA currency
-  const [startingMarketCap, setStartingMarketCap] = useState<number>(0); // LOW = 0, HIGH = 1
-  const [smartWalletRouting] = useState<number>(0); // AUTO = 0, DISABLE = 1 (default AUTO)
   const [showAdvancedOptions, setShowAdvancedOptions] =
     useState<boolean>(false);
-  const [platformReferrer] = useState<string>(
-    "0xbFA6A45Dd534d39dF47A3F3D2f2b6E88416f9831"
-  );
+  const platformReferrer = DRAWCOIN_PLATFORM_REFERRER;
 
   // UI state
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [drawnImage, setDrawnImage] = useState<string>("");
   const [currentStep, setCurrentStep] = useState(1);
-  const [canvasSize, setCanvasSize] = useState({ width: 1024, height: 1024 });
-  const totalSteps = 3;
+  const [canvasDraft, setCanvasDraft] = useState<CustomCanvasDraft | null>(null);
+  const [uploadedMetadataUrl, setUploadedMetadataUrl] = useState("");
+  const [draftStorageAvailable, setDraftStorageAvailable] = useState(true);
+  const totalSteps = STEP_LABELS.length;
+  const currentStepLabel = STEP_LABELS[currentStep - 1] ?? STEP_LABELS[0];
 
   // Success modal state
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [createdTokenAddress, setCreatedTokenAddress] = useState<string>("");
+  const [createdTransactionHash, setCreatedTransactionHash] = useState("");
+  const [recordStatus, setRecordStatus] =
+    useState<CoinRecordStatus>("recorded");
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const [pendingCreation, setPendingCreation] =
+    useState<PendingCreationV1 | null>(null);
+  const [syncingCreation, setSyncingCreation] = useState(false);
+  const [creationFinalized, setCreationFinalized] = useState(false);
 
-  // Retry state
-  const [retryCount, setRetryCount] = useState(0);
-  const [maxRetries] = useState(3);
+  useEffect(() => {
+    const storedDraft = loadCreateDraft();
+    if (storedDraft) {
+      const hasArtwork = Boolean(storedDraft.canvas?.elements.length);
+      const hasDetails = Boolean(
+        storedDraft.details.name.trim() &&
+          storedDraft.details.symbol.trim() &&
+          storedDraft.details.description.trim()
+      );
+      const restoredStep = !hasArtwork
+        ? 1
+        : storedDraft.currentStep === 3 && !hasDetails
+        ? 2
+        : storedDraft.currentStep;
 
-  // AI Draw state
-  const [drawMode, setDrawMode] = useState<"custom" | "ai">("custom");
-  const [aiPrompt, setAiPrompt] = useState<string>("");
-  const [aiGenerating, setAiGenerating] = useState<boolean>(false);
-  const [aiGeneratedImage, setAiGeneratedImage] = useState<string>("");
-
-  // AI Limit state
-  const [aiLimit, setAiLimit] = useState<{
-    usage: number;
-    limit: number;
-    resetTime?: string;
-  }>({
-    usage: 0,
-    limit: 3, // ✅ Daily limit is 3
-    resetTime: undefined,
-  });
-
-  // Calculate remaining time until reset
-  const getRemainingTime = () => {
-    if (!aiLimit.resetTime) return null;
-    const now = new Date();
-    const reset = new Date(aiLimit.resetTime);
-    const diff = reset.getTime() - now.getTime();
-
-    if (diff <= 0) return "Soon";
-
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
+      setCanvasDraft(storedDraft.canvas);
+      setCurrentStep(restoredStep);
+      setFormData((previous) => ({
+        ...previous,
+        ...storedDraft.details,
+      }));
+      setOwnersAddresses(storedDraft.options.ownersAddresses);
     }
-    return `${minutes}m`;
-  };
 
-  const isAiLimitReached = aiLimit.usage >= aiLimit.limit;
+    const storedPendingCreation = loadPendingCreation();
+    if (storedPendingCreation) {
+      setPendingCreation(storedPendingCreation);
+      setCreatedTokenAddress(storedPendingCreation.tokenAddress ?? "");
+      setCreatedTransactionHash(storedPendingCreation.transactionHash);
+      setRecordStatus("sync_required");
+      setRecordError(
+        "The Base transaction succeeded, but DrawCoin still needs to sync it to Explore."
+      );
+      setFormData((previous) => ({
+        ...previous,
+        name: storedPendingCreation.payload.name,
+        symbol: storedPendingCreation.payload.symbol,
+        description: storedPendingCreation.payload.description,
+      }));
+    }
 
-  useEffect(() => {
     setInitialLoading(false);
   }, []);
 
-  useEffect(() => {
-    setInitialLoading(false);
-  }, []);
-
-  useEffect(() => {
-    const fetchAiLimit = async () => {
-      if (address) {
-        try {
-          const { supabase } = await import("../../lib/supabase");
-          const { data: user } = await supabase
-            .from("users")
-            .select("daily_ai_usage, last_reset_date")
-            .eq("address", address)
-            .single();
-
-          if (user) {
-            const lastReset = new Date(user.last_reset_date);
-            const now = new Date();
-            const isToday =
-              lastReset.getDate() === now.getDate() &&
-              lastReset.getMonth() === now.getMonth() &&
-              lastReset.getFullYear() === now.getFullYear();
-
-            // Calculate next reset time (midnight)
-            const tomorrow = new Date(now);
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            tomorrow.setHours(0, 0, 0, 0);
-
-            setAiLimit({
-              usage: isToday ? user.daily_ai_usage || 0 : 0,
-              limit: 3, // ✅ Changed from 5 to 3
-              resetTime: tomorrow.toISOString(),
-            });
-          }
-        } catch (e) {
-          console.error("Error fetching AI limit:", e);
-        }
-      }
-    };
-    fetchAiLimit();
-  }, [address]);
-
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (
+    field: "name" | "symbol" | "description",
+    value: string
+  ) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    setUploadedMetadataUrl("");
+    setCreationFinalized(false);
   };
 
-  const handleImageChange = (imageData: string) => {
+  const handleImageChange = useCallback((imageData: string) => {
     setDrawnImage(imageData);
     setFormData((prev) => ({ ...prev, imageUrl: imageData }));
-  };
+  }, []);
 
-  // AI Draw functions
-  const generateAIImage = async () => {
-    if (!aiPrompt.trim()) {
-      showError(
-        "Please enter a description for your AI-generated art",
-        "AI generation"
-      );
-      return;
-    }
-
-    setAiGenerating(true);
-    try {
-      showAIMessages.loading();
-
-      // Use the AI service with Gemini and other providers
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "image",
-          description: aiPrompt,
-          userAddress: address,
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          const data = await response.json();
-          // Update limit info with reset time
-          if (data.resetTime) {
-            setAiLimit((prev) => ({
-              ...prev,
-              resetTime: data.resetTime,
-            }));
-          }
-          throw new Error(data.error || "Daily limit reached");
-        }
-        throw new Error(`AI generation failed: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      if (result.imageUrl) {
-        setAiGeneratedImage(result.imageUrl);
-        setDrawnImage(result.imageUrl);
-        setFormData((prev) => ({ ...prev, imageUrl: result.imageUrl }));
-        setAiLimit((prev) => ({ ...prev, usage: prev.usage + 1 })); // Optimistic update
-        showAIMessages.success();
-      } else {
-        throw new Error("No image URL returned from AI service");
-      }
-    } catch (error) {
-      console.error("AI generation error:", error);
-      showAIMessages.error(error);
-    } finally {
-      setAiGenerating(false);
-    }
-  };
-
-  const handleDrawModeChange = (mode: "custom" | "ai") => {
-    if (mode === "ai" && !isConnected) {
-      showError(
-        "Please connect your wallet to use AI generation",
-        "Wallet Required"
-      );
-      return;
-    }
-
-    setDrawMode(mode);
-    if (mode === "custom") {
-      // Reset AI state when switching to custom
-      setAiPrompt("");
-      setAiGeneratedImage("");
-      if (!drawnImage || drawnImage === aiGeneratedImage) {
-        setDrawnImage("");
-        setFormData((prev) => ({ ...prev, imageUrl: "" }));
-      }
-    } else {
-      // Reset custom drawing when switching to AI
-      if (drawnImage && drawnImage !== aiGeneratedImage) {
-        setDrawnImage("");
-        setFormData((prev) => ({ ...prev, imageUrl: "" }));
-      }
-    }
-  };
+  const handleCanvasDraftChange = useCallback((draft: CustomCanvasDraft) => {
+    setCanvasDraft(draft);
+    setUploadedMetadataUrl("");
+    if (draft.elements.length > 0) setCreationFinalized(false);
+  }, []);
 
   // Note: ETH price fetching removed as initial purchase is no longer supported
 
@@ -254,25 +167,56 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
   // Note: Purchase amount functions removed as initial purchase is no longer supported
 
-  // Set canvas size based on screen size
   useEffect(() => {
-    const updateCanvasSize = () => {
-      if (window.innerWidth < 768) {
-        // Mobile: smaller but still good size
-        setCanvasSize({ width: 400, height: 400 });
-      } else if (window.innerWidth < 1024) {
-        // Tablet: medium size
-        setCanvasSize({ width: 600, height: 600 });
-      } else {
-        // Desktop: large size
-        setCanvasSize({ width: 1024, height: 1024 });
-      }
-    };
+    if (initialLoading || creationFinalized) return;
 
-    updateCanvasSize();
-    window.addEventListener("resize", updateCanvasSize);
-    return () => window.removeEventListener("resize", updateCanvasSize);
-  }, []);
+    const timeoutId = window.setTimeout(() => {
+      const saved = saveCreateDraft({
+        version: 1,
+        updatedAt: Date.now(),
+        currentStep: currentStep as 1 | 2 | 3,
+        canvas: canvasDraft,
+        details: {
+          name: formData.name,
+          symbol: formData.symbol,
+          description: formData.description,
+        },
+        options: {
+          ownersAddresses,
+        },
+      });
+      setDraftStorageAvailable(saved);
+    }, 650);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    canvasDraft,
+    creationFinalized,
+    currentStep,
+    formData.description,
+    formData.name,
+    formData.symbol,
+    initialLoading,
+    ownersAddresses,
+  ]);
+
+  useEffect(() => {
+    if (initialLoading || currentStep === 1 || !canvasDraft?.elements.length) {
+      return;
+    }
+
+    let cancelled = false;
+    const frameId = window.requestAnimationFrame(() => {
+      void customCanvasRef.current?.exportImage().then((image) => {
+        if (!cancelled && image) handleImageChange(image);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [canvasDraft, currentStep, handleImageChange, initialLoading]);
 
   // Note: Purchase amount useEffect removed as initial purchase is no longer supported
 
@@ -319,16 +263,10 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     }
   };
 
-  const getStepStatus = (step: number) => {
-    if (step < currentStep) return "completed";
-    if (step === currentStep) return "current";
-    return "upcoming";
-  };
-
   const canProceedToNext = () => {
     switch (currentStep) {
       case 1:
-        return drawMode !== null; // Sadece draw mode seçilmiş olmalı
+        return true;
       case 2:
         return formData.name && formData.symbol && formData.description; // Name, symbol ve description gerekli
       case 3:
@@ -342,7 +280,12 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     if (!canProceedToNext() || currentStep >= totalSteps) return;
 
     // Step 1'den 2'ye geçerken otomatik capture al
-    if (currentStep === 1 && drawMode === "custom" && customCanvasRef.current) {
+    if (currentStep === 1 && customCanvasRef.current) {
+      if (!customCanvasRef.current.hasContent()) {
+        toast.error("Draw something before continuing.");
+        return;
+      }
+
       const image = await customCanvasRef.current.exportImage();
       if (image) {
         handleImageChange(image);
@@ -364,13 +307,39 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
   const handleSuccessModalClose = () => {
     setShowSuccessModal(false);
-    // Navigate to token detail page when modal is closed
-    if (createdTokenAddress && onSuccess) {
+
+    if (recordStatus === "recorded" && createdTokenAddress && onSuccess) {
       onSuccess(createdTokenAddress);
+      return;
+    }
+
+    if (recordStatus === "recorded") {
+      customCanvasRef.current?.clearCanvas();
+      setCanvasDraft(null);
+      setDrawnImage("");
+      setFormData({ name: "", symbol: "", description: "", imageUrl: "" });
+      setOwnersAddresses([]);
+      setOwnerInputValue("");
+      setUploadedMetadataUrl("");
+      setCreatedTokenAddress("");
+      setCreatedTransactionHash("");
+      setRecordError(null);
+      setCurrentStep(1);
+      clearCreateDraft();
     }
   };
 
-  const handleCreateToken = async (isRetry: boolean = false) => {
+  const handleCreateToken = async () => {
+    if (pendingCreation) {
+      setRecordStatus("sync_required");
+      setShowSuccessModal(true);
+      toast(
+        "Sync the existing Base transaction to Explore before creating another token.",
+        { icon: "↻" }
+      );
+      return;
+    }
+
     if (!isConnected || !walletClient || !publicClient || !address) {
       showError("Please connect your wallet first", "wallet connection");
       return;
@@ -389,13 +358,25 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
     setLoading(true);
 
     try {
-      // First upload image to IPFS
-      const ipfsUrl = await uploadToIPFS(
-        formData.imageUrl,
-        formData.name,
-        formData.symbol,
-        formData.description
-      );
+      if (
+        sessionStatus !== "authenticated" ||
+        !session ||
+        session.address.toLowerCase() !== address.toLowerCase()
+      ) {
+        await signIn();
+      }
+
+      // A manual retry after a cancelled wallet request reuses the same IPFS
+      // metadata URI and does not consume another permanent upload quota.
+      const ipfsUrl =
+        uploadedMetadataUrl ||
+        (await uploadToIPFS(
+          formData.imageUrl,
+          formData.name,
+          formData.symbol,
+          formData.description
+        ));
+      setUploadedMetadataUrl(ipfsUrl);
 
       const tokenData = {
         name: formData.name,
@@ -403,13 +384,10 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         description: formData.description,
         imageUrl: ipfsUrl, // Use IPFS URL instead of base64
         category: "DrawCoin",
-        creation_type:
-          drawMode === "ai" ? ("ai" as const) : ("hand-drawn" as const),
+        creation_type: "hand-drawn" as const,
         // Note: Initial purchase parameters removed as not supported in SDK v2
         ownersAddresses: ownersAddresses,
         selectedCurrency: selectedCurrency,
-        startingMarketCap: startingMarketCap,
-        smartWalletRouting: smartWalletRouting,
         platformReferrer: platformReferrer,
       };
 
@@ -418,40 +396,137 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         walletClient,
         publicClient,
         address,
-        switchChain
+        switchChainAsync
       );
 
-      if (result.address) {
+      const tokenAddress =
+        result.contractAddress ??
+        result.address ??
+        result.recordedCoin?.contract_address ??
+        result.recoveryPayload.contract_address ??
+        "";
+
+      setCreatedTokenAddress(tokenAddress);
+      setCreatedTransactionHash(result.transactionHash);
+      setRecordStatus(result.recordStatus);
+      setRecordError(result.recordError?.message ?? null);
+
+      if (result.recordStatus === "recorded") {
+        setPendingCreation(null);
+        setCreationFinalized(true);
+        clearPendingCreation();
+        clearCreateDraft();
         showCreateMessages.success();
-
-        // Reset retry count on success
-        setRetryCount(0);
-
-        // Set the created token address and show success modal
-        setCreatedTokenAddress(result.address);
-        setShowSuccessModal(true);
-      }
-    } catch (error: any) {
-      console.error("Error creating token:", error);
-
-      // Check if we should retry
-      if (retryCount < maxRetries && !isRetry) {
-        const newRetryCount = retryCount + 1;
-        setRetryCount(newRetryCount);
-
-        showCreateMessages.retry(newRetryCount, maxRetries);
-
-        // Wait 2 seconds before retry
-        setTimeout(() => {
-          handleCreateToken(true);
-        }, 2000);
       } else {
-        // Final failure
-        setRetryCount(0);
-        showCreateMessages.finalError(maxRetries);
+        const pending: PendingCreationV1 = {
+          version: 1,
+          updatedAt: Date.now(),
+          transactionHash: result.transactionHash,
+          tokenAddress: tokenAddress || null,
+          payload: result.recoveryPayload,
+        };
+        setPendingCreation(pending);
+        let recoverySaved = savePendingCreation(pending);
+        if (!recoverySaved) {
+          // A successful Base transaction is more important than an editable
+          // pre-mint draft. Free that space once, then retry the recovery record.
+          clearCreateDraft();
+          recoverySaved = savePendingCreation(pending);
+          setDraftStorageAvailable(false);
+        }
+        if (!recoverySaved) {
+          setRecordError(
+            "DrawCoin could not save this recovery locally. Keep this page open until sync succeeds."
+          );
+        }
+        toast(
+          "Your token is live on Base. Use Sync to Explore to finish the DrawCoin record.",
+          { icon: "↻", duration: 6_000 }
+        );
       }
+
+      setShowSuccessModal(true);
+    } catch (error: unknown) {
+      console.error("Error creating token:", error);
+      showCreateMessages.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRetrySync = async () => {
+    if (!pendingCreation) return;
+    if (!isConnected || !address) {
+      showError("Connect the wallet that created this token first.", "coin sync");
+      return;
+    }
+    if (
+      pendingCreation.payload.creator_address.toLowerCase() !==
+      address.toLowerCase()
+    ) {
+      showError(
+        "Connect the same wallet that created this Base transaction.",
+        "coin sync"
+      );
+      return;
+    }
+
+    setSyncingCreation(true);
+    setRecordError(null);
+
+    try {
+      if (
+        sessionStatus !== "authenticated" ||
+        !session ||
+        session.address.toLowerCase() !== address.toLowerCase()
+      ) {
+        await signIn();
+      }
+
+      const result = await syncCreatedToken(pendingCreation.payload);
+      if (result.status === "recorded") {
+        const syncedAddress =
+          result.coin?.contract_address ?? pendingCreation.tokenAddress ?? "";
+        setCreatedTokenAddress(syncedAddress);
+        setRecordStatus("recorded");
+        setRecordError(null);
+        setPendingCreation(null);
+        setCreationFinalized(true);
+        clearPendingCreation();
+        clearCreateDraft();
+        setShowSuccessModal(true);
+        toast.success("Synced to Explore. No second mint was created.");
+        return;
+      }
+
+      const updatedPending: PendingCreationV1 = {
+        ...pendingCreation,
+        updatedAt: Date.now(),
+        payload: result.recoveryPayload,
+      };
+      setPendingCreation(updatedPending);
+      let recoverySaved = savePendingCreation(updatedPending);
+      if (!recoverySaved) {
+        clearCreateDraft();
+        recoverySaved = savePendingCreation(updatedPending);
+        setDraftStorageAvailable(false);
+      }
+      setRecordStatus("sync_required");
+      setRecordError(
+        recoverySaved
+          ? result.error?.message ?? "Sync is temporarily unavailable."
+          : "Sync is unavailable and recovery could not be saved locally. Keep this page open."
+      );
+      setShowSuccessModal(true);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Sync is temporarily unavailable.";
+      setRecordStatus("sync_required");
+      setRecordError(message);
+      setShowSuccessModal(true);
+      showError(error, "coin sync");
+    } finally {
+      setSyncingCreation(false);
     }
   };
 
@@ -459,25 +534,11 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   if (initialLoading) {
     return (
       <div className="min-h-screen bg-art-off-white">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="space-y-6">
-            {/* Header Skeleton */}
-            <div className="flex justify-between items-center">
-              <HandDrawnSkeleton variant="text" className="w-64 h-10" />
-              <HandDrawnSkeleton variant="text" className="w-48 h-10" />
-            </div>
-
-            {/* Navigation Skeleton */}
-            <div className="hand-drawn-card p-4">
-              <HandDrawnSkeleton variant="text" className="w-full h-12" />
-            </div>
-
-            {/* Canvas/Content Skeleton */}
-            <div className="hand-drawn-card p-6">
-              <div className="space-y-4">
-                <HandDrawnSkeleton variant="text" className="w-1/3 h-6" />
-                <div className="w-full h-96 bg-art-gray-200 rounded-art animate-pulse" />
-              </div>
+        <div className="mx-auto max-w-7xl px-3 pb-6 pt-2 sm:px-4 sm:pt-3">
+          <div className="rounded-art border-2 border-art-gray-200 bg-white p-3 sm:p-4">
+            <div className="space-y-3">
+              <HandDrawnSkeleton variant="text" className="h-9 w-full" />
+              <div className="aspect-square w-full max-w-[44rem] rounded-art bg-art-gray-200 animate-pulse" />
             </div>
           </div>
         </div>
@@ -487,444 +548,79 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
   return (
     <div className="min-h-screen bg-art-off-white">
-      <div className="max-w-7xl mx-auto px-4">
-        {/* Tab and Steps - Responsive Layout */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 space-y-3 md:space-y-0">
-          {/* Tab Navigation */}
-          <div className="flex justify-center md:justify-start mt-5">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => handleDrawModeChange("custom")}
-                className={`flex items-center ${
-                  drawMode === "custom"
-                    ? "hand-drawn-btn"
-                    : "hand-drawn-btn-dotted secondary"
-                }`}
-                style={{ padding: "0.75rem 1.5rem" }}
-              >
-                <HandDrawnIcon type="art" />
-                <span className="ml-2">Custom Draw</span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleDrawModeChange("ai");
-                }}
-                title={
-                  !isConnected ? "Connect wallet to use AI" : "Generate AI Art"
-                }
-                className={`flex items-center ${
-                  drawMode === "ai"
-                    ? "hand-drawn-btn"
-                    : "hand-drawn-btn-dotted secondary"
-                } ${!isConnected ? "opacity-70 cursor-pointer" : ""}`}
-                style={{ padding: "0.75rem 1.5rem" }}
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+      <div className="mx-auto max-w-7xl px-3 pb-6 pt-2 sm:px-4 sm:pt-3">
+
+        {pendingCreation && (
+          <section
+            aria-labelledby="pending-creation-title"
+            className="mb-4 rounded-[16px_7px_14px_9px] border-2 border-amber-700 bg-amber-50 px-3 py-3 shadow-[3px_3px_0_#92400e] sm:px-4"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2
+                  id="pending-creation-title"
+                  className="text-sm font-bold text-amber-950"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                  />
-                </svg>
-                <span className="ml-2">AI Draw</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Progress Steps - Responsive Design */}
-          <div className="flex justify-center md:justify-end">
-            <div className="flex flex-col items-center">
-              {/* Mobile: Compact Step Indicators */}
-              <div className="md:hidden flex items-center space-x-4 mb-2">
-                {[1, 2, 3].map((step) => (
-                  <div key={step} className="flex flex-col items-center">
-                    <div
-                      className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all duration-300 ${
-                        getStepStatus(step) === "completed"
-                          ? "bg-green-500 border-green-500 text-white"
-                          : getStepStatus(step) === "current"
-                          ? "bg-art-gray-900 border-art-gray-900 text-white"
-                          : "bg-white border-art-gray-300 text-art-gray-400"
-                      }`}
-                      style={{
-                        borderRadius: "50% 30% 50% 30%",
-                      }}
-                    >
-                      {getStepStatus(step) === "completed" ? (
-                        <svg
-                          className="w-4 h-4"
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      ) : (
-                        <span className="text-xs font-bold">{step}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  Base creation waiting for Explore sync
+                </h2>
+                <p className="mt-0.5 text-xs leading-5 text-amber-900">
+                  The mint already succeeded. Syncing only records that same
+                  transaction in DrawCoin; it will not create another token.
+                </p>
+                {recordError && (
+                  <p aria-live="polite" className="mt-1 text-xs text-amber-800">
+                    {recordError}
+                  </p>
+                )}
               </div>
-
-              {/* Mobile: Current Step Label */}
-              <div className="md:hidden text-xs text-art-gray-600 font-medium mb-1">
-                {currentStep === 1 && "Draw Your Art"}
-                {currentStep === 2 && "Add Details"}
-                {currentStep === 3 && "Create Token"}
-              </div>
-
-              {/* Mobile: Progress Text */}
-              <div className="md:hidden text-xs text-art-gray-400">
-                Step {currentStep} of {totalSteps}
-              </div>
-
-              {/* Desktop: Full Progress Bar */}
-              <div className="hidden md:block">
-                {/* Progress Bar Container */}
-                <div className="relative w-full max-w-md">
-                  {/* Background Progress Bar */}
-                  <div
-                    className="absolute top-1/2 left-0 w-full h-2 bg-art-gray-200 rounded-full transform -translate-y-1/2"
-                    style={{ borderRadius: "20px 5px 15px 8px" }}
-                  >
-                    {/* Active Progress Bar */}
-                    <div
-                      className="h-full bg-gradient-to-r from-art-gray-900 to-art-gray-700 rounded-full transition-all duration-500 ease-out"
-                      style={{
-                        width: `${((currentStep - 1) / 2) * 100}%`,
-                        borderRadius: "20px 5px 15px 8px",
-                        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                      }}
-                    />
-                  </div>
-
-                  {/* Step Indicators */}
-                  <div className="relative flex justify-between items-center">
-                    {[1, 2, 3].map((step) => (
-                      <div key={step} className="flex flex-col items-center">
-                        <div
-                          className={`flex items-center justify-center w-12 h-12 rounded-full border-3 transition-all duration-300 transform ${
-                            getStepStatus(step) === "completed"
-                              ? "bg-green-500 border-green-500 text-white scale-110 shadow-lg"
-                              : getStepStatus(step) === "current"
-                              ? "bg-art-gray-900 border-art-gray-900 text-white scale-110 shadow-lg ring-4 ring-art-gray-200"
-                              : "bg-white border-art-gray-300 text-art-gray-400 hover:scale-105"
-                          }`}
-                          style={{
-                            borderRadius: "50% 30% 50% 30%",
-                            borderStyle: "solid",
-                            borderWidth: "3px",
-                          }}
-                        >
-                          {getStepStatus(step) === "completed" ? (
-                            <svg
-                              className="w-6 h-6"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                          ) : (
-                            <span className="text-base font-bold">{step}</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href={`https://basescan.org/tx/${pendingCreation.transactionHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-10 items-center justify-center rounded-art border-2 border-amber-800 bg-white px-3 text-xs font-bold text-amber-950 hover:bg-amber-100"
+                >
+                  View transaction
+                </a>
+                <button
+                  type="button"
+                  onClick={handleRetrySync}
+                  disabled={syncingCreation}
+                  className="hand-drawn-btn min-h-10 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {syncingCreation ? "Syncing…" : "Sync to Explore"}
+                </button>
               </div>
             </div>
-          </div>
-        </div>
+          </section>
+        )}
 
         <div className="w-full">
-          {/* Navigation Buttons - Top (Desktop Only) */}
-          <div className="hidden md:flex justify-between items-center mb-4 px-4 py-3 bg-white border-2 border-gray-200 rounded-art">
-            <button
-              onClick={prevStep}
-              disabled={currentStep === 1}
-              className="hand-drawn-btn secondary disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ← Previous
-            </button>
-            <div className="text-center">
-              <span className="text-sm font-bold text-gray-600">
-                Step {currentStep} of {totalSteps}
-              </span>
-            </div>
-            {currentStep < totalSteps && (
-              <button
-                onClick={nextStep}
-                disabled={!canProceedToNext()}
-                className="hand-drawn-btn disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next →
-              </button>
-            )}
-            {currentStep === totalSteps && <div className="w-24"></div>}
-          </div>
-
           {/* Current Step Only */}
           {/* Step 1: Draw Your Art */}
-          {currentStep === 1 && (
-            <div className="space-y-4">
-              {/* Content based on selected mode */}
-              {drawMode === "custom" ? (
-                <div className="w-full max-w-full mx-auto">
-                  <CustomCanvas
-                    ref={customCanvasRef}
-                    width={canvasSize.width}
-                    height={canvasSize.height}
-                  />
-                </div>
-              ) : (
-                /* AI Draw Mode */
-                <div className="flex flex-col lg:flex-row gap-4">
-                  {/* AI Generation Area */}
-                  <div className="flex-1">
-                    <div
-                      className="hand-drawn-card"
-                      style={{ transform: "rotate(-0.5deg)" }}
-                    >
-                      <div className="hand-drawn-header">
-                        <svg
-                          className="w-5 h-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                          />
-                        </svg>
-                        <div className="flex-1 flex justify-between items-center ml-2">
-                          <h3 className="text-lg">AI Art Generation</h3>
-                          <span
-                            className={`text-xs font-bold px-2 py-1 rounded-full border ${
-                              aiLimit.usage >= aiLimit.limit
-                                ? "bg-red-100 text-red-600 border-red-200"
-                                : "bg-green-100 text-green-600 border-green-200"
-                            }`}
-                          >
-                            {Math.max(0, aiLimit.limit - aiLimit.usage)} left
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-xs md:text-sm text-art-gray-600 mb-4 md:mb-6">
-                        Describe what you want to create and let AI generate
-                        hand-drawn style artwork for your token
-                      </p>
-
-                      {/* AI Prompt Input */}
-                      <div className="mb-4">
-                        <label className="hand-drawn-label">
-                          Describe your artwork
-                        </label>
-                        <textarea
-                          value={aiPrompt}
-                          onChange={(e) => setAiPrompt(e.target.value)}
-                          placeholder="Describe what you want to create... (e.g., 'A beautiful sunset over mountains', 'Abstract geometric patterns', 'A cute cartoon character')"
-                          className="hand-drawn-textarea"
-                          rows={4}
-                          maxLength={500}
-                        />
-                        <div className="text-xs text-art-gray-500 mt-1 text-right">
-                          {aiPrompt.length}/500
-                        </div>
-                      </div>
-
-                      {/* Limit Reached Warning */}
-                      {isAiLimitReached && (
-                        <div className="mb-4 bg-red-50 border-2 border-red-200 rounded-art p-4">
-                          <div className="flex items-start space-x-3">
-                            <svg
-                              className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                            <div className="flex-1">
-                              <h4 className="text-sm font-bold text-red-800 mb-1">
-                                Daily Limit Reached ({aiLimit.limit}/
-                                {aiLimit.limit})
-                              </h4>
-                              <p className="text-xs text-red-700">
-                                You've used all your AI generations for today.
-                                {aiLimit.resetTime && (
-                                  <span className="font-semibold">
-                                    {" "}
-                                    Reset in: {getRemainingTime()}
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Generate Button */}
-                      <button
-                        onClick={generateAIImage}
-                        disabled={
-                          aiGenerating || !aiPrompt.trim() || isAiLimitReached
-                        }
-                        className="hand-drawn-btn w-full text-lg py-4 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {aiGenerating ? (
-                          <div className="flex items-center justify-center">
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                            Generating AI Art...
-                          </div>
-                        ) : isAiLimitReached ? (
-                          <div className="flex items-center justify-center">
-                            <svg
-                              className="w-5 h-5 mr-2"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                            Available in {getRemainingTime()}
-                          </div>
-                        ) : aiGeneratedImage ? (
-                          <div className="flex items-center justify-center">
-                            <svg
-                              className="w-5 h-5 mr-2"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                              />
-                            </svg>
-                            Regenerate
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center">
-                            <svg
-                              className="w-5 h-5 mr-2"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                              />
-                            </svg>
-                            Generate AI Art
-                          </div>
-                        )}
-                      </button>
-
-                      {/* Generation Progress */}
-                      {aiGenerating && (
-                        <div className="mt-4 bg-art-off-white rounded-art p-4 border border-art-gray-200">
-                          <div className="flex items-center space-x-3">
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-art-gray-900"></div>
-                            <div className="text-sm text-art-gray-600">
-                              <div className="font-medium">
-                                Creating your artwork...
-                              </div>
-                              <div className="text-xs text-art-gray-500 mt-1">
-                                This may take 30-60 seconds. Please don't close
-                                this page.
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Generated Image Preview */}
-                      {aiGeneratedImage && (
-                        <div className="mt-6">
-                          <label className="hand-drawn-label">
-                            Generated Artwork
-                          </label>
-                          <div className="art-preview">
-                            <img
-                              src={aiGeneratedImage}
-                              alt="AI Generated Art"
-                              className="w-full h-auto rounded-art border border-art-gray-200"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* AI Info Panel - Hand-drawn Card Style */}
-                  <div className="w-full lg:w-72">
-                    <div
-                      className="hand-drawn-card"
-                      style={{ transform: "rotate(0.3deg)" }}
-                    >
-                      <div className="hand-drawn-header">
-                        <HandDrawnIcon type="art" />
-                        <h3 className="text-lg">AI Art Tips</h3>
-                      </div>
-                      <p className="text-xs md:text-sm text-art-gray-600 mb-4 md:mb-6">
-                        Get the best results from AI art generation
-                      </p>
-
-                      <div className="space-y-3 text-sm text-art-gray-600">
-                        <div>
-                          <strong>Be descriptive:</strong> Add details for
-                          better results.
-                        </div>
-                        <div>
-                          <strong>Examples:</strong>
-                          <ul className="mt-2 space-y-1 text-xs">
-                            <li>• "A cute cat"</li>
-                            <li>• "Mountain landscape"</li>
-                            <li>• "Vintage car"</li>
-                          </ul>
-                        </div>
-                        <div className="bg-art-off-white rounded-art p-3 border border-art-gray-200">
-                          <strong>Note:</strong> AI generates hand-drawn style
-                          artwork at 1024x1024 resolution.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+          <div
+            className={currentStep === 1 ? "space-y-2" : "hidden"}
+            aria-hidden={currentStep !== 1}
+          >
+            <div className="w-full max-w-full mx-auto">
+              <CustomCanvas
+                ref={customCanvasRef}
+                width={1024}
+                height={1024}
+                initialDraft={canvasDraft}
+                onDraftChange={handleCanvasDraftChange}
+                interactionEnabled={currentStep === 1}
+              />
             </div>
-          )}
+            {!draftStorageAvailable ? (
+              <p
+                className="px-1 text-center text-[11px] text-amber-700 sm:text-xs"
+                role="status"
+              >
+                Local draft saving is unavailable. Keep this page open.
+              </p>
+            ) : null}
+          </div>
 
           {/* Step 2: Add Details */}
           {currentStep === 2 && (
@@ -998,9 +694,13 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                 <div className="w-full max-w-7xl">
                   <div className="art-preview">
                     {drawnImage && (
-                      <img
+                      <Image
                         src={drawnImage}
                         alt="Your artwork"
+                        width={1024}
+                        height={1024}
+                        sizes="(max-width: 1024px) 100vw, 70vw"
+                        unoptimized
                         className="w-full h-auto rounded-art border border-art-gray-200"
                       />
                     )}
@@ -1020,9 +720,9 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                   <div className="mb-4">
                     <button
                       type="button"
-                      onClick={() =>
-                        setShowAdvancedOptions(!showAdvancedOptions)
-                      }
+                      onClick={() => setShowAdvancedOptions((visible) => !visible)}
+                      aria-expanded={showAdvancedOptions}
+                      aria-controls="advanced-token-options"
                       className="flex items-center justify-between w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded-art border border-gray-200 transition-colors"
                     >
                       <span className="text-sm font-medium text-art-gray-700">
@@ -1048,60 +748,10 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
 
                   {/* Advanced Options Content */}
                   {showAdvancedOptions && (
-                    <div className="mb-6 p-4 bg-gray-50 rounded-art border border-gray-200">
-                      {/* Starting Market Cap Selection */}
-                      <div className="mb-4">
-                        <label className="hand-drawn-label mb-3">
-                          Starting Market Cap
-                        </label>
-                        <div className="space-y-3">
-                          <div className="flex items-center space-x-3">
-                            <input
-                              type="radio"
-                              id="low-market-cap"
-                              name="marketCap"
-                              value="0"
-                              checked={startingMarketCap === 0}
-                              onChange={(e) =>
-                                setStartingMarketCap(Number(e.target.value))
-                              }
-                              className="w-4 h-4 text-art-gray-900"
-                            />
-                            <label
-                              htmlFor="low-market-cap"
-                              className="text-sm text-art-gray-700"
-                            >
-                              <span className="font-bold">LOW</span> - Lower
-                              initial liquidity, more price volatility
-                            </label>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                            <input
-                              type="radio"
-                              id="high-market-cap"
-                              name="marketCap"
-                              value="1"
-                              checked={startingMarketCap === 1}
-                              onChange={(e) =>
-                                setStartingMarketCap(Number(e.target.value))
-                              }
-                              className="w-4 h-4 text-art-gray-900"
-                            />
-                            <label
-                              htmlFor="high-market-cap"
-                              className="text-sm text-art-gray-700"
-                            >
-                              <span className="font-bold">HIGH</span> - Higher
-                              initial liquidity, more stable pricing
-                            </label>
-                          </div>
-                        </div>
-                        <div className="mt-2 text-xs text-art-gray-500">
-                          This affects the initial trading conditions and price
-                          discovery for your token.
-                        </div>
-                      </div>
-
+                    <div
+                      id="advanced-token-options"
+                      className="mb-6 p-4 bg-gray-50 rounded-art border border-gray-200"
+                    >
                       {/* Co-Owners Section */}
                       <div className="mb-4">
                         <label className="hand-drawn-label mb-3">
@@ -1127,22 +777,30 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                             type="button"
                             onClick={() => {
                               const trimmed = ownerInputValue.trim();
-                              if (
-                                trimmed &&
-                                trimmed.startsWith("0x") &&
-                                trimmed.length === 42
-                              ) {
-                                if (!ownersAddresses.includes(trimmed)) {
-                                  setOwnersAddresses([
-                                    ...ownersAddresses,
-                                    trimmed,
-                                  ]);
-                                  setOwnerInputValue("");
-                                } else {
+                              if (!address) {
+                                alert("Connect your wallet before adding co-owners");
+                                return;
+                              }
+
+                              try {
+                                const normalizedOwners = normalizeAdditionalOwners(
+                                  [...ownersAddresses, trimmed],
+                                  address
+                                );
+                                if (
+                                  normalizedOwners.length === ownersAddresses.length
+                                ) {
                                   alert("This address is already added");
+                                  return;
                                 }
-                              } else {
-                                alert("Please enter a valid Ethereum address");
+                                setOwnersAddresses(normalizedOwners);
+                                setOwnerInputValue("");
+                              } catch (error) {
+                                alert(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Please enter a valid Ethereum address"
+                                );
                               }
                             }}
                             className="hand-drawn-btn px-4 py-2"
@@ -1187,9 +845,10 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                   )}
 
                   <button
-                    onClick={() => handleCreateToken(false)}
+                    onClick={handleCreateToken}
                     disabled={
                       loading ||
+                      Boolean(pendingCreation) ||
                       !isConnected ||
                       !formData.name ||
                       !formData.symbol ||
@@ -1200,9 +859,11 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
                     {loading ? (
                       <div className="flex items-center justify-center">
                         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                        {retryCount > 0
-                          ? `Retrying... (${retryCount}/${maxRetries})`
-                          : "Creating Token..."}
+                        Creating Token...
+                      </div>
+                    ) : pendingCreation ? (
+                      <div className="flex items-center justify-center">
+                        <span>Sync Previous Token First</span>
                       </div>
                     ) : (
                       <div className="flex items-center justify-center">
@@ -1239,31 +900,37 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
             </div>
           )}
 
-          {/* Navigation Buttons - Bottom (Mobile Only) */}
-          <div className="md:hidden flex justify-between items-center mt-3 mb-6 px-3 py-2 bg-white border-2 border-gray-200 rounded-art">
-            <button
-              onClick={prevStep}
-              disabled={currentStep === 1}
-              className="hand-drawn-btn secondary disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-2"
+          {/* Compact navigation below the active step */}
+          <nav
+            aria-label="Create token progress"
+            className="mt-3 mb-6 flex items-center gap-2 border-t-2 border-art-gray-200 pt-3"
+          >
+            <span
+              aria-live="polite"
+              className="mr-auto min-w-0 truncate text-xs font-bold text-gray-500 sm:text-sm"
             >
-              ← Prev
-            </button>
-            <div className="text-center">
-              <span className="text-xs font-bold text-gray-600">
-                {currentStep}/{totalSteps}
-              </span>
-            </div>
+              {currentStep}/{totalSteps} · {currentStepLabel}
+            </span>
+            {currentStep > 1 ? (
+              <button
+                type="button"
+                onClick={prevStep}
+                className="hand-drawn-btn secondary !min-h-10 !px-3 !py-1.5 text-sm"
+              >
+                ← Back
+              </button>
+            ) : null}
             {currentStep < totalSteps && (
               <button
+                type="button"
                 onClick={nextStep}
                 disabled={!canProceedToNext()}
-                className="hand-drawn-btn disabled:opacity-50 disabled:cursor-not-allowed text-sm px-3 py-2"
+                className="hand-drawn-btn !min-h-10 !px-3 !py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Next →
+                Continue →
               </button>
             )}
-            {currentStep === totalSteps && <div className="w-20"></div>}
-          </div>
+          </nav>
         </div>
       </div>
 
@@ -1275,6 +942,11 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         tokenSymbol={formData.symbol}
         tokenAddress={createdTokenAddress}
         tokenImage={formData.imageUrl}
+        transactionHash={createdTransactionHash}
+        recordStatus={recordStatus}
+        recordError={recordError}
+        onRetrySync={handleRetrySync}
+        isRetryingSync={syncingCreation}
       />
     </div>
   );

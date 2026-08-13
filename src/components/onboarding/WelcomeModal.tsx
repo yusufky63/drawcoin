@@ -68,20 +68,20 @@ export default function WelcomeModal({ isOpen, onClose }: WelcomeModalProps) {
             >
               Welcome to DrawCoin!
             </h2>
-            <div className="h-1 w-32 bg-[#4299e1] mx-auto rounded-full transform rotate-1"></div>
+            <div className="mx-auto h-1 w-32 rotate-1 rounded-full bg-[var(--base-blue)]"></div>
           </div>
 
           {/* Steps */}
           <div className="space-y-6 mb-8">
             <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-[#4299e1] text-white rounded-full flex items-center justify-center text-xl font-bold border-2 border-[#2d3748] shadow-[3px_3px_0_#2d3748] transform -rotate-2">
+              <div className="flex h-10 w-10 flex-shrink-0 -rotate-2 items-center justify-center rounded-full border-2 border-[#2d3748] bg-[var(--base-blue)] text-xl font-bold text-white shadow-[3px_3px_0_#2d3748]">
                 1
               </div>
               <div>
                 <h3 className="text-lg font-bold text-[#2d3748]">Draw</h3>
                 <p className="text-[#4a5568] text-sm md:text-base">
-                  Create your unique token logo using our hand-drawn canvas
-                  tools or AI.
+                  Create your unique token artwork using our hand-drawn canvas
+                  tools.
                 </p>
               </div>
             </div>
@@ -130,7 +130,7 @@ export default function WelcomeModal({ isOpen, onClose }: WelcomeModalProps) {
                   type="checkbox"
                   checked={dontShowAgain}
                   onChange={(e) => setDontShowAgain(e.target.checked)}
-                  className="appearance-none w-5 h-5 border-2 border-[#718096] rounded checked:bg-[#4299e1] checked:border-[#4299e1] transition-colors"
+                  className="h-5 w-5 appearance-none rounded border-2 border-[#718096] transition-colors checked:border-[var(--base-blue)] checked:bg-[var(--base-blue)]"
                 />
                 {dontShowAgain && (
                   <svg

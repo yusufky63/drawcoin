@@ -7,13 +7,15 @@ import {
   useWalletClient,
   useSwitchChain,
 } from "wagmi";
-import {
-  executeTrade,
-  executeERC20Trade,
-} from "../../services/sdk/getTradeCoin";
+import { executeTrade } from "../../services/sdk/getTradeCoin";
 import { getETHPrice } from "../../services/cryptoPrice";
 import { toast } from "react-hot-toast";
 import TradeSuccessModal from "./TradeSuccessModal";
+import { formatEther } from "viem";
+import {
+  isZoraTradeWalletSupported,
+  ZORA_TRADE_EOA_ONLY_MESSAGE,
+} from "../../lib/zoraTradeSafety";
 
 interface DetailsModalProps {
   token: Coin | null;
@@ -42,31 +44,21 @@ export default function DetailsModal({
   }, [isOpen]);
 
   // Trade state
-  const { address, isConnected } = useAccount();
+  const { address, connector, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
   const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
-  const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 30%)
+  const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 10%)
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [trading, setTrading] = useState(false);
   const [ethBalance, setEthBalance] = useState<string>("0");
   const [tokenBalance, setTokenBalance] = useState<string>("0");
-  const [isCreator, setIsCreator] = useState<boolean>(false);
   const [ethPrice, setEthPrice] = useState<number>(0);
-  const [selectedCurrency, setSelectedCurrency] = useState<"ETH" | "USDC">(
-    "ETH"
-  );
-  const [usdcBalance, setUsdcBalance] = useState<string>("0");
-  const [showTokenSelect, setShowTokenSelect] = useState(false);
-  const [availableTokens, setAvailableTokens] = useState<
-    Array<{ symbol: string; address: string; balance: string }>
-  >([]);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-
-  // Token addresses on Base
-  const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+  const tokenContractAddress = token?.contract_address;
+  const isTradeWalletSupported = isZoraTradeWalletSupported(connector?.id);
 
   // Allow external trigger to open Trade tab with direction
   useEffect(() => {
@@ -99,7 +91,7 @@ export default function DetailsModal({
         } else {
           setData(null);
         }
-      } catch (e: any) {
+      } catch {
         if (!mounted) return;
         setData(null);
       }
@@ -118,7 +110,6 @@ export default function DetailsModal({
           const balance = await publicClient.getBalance({ address });
           const ethBalance = (Number(balance) / 10 ** 18).toFixed(4);
           setEthBalance(ethBalance);
-          console.log("ETH Balance:", ethBalance);
         } catch (error) {
           console.error("Failed to fetch ETH balance:", error);
           setEthBalance("0");
@@ -128,61 +119,13 @@ export default function DetailsModal({
     fetchEthBalance();
   }, [isOpen, address, publicClient]);
 
-  // Fetch USDC and ZORA balances
-  useEffect(() => {
-    const fetchTokenBalances = async () => {
-      if (isOpen && address && publicClient) {
-        try {
-          // Fetch USDC balance
-          const usdcBalance = await publicClient.readContract({
-            address: USDC_ADDRESS as `0x${string}`,
-            abi: [
-              {
-                constant: true,
-                inputs: [{ name: "_owner", type: "address" }],
-                name: "balanceOf",
-                outputs: [{ name: "balance", type: "uint256" }],
-                type: "function",
-              },
-            ],
-            functionName: "balanceOf",
-            args: [address as `0x${string}`],
-          });
-          setUsdcBalance((Number(usdcBalance) / 10 ** 6).toFixed(2)); // USDC has 6 decimals
-        } catch (error) {
-          console.error("Failed to fetch token balances:", error);
-          setUsdcBalance("0");
-        }
-      }
-    };
-    fetchTokenBalances();
-  }, [isOpen, address, publicClient]);
-
-  // Fetch available tokens for selection
-  useEffect(() => {
-    const fetchAvailableTokens = async () => {
-      if (isOpen && address && publicClient) {
-        try {
-          const tokens = [
-            { symbol: "ETH", address: "ETH", balance: ethBalance },
-            { symbol: "USDC", address: USDC_ADDRESS, balance: usdcBalance },
-          ];
-          setAvailableTokens(tokens);
-        } catch (error) {
-          console.error("Failed to fetch available tokens:", error);
-        }
-      }
-    };
-    fetchAvailableTokens();
-  }, [isOpen, address, publicClient, ethBalance, usdcBalance]);
-
   // Fetch Token balance
   useEffect(() => {
     const fetchTokenBalance = async () => {
-      if (isOpen && address && publicClient && token?.contract_address) {
+      if (isOpen && address && publicClient && tokenContractAddress) {
         try {
           const balance = await publicClient.readContract({
-            address: token.contract_address as `0x${string}`,
+            address: tokenContractAddress as `0x${string}`,
             abi: [
               {
                 constant: true,
@@ -196,32 +139,8 @@ export default function DetailsModal({
             args: [address as `0x${string}`],
           });
 
-          let tokenBalance = (Number(balance) / 10 ** 18).toFixed(4);
-
-          // If user is the creator, filter out the 10M initial supply
-          const creatorAddress =
-            (token as any).creatorAddress || (token as any).creator_address;
-          const userIsCreator =
-            creatorAddress &&
-            address.toLowerCase() === creatorAddress.toLowerCase();
-          setIsCreator(userIsCreator);
-
-          if (userIsCreator) {
-           
-            const initialSupply = 10000000; // 10M tokens
-            const availableBalance = Math.max(
-              0,
-              parseFloat(tokenBalance) - initialSupply
-            );
-            tokenBalance = availableBalance.toFixed(4);
-            console.log(
-              "Creator detected - filtered 10M initial supply. Available balance:",
-              tokenBalance
-            );
-          }
-
-          setTokenBalance(tokenBalance);
-          console.log("Token Balance:", tokenBalance);
+          const formattedBalance = formatEther(balance as bigint);
+          setTokenBalance(formattedBalance);
         } catch (error) {
           console.error("Failed to fetch token balance:", error);
           setTokenBalance("0");
@@ -229,7 +148,12 @@ export default function DetailsModal({
       }
     };
     fetchTokenBalance();
-  }, [isOpen, address, publicClient, token?.contract_address]);
+  }, [
+    isOpen,
+    address,
+    publicClient,
+    tokenContractAddress,
+  ]);
 
   // Fetch ETH price
   useEffect(() => {
@@ -237,7 +161,6 @@ export default function DetailsModal({
       try {
         const price = await getETHPrice();
         setEthPrice(price);
-        console.log("ETH Price:", price);
       } catch (error) {
         console.error("Failed to fetch ETH price:", error);
         // Keep default price of 0
@@ -258,23 +181,6 @@ export default function DetailsModal({
       const ethBalance = await publicClient.getBalance({ address });
       setEthBalance((Number(ethBalance) / 1e18).toFixed(4));
 
-      // Refresh USDC balance
-      const usdcBalance = await publicClient.readContract({
-        address: USDC_ADDRESS as `0x${string}`,
-        abi: [
-          {
-            constant: true,
-            inputs: [{ name: "_owner", type: "address" }],
-            name: "balanceOf",
-            outputs: [{ name: "balance", type: "uint256" }],
-            type: "function",
-          },
-        ],
-        functionName: "balanceOf",
-        args: [address as `0x${string}`],
-      });
-      setUsdcBalance((Number(usdcBalance) / 10 ** 6).toFixed(2));
-
       // Refresh token balance
       const tokenBalance = await publicClient.readContract({
         address: token.contract_address as `0x${string}`,
@@ -291,24 +197,7 @@ export default function DetailsModal({
         args: [address as `0x${string}`],
       });
 
-      let refreshedBalance = (Number(tokenBalance) / 10 ** 18).toFixed(4);
-
-      // If user is the creator, filter out the 10M initial supply
-      const creatorAddress =
-        (token as any).creatorAddress || (token as any).creator_address;
-      if (
-        creatorAddress &&
-        address.toLowerCase() === creatorAddress.toLowerCase()
-      ) {
-        const initialSupply = 10000000; // 10M tokens
-        const availableBalance = Math.max(
-          0,
-          parseFloat(refreshedBalance) - initialSupply
-        );
-        refreshedBalance = availableBalance.toFixed(4);
-      }
-
-      setTokenBalance(refreshedBalance);
+      setTokenBalance(formatEther(tokenBalance as bigint));
     } catch (error) {
       console.error("Error refreshing balances:", error);
     }
@@ -319,13 +208,15 @@ export default function DetailsModal({
       return;
     if (!amount || parseFloat(amount) <= 0) return;
 
-    // Token addresses on Base
-    const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+    if (!isTradeWalletSupported) {
+      toast.error(ZORA_TRADE_EOA_ONLY_MESSAGE);
+      return;
+    }
 
     const toastId = toast.loading(
       tradeType === "buy"
-        ? `Preparing to buy ${token.symbol} with ${selectedCurrency}...`
-        : `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
+        ? `Preparing to buy ${token.symbol} with ETH...`
+        : `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature.`,
       {
         id: "trade-toast",
         duration: 0, // Don't auto-dismiss loading toast
@@ -335,55 +226,25 @@ export default function DetailsModal({
     try {
       setTrading(true);
       if (tradeType === "buy") {
-        // Buying with different currencies
-        if (selectedCurrency === "ETH") {
-          // ETH to Token
-          await executeTrade({
-            direction: "buy",
-            coinAddress: token.contract_address,
-            amountIn: amount,
-            recipient: address,
-            slippage,
-            walletClient,
-            publicClient,
-            account: address,
-            switchChain,
-          });
-        } else {
-          // USDC to Token
-          const sellTokenAddress = USDC_ADDRESS;
-          const decimals = 6;
-          const amountInBigInt = BigInt(
-            Math.floor(parseFloat(amount) * Math.pow(10, decimals))
-          );
-
-          // Update toast message for ERC20 trades
-          toast.loading(
-            `Approving ${selectedCurrency} for trading... This may require 2 transactions.`,
-            {
-              id: toastId,
-              duration: 0,
-            }
-          );
-
-          await executeERC20Trade({
-            sellTokenAddress,
-            buyTokenAddress: token.contract_address,
-            amountIn: amountInBigInt,
-            recipient: address,
-            slippage,
-            walletClient,
-            publicClient,
-            account: address,
-            switchChain,
-          });
-        }
+        // Buys in this UI are deliberately ETH-only.
+        await executeTrade({
+          direction: "buy",
+          coinAddress: token.contract_address,
+          amountIn: amount,
+          recipient: address,
+          slippage,
+          walletClient,
+          publicClient,
+          account: address,
+          walletConnectorId: connector?.id ?? "",
+          switchChain,
+        });
       } else {
         // Selling token for ETH
 
         // Update toast message for sell operations
         toast.loading(
-          `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature. If this takes longer than expected, we'll automatically retry.`,
+          `Preparing to sell ${token.symbol}... Checking permissions and generating permit signature.`,
           {
             id: toastId,
             duration: 0,
@@ -399,6 +260,7 @@ export default function DetailsModal({
           walletClient,
           publicClient,
           account: address,
+          walletConnectorId: connector?.id ?? "",
           switchChain,
         } as any);
       }
@@ -408,7 +270,7 @@ export default function DetailsModal({
         `🎉 ${tradeType === "buy" ? "Buy" : "Sell"} successful! ${parseFloat(
           amount
         ).toFixed(4)} ${
-          tradeType === "buy" ? selectedCurrency : token.symbol
+          tradeType === "buy" ? "ETH" : token.symbol
         } ${tradeType === "buy" ? "purchased" : "sold"}`,
         {
           id: toastId,
@@ -437,23 +299,6 @@ export default function DetailsModal({
         const ethBalance = await publicClient.getBalance({ address });
         setEthBalance((Number(ethBalance) / 10 ** 18).toFixed(4));
 
-        // Refresh USDC balance
-        const usdcBalance = await publicClient.readContract({
-          address: USDC_ADDRESS as `0x${string}`,
-          abi: [
-            {
-              constant: true,
-              inputs: [{ name: "_owner", type: "address" }],
-              name: "balanceOf",
-              outputs: [{ name: "balance", type: "uint256" }],
-              type: "function",
-            },
-          ],
-          functionName: "balanceOf",
-          args: [address as `0x${string}`],
-        });
-        setUsdcBalance((Number(usdcBalance) / 10 ** 6).toFixed(2));
-
         // Refresh token balance
         const tokenBalance = await publicClient.readContract({
           address: token.contract_address as `0x${string}`,
@@ -470,24 +315,7 @@ export default function DetailsModal({
           args: [address as `0x${string}`],
         });
 
-        let refreshedBalance = (Number(tokenBalance) / 10 ** 18).toFixed(4);
-
-        // If user is the creator, filter out the 10M initial supply
-        const creatorAddress =
-          (token as any).creatorAddress || (token as any).creator_address;
-        if (
-          creatorAddress &&
-          address.toLowerCase() === creatorAddress.toLowerCase()
-        ) {
-          const initialSupply = 10000000; // 10M tokens
-          const availableBalance = Math.max(
-            0,
-            parseFloat(refreshedBalance) - initialSupply
-          );
-          refreshedBalance = availableBalance.toFixed(4);
-        }
-
-        setTokenBalance(refreshedBalance);
+        setTokenBalance(formatEther(tokenBalance as bigint));
 
         // Clear amount input
         setAmount("");
@@ -665,7 +493,7 @@ export default function DetailsModal({
 
                         {/* Quick Slippage Options */}
                         <div className="flex gap-2">
-                          {[0.01, 0.05, 0.1, 0.5].map((value) => (
+                          {[0.005, 0.01, 0.03, 0.05, 0.1].map((value) => (
                             <button
                               key={value}
                               onClick={() => setSlippage(value)}
@@ -693,7 +521,7 @@ export default function DetailsModal({
                           <input
                             type="number"
                             min="0.1"
-                            max="30"
+                            max="10"
                             step="0.1"
                             value={slippage * 100}
                             onChange={(e) => {
@@ -701,7 +529,7 @@ export default function DetailsModal({
                               if (
                                 !isNaN(value) &&
                                 value >= 0.1 &&
-                                value <= 30
+                                value <= 10
                               ) {
                                 setSlippage(value / 100);
                               }
@@ -718,8 +546,6 @@ export default function DetailsModal({
                             "⚠️ Very low slippage may cause failed transactions"}
                           {slippage > 0.1 &&
                             "⚠️ High slippage may result in unfavorable prices"}
-                          {slippage > 0.2 &&
-                            "⚠️ Very high slippage - consider reducing amount"}
                         </div>
                       </div>
                     </div>
@@ -727,7 +553,7 @@ export default function DetailsModal({
                 </div>
 
                 <div className="space-y-3">
-                  {/* Amount Input with Currency Selection */}
+                  {/* Amount Input */}
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <label className="text-sm font-bold text-art-gray-600 transform -rotate-0.5">
@@ -735,16 +561,7 @@ export default function DetailsModal({
                       </label>
                       <div className="text-xs text-art-gray-500">
                         {tradeType === "buy"
-                          ? `Your ${selectedCurrency}: ${(() => {
-                              switch (selectedCurrency) {
-                                case "ETH":
-                                  return `${ethBalance} ETH`;
-                                case "USDC":
-                                  return `${usdcBalance} USDC`;
-                                default:
-                                  return `${ethBalance} ETH`;
-                              }
-                            })()}`
+                          ? `Your ETH: ${ethBalance} ETH`
                           : `Your ${token.symbol}: ${tokenBalance} ${token.symbol}`}
                       </div>
                     </div>
@@ -757,34 +574,28 @@ export default function DetailsModal({
                         placeholder={tradeType === "buy" ? "0.00" : "0"}
                         className="hand-drawn-input flex-1 text-sm"
                       />
-                      {/* Currency Selection */}
+                      {/* This trade path currently settles buys with native ETH only. */}
                       {tradeType === "buy" && (
-                        <button
-                          onClick={() => setShowTokenSelect(true)}
-                          className="hand-drawn-btn text-sm font-bold py-2 px-3 transform rotate-1 flex-shrink-0"
-                          style={{
-                            padding: "0.5rem 0.75rem",
-                            borderRadius: "8px 3px 6px 4px",
-                            minWidth: "80px",
-                          }}
+                        <span
+                          className="hand-drawn-btn text-sm font-bold py-2 px-3 flex-shrink-0 cursor-default"
+                          aria-label="Buy currency: ETH only"
                         >
-                          {selectedCurrency}
-                        </button>
+                          ETH
+                        </span>
                       )}
                     </div>
+                    {tradeType === "buy" && (
+                      <p className="mt-2 text-xs font-medium text-art-gray-600">
+                        Buys currently use ETH on Base.
+                      </p>
+                    )}
                     {/* USD Value Display */}
                     {amount && (
                       <div className="mt-1 text-xs text-art-gray-500">
                         ≈ $
                         {(() => {
                           if (tradeType === "buy") {
-                            if (selectedCurrency === "USDC") {
-                              // USDC is already in USD
-                              return parseFloat(amount).toFixed(2);
-                            } else if (selectedCurrency === "ETH") {
-                              // ETH to USD conversion
-                              return (parseFloat(amount) * ethPrice).toFixed(2);
-                            }
+                            return (parseFloat(amount) * ethPrice).toFixed(2);
                           } else {
                             // Token to USD conversion
                             const tokenPrice = (token as any).tokenPrice
@@ -814,16 +625,7 @@ export default function DetailsModal({
                         if (!amount) return "0";
                         const maxBalance =
                           tradeType === "buy"
-                            ? (() => {
-                                switch (selectedCurrency) {
-                                  case "ETH":
-                                    return parseFloat(ethBalance);
-                                  case "USDC":
-                                    return parseFloat(usdcBalance);
-                                  default:
-                                    return parseFloat(ethBalance);
-                                }
-                              })()
+                            ? parseFloat(ethBalance)
                             : parseFloat(tokenBalance);
                         if (maxBalance === 0) return "0";
                         return (
@@ -835,16 +637,7 @@ export default function DetailsModal({
                         const percentage = parseFloat(e.target.value) / 100;
                         const maxBalance =
                           tradeType === "buy"
-                            ? (() => {
-                                switch (selectedCurrency) {
-                                  case "ETH":
-                                    return parseFloat(ethBalance);
-                                  case "USDC":
-                                    return parseFloat(usdcBalance);
-                                  default:
-                                    return parseFloat(ethBalance);
-                                }
-                              })()
+                            ? parseFloat(ethBalance)
                             : parseFloat(tokenBalance);
                         // For 100%, use 99.9% to avoid precision issues
                         const adjustedPercentage =
@@ -859,22 +652,13 @@ export default function DetailsModal({
                         background: (() => {
                           const maxBalance =
                             tradeType === "buy"
-                              ? (() => {
-                                  switch (selectedCurrency) {
-                                    case "ETH":
-                                      return parseFloat(ethBalance);
-                                    case "USDC":
-                                      return parseFloat(usdcBalance);
-                                    default:
-                                      return parseFloat(ethBalance);
-                                  }
-                                })()
+                              ? parseFloat(ethBalance)
                               : parseFloat(tokenBalance);
                           if (!amount || !maxBalance)
                             return "linear-gradient(to right, #e2e8f0 0%, #e2e8f0 100%)";
                           const percentage =
                             (parseFloat(amount) / maxBalance) * 100;
-                          return `linear-gradient(to right, #4299e1 0%, #4299e1 ${percentage}%, #e2e8f0 ${percentage}%, #e2e8f0 100%)`;
+                          return `linear-gradient(to right, var(--base-blue) 0%, var(--base-blue) ${percentage}%, #e2e8f0 ${percentage}%, #e2e8f0 100%)`;
                         })(),
                       }}
                     />
@@ -897,16 +681,7 @@ export default function DetailsModal({
                           onClick={() => {
                             const maxBalance =
                               tradeType === "buy"
-                                ? (() => {
-                                    switch (selectedCurrency) {
-                                      case "ETH":
-                                        return parseFloat(ethBalance);
-                                      case "USDC":
-                                        return parseFloat(usdcBalance);
-                                      default:
-                                        return parseFloat(ethBalance);
-                                    }
-                                  })()
+                                ? parseFloat(ethBalance)
                                 : parseFloat(tokenBalance);
                             // For 100%, use 99.9% to avoid precision issues
                             const percentage = p === 1 ? 0.999 : p;
@@ -929,40 +704,6 @@ export default function DetailsModal({
                     </div>
                   </div>
 
-                  {/* Creator Restriction Notice */}
-                  {tradeType === "sell" && isCreator && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-art p-3 mb-4">
-                      <div className="flex items-center">
-                        <svg
-                          className="w-4 h-4 text-yellow-600 mr-2"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z"
-                          />
-                        </svg>
-                        <div>
-                          <p className="text-sm text-yellow-800 font-medium">
-                            Creator Restriction
-                          </p>
-                          <p className="text-xs text-yellow-600 mt-1">
-                            Only{" "}
-                            <strong>
-                              {parseFloat(tokenBalance).toLocaleString()}
-                            </strong>{" "}
-                            tokens can be sold right now. The initial 10M tokens
-                            are locked.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Trade Summary */}
                   {amount && (
                     <div
@@ -972,20 +713,12 @@ export default function DetailsModal({
                       <div className="text-xs text-art-gray-600">
                         {tradeType === "buy" ? "Buy" : "Sell"}{" "}
                         {parseFloat(amount).toFixed(4)}{" "}
-                        {tradeType === "buy" ? selectedCurrency : token.symbol}
+                        {tradeType === "buy" ? "ETH" : token.symbol}
                         <span className="text-art-gray-500 ml-2">
                           ≈ $
                           {(() => {
                             if (tradeType === "buy") {
-                              if (selectedCurrency === "USDC") {
-                                // USDC is already in USD
-                                return parseFloat(amount).toFixed(2);
-                              } else if (selectedCurrency === "ETH") {
-                                // ETH to USD conversion
-                                return (parseFloat(amount) * ethPrice).toFixed(
-                                  2
-                                );
-                              }
+                              return (parseFloat(amount) * ethPrice).toFixed(2);
                             } else {
                               const tokenPrice = (token as any).tokenPrice
                                 ?.priceInUsdc;
@@ -1026,28 +759,9 @@ export default function DetailsModal({
                     </div>
                   )}
 
-                  {/* ERC20 Token Info */}
-                  {tradeType === "buy" && selectedCurrency !== "ETH" && (
-                    <div className="border rounded-art p-3 mb-4 bg-blue-50 border-blue-200">
-                      <div className="flex items-center">
-                        <svg
-                          className="w-4 h-4 mr-2 text-blue-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                        <p className="text-xs text-blue-800">
-                          {selectedCurrency} trading may require 2 transactions:
-                          approval + trade
-                        </p>
-                      </div>
+                  {isConnected && !isTradeWalletSupported && (
+                    <div className="rounded-art border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                      {ZORA_TRADE_EOA_ONLY_MESSAGE}
                     </div>
                   )}
 
@@ -1055,14 +769,24 @@ export default function DetailsModal({
                   <div className="pt-2">
                     <button
                       onClick={handleTrade}
-                      disabled={trading || !amount || !isConnected}
+                      disabled={
+                        trading ||
+                        !amount ||
+                        !isConnected ||
+                        !isTradeWalletSupported
+                      }
                       className={`hand-drawn-btn w-full text-sm font-bold ${
                         tradeType === "buy" ? "secondary" : "danger"
                       }`}
                       style={{
                         padding: "0.75rem 1.5rem",
                         transform: "rotate(-0.5deg)",
-                        opacity: !amount || !isConnected ? 0.5 : 1,
+                        opacity:
+                          !amount ||
+                          !isConnected ||
+                          !isTradeWalletSupported
+                            ? 0.5
+                            : 1,
                       }}
                     >
                       {trading ? (
@@ -1072,6 +796,8 @@ export default function DetailsModal({
                         </div>
                       ) : !isConnected ? (
                         "Connect Wallet"
+                      ) : !isTradeWalletSupported ? (
+                        "Use an EOA Wallet"
                       ) : (
                         `${tradeType === "buy" ? "Buy" : "Sell"} ${
                           token.symbol
@@ -1392,7 +1118,7 @@ export default function DetailsModal({
                     style={{
                       padding: "0.75rem 1.5rem",
                       transform: "rotate(-0.3deg)",
-                      backgroundColor: "#4299e1",
+                      backgroundColor: "var(--base-blue)",
                       color: "white",
                       textDecoration: "none",
                     }}
@@ -1466,90 +1192,6 @@ export default function DetailsModal({
                 </div>
               );
             })()}
-          </div>
-        </div>
-      )}
-
-      {/* Token Select Modal */}
-      {showTokenSelect && (
-        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4">
-          <div
-            className="hand-drawn-card w-full max-w-md"
-            style={{ transform: "rotate(0.5deg)" }}
-          >
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-art-gray-900 transform -rotate-1">
-                  Select Token
-                </h3>
-                <button
-                  onClick={() => setShowTokenSelect(false)}
-                  className="text-art-gray-400 hover:text-art-gray-600 transform rotate-1"
-                >
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {availableTokens.map((token) => (
-                  <button
-                    key={token.symbol}
-                    onClick={() => {
-                      setSelectedCurrency(token.symbol as "ETH" | "USDC");
-                      setShowTokenSelect(false);
-                    }}
-                    className={`w-full p-3 text-left rounded-art transition-all duration-200 ${
-                      selectedCurrency === token.symbol
-                        ? "bg-art-gray-900 text-art-white"
-                        : "bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200"
-                    }`}
-                    style={{
-                      borderRadius:
-                        selectedCurrency === token.symbol
-                          ? "12px 3px 8px 6px"
-                          : "8px 12px 6px 10px",
-                      transform:
-                        selectedCurrency === token.symbol
-                          ? "rotate(-1deg)"
-                          : "rotate(0.5deg)",
-                      border: "2px solid #2d3748",
-                      boxShadow:
-                        selectedCurrency === token.symbol
-                          ? "2px 2px 0 #2d3748"
-                          : "1px 1px 0 #2d3748",
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-bold">{token.symbol}</div>
-                        <div className="text-xs opacity-75">
-                          {token.symbol === "ETH"
-                            ? "Ethereum"
-                            : token.symbol === "USDC"
-                            ? "USD Coin"
-                            : "ZORA Token"}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold">{token.balance}</div>
-                        <div className="text-xs opacity-75">{token.symbol}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       )}

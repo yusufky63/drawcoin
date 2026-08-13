@@ -53,7 +53,7 @@ export const TextInputOverlay: React.FC<TextInputOverlayProps> = ({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Type text... (Ctrl+Enter to submit)"
-        className="px-2 py-1 border-2 border-blue-500 rounded bg-white focus:outline-none shadow-lg"
+        className="px-2 py-1 border-2 border-[var(--base-blue)] rounded bg-white focus:outline-none shadow-lg"
         style={{
           minWidth: "200px",
           minHeight: "60px",
@@ -80,7 +80,7 @@ export const TextInputOverlay: React.FC<TextInputOverlayProps> = ({
           <select
             value={fontFamily}
             onChange={(e) => onFontFamilyChange(e.target.value)}
-            className="text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[var(--base-blue)]"
             style={{ fontFamily: fontFamily }}
           >
             <option value="Arial" style={{ fontFamily: "Arial" }}>
@@ -133,13 +133,13 @@ export const TextInputOverlay: React.FC<TextInputOverlayProps> = ({
             value={fontSize}
             onChange={(e) => onFontSizeChange(Number(e.target.value))}
             className="flex-1 h-1"
-            style={{ accentColor: "#3b82f6" }}
+            style={{ accentColor: "var(--base-blue)" }}
           />
           <span className="text-xs text-gray-600 w-10">{fontSize}px</span>
         </div>
         <button
           onClick={onSubmit}
-          className="w-full px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+          className="w-full rounded bg-[var(--base-blue)] px-2 py-1 text-xs text-white transition-colors hover:bg-[var(--base-blue-hover)]"
         >
           Add Text (Ctrl+Enter)
         </button>

@@ -1,7 +1,26 @@
-import { supabase, supabaseAdmin, type Coin } from "../lib/supabase";
+import { supabase, type Coin } from "../lib/supabase";
+import { COIN_SNAPSHOT_COLUMNS } from "../lib/market/coinSnapshot";
+import { buildPostgrestCoinSearchFilter } from "../lib/market/requestPolicy";
 
 // Re-export the Coin type for use in other components
 export type { Coin };
+
+export const COIN_CARD_COLUMNS = COIN_SNAPSHOT_COLUMNS;
+
+export type CoinQueryParams = {
+  category?: string;
+  creator_address?: string;
+  limit?: number;
+  offset?: number;
+  search?: string;
+  sort?: string;
+  creation_type?: string;
+};
+
+type CoinCountParams = Pick<
+  CoinQueryParams,
+  "category" | "creator_address" | "search" | "creation_type"
+>;
 
 export interface CreateCoinData {
   name: string;
@@ -25,9 +44,7 @@ export class CoinService {
    */
   static async saveCoin(coinData: CreateCoinData): Promise<Coin | null> {
     try {
-      // Use admin client to bypass RLS for server-side operations
-      const client = supabaseAdmin || supabase;
-      const { data, error } = await client
+      const { data, error } = await supabase
         .from("drawcoins")
         .insert({
           name: coinData.name,
@@ -69,38 +86,41 @@ export class CoinService {
   /**
    * Get all coins with optional filters
    */
-  static async getCoins(params?: {
-    category?: string;
-    creator_address?: string;
-    limit?: number;
-    offset?: number;
-    search?: string;
-    sort?: string;
-    creation_type?: string;
-  }): Promise<Coin[]> {
+  static async getCoins(
+    params?: CoinQueryParams,
+    options?: { throwOnError?: boolean }
+  ): Promise<Coin[]> {
     try {
-      let query = supabase.from("drawcoins").select("*");
+      let query = supabase.from("drawcoins").select(COIN_CARD_COLUMNS);
 
-      // Apply sorting
+      // PostgREST preserves the order chain. Every public sort therefore ends
+      // with stable tie-breakers so pagination cannot shuffle equal values.
       switch (params?.sort) {
+        case "market-cap":
+          query = query
+            .order("market_cap", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
         case "oldest":
-          query = query.order("created_at", { ascending: true });
+          query = query
+            .order("created_at", { ascending: true, nullsFirst: false })
+            .order("id", { ascending: true });
           break;
-        case "price-high":
-          query = query.order("current_price", { ascending: false });
-          break;
-        case "price-low":
-          query = query.order("current_price", { ascending: true });
-          break;
-        case "holders-high":
-          query = query.order("holders", { ascending: false });
-          break;
-        case "volume-high":
-          query = query.order("volume_24h", { ascending: false });
+        case "most-watched":
+          query = query
+            .order("watchlist_count", {
+              ascending: false,
+              nullsFirst: false,
+            })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
           break;
         case "newest":
         default:
-          query = query.order("created_at", { ascending: false });
+          query = query
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
           break;
       }
 
@@ -118,20 +138,12 @@ export class CoinService {
       }
 
       if (params?.search) {
-        query = query.or(
-          `name.ilike.%${params.search}%,symbol.ilike.%${params.search}%,description.ilike.%${params.search}%`
-        );
+        query = query.or(buildPostgrestCoinSearchFilter(params.search, true));
       }
 
       if (params?.limit) {
-        query = query.limit(params.limit);
-      }
-
-      if (params?.offset) {
-        query = query.range(
-          params.offset,
-          params.offset + (params.limit || 10) - 1
-        );
+        const offset = params.offset ?? 0;
+        query = query.range(offset, offset + params.limit - 1);
       }
 
       const { data, error } = await query;
@@ -141,10 +153,97 @@ export class CoinService {
         throw error;
       }
 
-      return data || [];
+      return (data ?? []) as unknown as Coin[];
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to fetch coins:", error);
       return [];
+    }
+  }
+
+  /**
+   * Returns one deterministic page and its filtered total from the same
+   * PostgREST request. This avoids a second network round trip and prevents
+   * the rows/count pair from observing different snapshots.
+   */
+  static async getCoinsPage(
+    params: CoinQueryParams,
+    options?: { throwOnError?: boolean }
+  ): Promise<{ coins: Coin[]; total: number }> {
+    try {
+      let query = supabase
+        .from("drawcoins")
+        .select(COIN_CARD_COLUMNS, { count: "exact" });
+
+      switch (params.sort) {
+        case "market-cap":
+          query = query
+            .order("market_cap", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "oldest":
+          query = query
+            .order("created_at", { ascending: true, nullsFirst: false })
+            .order("id", { ascending: true });
+          break;
+        case "most-watched":
+          query = query
+            .order("watchlist_count", {
+              ascending: false,
+              nullsFirst: false,
+            })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "newest":
+        default:
+          query = query
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+      }
+
+      if (params.category) query = query.eq("category", params.category);
+      if (params.creator_address) {
+        query = query.eq("creator_address", params.creator_address);
+      }
+      if (params.creation_type) {
+        query = query.eq("creation_type", params.creation_type);
+      }
+      if (params.search) {
+        query = query.or(buildPostgrestCoinSearchFilter(params.search, true));
+      }
+
+      if (params.limit) {
+        const offset = params.offset ?? 0;
+        query = query.range(offset, offset + params.limit - 1);
+      }
+
+      const { count, data, error } = await query;
+      if (error) {
+        // PostgREST returns 416 when an offset is beyond the final row. Some
+        // supported supabase-js versions do not preserve its PGRST103 code,
+        // so verify the boundary with a count instead of pattern matching the
+        // error. A real failure on an in-range page remains visible.
+        const offset = params.offset ?? 0;
+        if (offset > 0) {
+          const total = await this.getTotalCoinsCount(params, {
+            throwOnError: true,
+          });
+          if (offset >= total) return { coins: [], total };
+        }
+        throw error;
+      }
+
+      return {
+        coins: (data ?? []) as unknown as Coin[],
+        total: count ?? 0,
+      };
+    } catch (error) {
+      if (options?.throwOnError) throw error;
+      console.error("Failed to fetch the coin page:", error);
+      return { coins: [], total: 0 };
     }
   }
 
@@ -195,9 +294,7 @@ export class CoinService {
 
       if (params?.search) {
         // Search in name, symbol, and description fields
-        query = query.or(
-          `name.ilike.%${params.search}%,symbol.ilike.%${params.search}%,description.ilike.%${params.search}%,contract_address.ilike.%${params.search}%`
-        );
+        query = query.or(buildPostgrestCoinSearchFilter(params.search, true));
       }
 
       if (params?.limit) {
@@ -280,12 +377,7 @@ export class CoinService {
       if (supply !== undefined) updates.total_supply = supply;
       if (holders !== undefined) updates.holders = holders;
 
-      // Use admin client if available (server-side), otherwise normal client (client-side with RLS)
-      // Note: Client-side update might fail if RLS doesn't allow it.
-      // Ideally this is called from a server action or API route.
-      const client = supabaseAdmin || supabase;
-
-      const { error } = await client
+      const { error } = await supabase
         .from("drawcoins")
         .update(updates)
         .eq("contract_address", contractAddress);
@@ -341,7 +433,7 @@ export class CoinService {
         .single();
 
       return !!data && !error;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -349,19 +441,39 @@ export class CoinService {
   /**
    * Get total count of coins for pagination
    */
-  static async getTotalCoinsCount(): Promise<number> {
+  static async getTotalCoinsCount(
+    params?: CoinCountParams,
+    options?: { throwOnError?: boolean }
+  ): Promise<number> {
     try {
-      const { count, error } = await supabase
+      let query = supabase
         .from("drawcoins")
-        .select("*", { count: "exact", head: true });
+        .select("id", { count: "exact", head: true });
+
+      if (params?.category) {
+        query = query.eq("category", params.category);
+      }
+      if (params?.creator_address) {
+        query = query.eq("creator_address", params.creator_address);
+      }
+      if (params?.creation_type) {
+        query = query.eq("creation_type", params.creation_type);
+      }
+      if (params?.search) {
+        query = query.or(buildPostgrestCoinSearchFilter(params.search, true));
+      }
+
+      const { count, error } = await query;
 
       if (error) {
         console.error("Error getting total coins count:", error);
+        if (options?.throwOnError) throw error;
         return 0;
       }
 
       return count || 0;
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get total coins count:", error);
       return 0;
     }
@@ -377,23 +489,26 @@ export class CoinService {
   }> {
     try {
       // Total coins
-      const { count: totalCoins } = await supabase
+      const { count: totalCoins, error: countError } = await supabase
         .from("drawcoins")
         .select("*", { count: "exact", head: true });
+      if (countError) throw countError;
 
       // Unique creators
-      const { data: creatorsData } = await supabase
+      const { data: creatorsData, error: creatorsError } = await supabase
         .from("drawcoins")
         .select("creator_address");
+      if (creatorsError) throw creatorsError;
 
       const uniqueCreators = new Set(
         creatorsData?.map((c) => c.creator_address) || []
       );
 
       // Category counts
-      const { data: categoryData } = await supabase
+      const { data: categoryData, error: categoryError } = await supabase
         .from("drawcoins")
         .select("category");
+      if (categoryError) throw categoryError;
 
       const categoryCounts =
         categoryData?.reduce((acc, coin) => {
@@ -408,11 +523,7 @@ export class CoinService {
       };
     } catch (error) {
       console.error("❌ Failed to fetch coin stats:", error);
-      return {
-        totalCoins: 0,
-        totalCreators: 0,
-        categoryCounts: {},
-      };
+      throw error;
     }
   }
 }

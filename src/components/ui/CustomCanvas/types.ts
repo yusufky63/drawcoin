@@ -6,6 +6,7 @@ export interface Point {
 export interface DrawingElement {
   type:
     | "line"
+    | "eraser"
     | "rectangle"
     | "circle"
     | "text"
@@ -48,13 +49,29 @@ export type PenStyle = "pen" | "brush" | "marker" | "highlighter";
 
 export type ResizeHandle = "tl" | "tr" | "bl" | "br" | null;
 
+export const CUSTOM_CANVAS_DRAFT_VERSION = 1 as const;
+
+export interface CustomCanvasDraft {
+  version: typeof CUSTOM_CANVAS_DRAFT_VERSION;
+  canvas: {
+    width: number;
+    height: number;
+    background: string;
+  };
+  elements: DrawingElement[];
+}
+
 export interface CustomCanvasRef {
   exportImage: () => Promise<string | null>;
   clearCanvas: () => void;
+  hasContent: () => boolean;
+  getDraft: () => CustomCanvasDraft;
 }
 
 export interface CustomCanvasProps {
   width?: number;
   height?: number;
+  initialDraft?: CustomCanvasDraft | null;
+  onDraftChange?: (draft: CustomCanvasDraft) => void;
+  interactionEnabled?: boolean;
 }
-

@@ -1,15 +1,20 @@
 # DrawCoin 🎨
 
+For the current Base Account, missions, sponsored badge, and Base Dashboard
+setup, see [Base App and Missions setup](docs/BASE_APP_MISSIONS_SETUP.md).
+
 **Create and trade hand-drawn art tokens on Base blockchain**
 
-DrawCoin is a decentralized platform that enables users to create and trade art tokens (coins) using hand-drawn artwork or AI-generated art. Built on the Base Network and integrated with the Zora SDK, DrawCoin makes digital art-backed coin creation and trading accessible to everyone.
+DrawCoin is a decentralized platform for creating and trading hand-drawn art
+tokens. Built for Base App with Base Account and the Zora SDK, it combines a
+guided drawing flow with verified missions and non-transferable achievement
+badges.
 
 ## 🌟 Features
 
 ### 🎨 Art Creation
 
 - **Hand-drawn Canvas**: Interactive drawing canvas with professional tools
-- **AI Art Generation**: Generate artwork using advanced AI models (Gemini, Together.ai)
 - **Custom Drawing Tools**: Brushes, colors, shapes, and layers
 - **High-Quality Output**: 1024x1024 resolution artwork
 
@@ -20,12 +25,12 @@ DrawCoin is a decentralized platform that enables users to create and trade art 
 - **Base Network**: Fast and low-cost transactions on Base L2
 - **Multiple Trading Pairs**: ETH, ZORA, and coin-to-coin trading
 
-### 🌐 Multi-Platform Support
+### 🌐 Base App & Web Access
 
-- **Farcaster Mini-App**: Native integration with Farcaster ecosystem
-- **BaseApp Compatible**: Works seamlessly in BaseApp environment
+- **Base App**: The primary DrawCoin experience, with Base Account wallet support
 - **Web Browser**: Full desktop and mobile browser support
-- **Wallet Integration**: MetaMask, Coinbase Wallet, and more
+- **Farcaster Social**: Optional sharing and profile discovery
+- **Wallet Integration**: Base Account, MetaMask, Coinbase Wallet, and more
 
 ### 📱 User Experience
 
@@ -51,10 +56,8 @@ DrawCoin is a decentralized platform that enables users to create and trade art 
 - **Viem** - TypeScript Ethereum library
 - **IPFS** - Decentralized storage for artwork and metadata
 
-### AI & Image Processing
+### Artwork & Storage
 
-- **Google Gemini** - AI image generation
-- **Together.ai** - Alternative AI provider
 - **Canvas API** - Drawing functionality
 - **Pinata** - IPFS pinning service
 
@@ -66,7 +69,8 @@ DrawCoin is a decentralized platform that enables users to create and trade art 
 
 ### Integrations
 
-- **Farcaster SDK** - Social protocol integration
+- **Base Account** - Primary wallet experience in Base App and on the web
+- **Farcaster Web** - Optional social sharing intent and profile enrichment
 - **Coinbase Wallet** - Wallet connectivity
 - **Ethers.js** - Ethereum interactions
 
@@ -96,25 +100,8 @@ yarn install
 ```
 
 3. **Environment Setup**
-   Create a `.env.local` file with the following variables:
-
-```env
-# Database
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
-
-# IPFS Storage
-PINATA_JWT=your_pinata_jwt_token
-
-# AI Services
-TOGETHER_API_KEY=your_together_api_key
-GOOGLE_GEMINI_API_KEY=your_gemini_api_key
-
-ZORA_API_KEY=your_zora_api_key
-
-# App Configuration
-NEXT_PUBLIC_URL=https://your-domain.vercel.app
-```
+   Copy `.env.example` to `.env.local`, replace every placeholder, and follow
+   [the Base App missions setup](docs/BASE_APP_MISSIONS_SETUP.md).
 
 4. **Database Setup**
 
@@ -139,9 +126,9 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 
 ### 🎨 Creating Your Art Coin
 
-**Two Ways to Create Art:**
+**Create Art by Hand:**
 
-1. **Draw it Yourself (Custom Canvas)**
+**Draw it Yourself (Custom Canvas)**
    - Open the drawing canvas on any device - mobile or desktop
    - Use professional drawing tools: different brush sizes, colors, shapes
    - On mobile: Touch and draw with your finger or stylus
@@ -149,18 +136,11 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
    - Preview your artwork in real-time as you create
    - Capture your masterpiece when you're happy with it
 
-2. **Let AI Create for You (AI Generation)**
-   - Simply describe what you want in plain English
-   - Example: "A cute cat in space" or "Abstract colorful waves"
-   - AI generates hand-drawn style artwork in seconds
-   - You get 5 free AI generations per day
-   - Perfect for when you have an idea but not the drawing skills
-
 **Adding Your Token Details:**
 
 - Give your token a creative name and symbol (like "SpaceCat" - $SCAT)
 - Write a description of what makes your artwork special
-- Optional: Customize starting market cap and other advanced settings
+- Optional: Add trusted co-owners who can help administer the token
 
 **Making it Official:**
 
@@ -219,14 +199,14 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 - **Share Portfolio**: Share your success on social media with one click
 - **Zora Profile Integration**: Your Web3 identity displayed beautifully
 
-### 🌐 Multi-Platform Experience
+### 🌐 Base App Experience
 
 **Works Everywhere:**
 
+- **Base App**: The primary experience for creating, discovering, and trading DrawCoins
 - **Mobile Browsers**: Full experience on iPhone, Android, any mobile browser
 - **Desktop Browsers**: Large screen optimized for serious trading
-- **Farcaster Mini-App**: Native integration within Farcaster social network
-- **BaseApp**: Seamless experience in Base ecosystem apps
+- **Farcaster Social**: Optional token sharing and creator profile links
 - **Progressive Design**: Interface adapts perfectly to your screen size
 
 **Mobile-Specific Features:**
@@ -278,7 +258,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 - No coding knowledge needed - ever
 - Clear instructions at every step
 - Help tooltips throughout the platform
-- Start with AI art if drawing isn't your thing
+- Start with the guided hand-drawn canvas
 
 **Experienced Trader?**
 
@@ -318,7 +298,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 │   Frontend      │    │   Backend APIs   │    │   Blockchain    │
 │                 │    │                  │    │                 │
 │ • Next.js App   │◄──►│ • Coin Creation  │◄──►│ • Base Network  │
-│ • Drawing Canvas│    │ • AI Generation  │    │ • Zora Protocol │
+│ • Drawing Canvas│    │ • Mission Checks │    │ • Zora Protocol │
 │ • Wallet UI     │    │ • IPFS Upload    │    │ • Smart Contracts│
 │ • Market View   │    │ • Market Data    │    │                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
@@ -328,7 +308,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
                         │                  │
                         │ • Supabase DB    │
                         │ • IPFS/Pinata    │
-                        │ • AI Services    │
+                        │ • Base Dashboard │
                         │ • Price Feeds    │
                         └──────────────────┘
 ```
@@ -370,12 +350,12 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 - **Fallback Gateways**: Multiple IPFS gateways for reliability
 - **Metadata Format**: Standard coin metadata with image references
 
-### AI Art Settings
+### Base Mission Settings
 
-- **Primary Provider**: Google Gemini for high-quality generation
-- **Fallback Provider**: Together.ai for reliability
-- **Style Prompts**: Hand-drawn, sketch, artistic style enhancement
-- **Output Format**: 1024x1024 PNG images
+- **Wallet Identity**: Base Account with SIWE and Basename resolution
+- **Verified Progress**: Official Zora/Base events and signed watchlist changes
+- **Badges**: Soulbound ERC-1155 claims with optional sponsored gas
+- **Notifications**: Base App pin and opt-in status through Base Dashboard
 
 ## 🔒 Security
 
@@ -383,7 +363,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 
 - **Zora SDK**: Battle-tested smart contracts for coin creation
 - **Base Network**: Ethereum L2 with full security guarantees
-- **No Custom Contracts**: Reduces attack surface
+- **Mission Badges**: A focused soulbound contract with expiring, replay-safe claims
 
 ### Data Protection
 
@@ -393,7 +373,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 
 ### Wallet Security
 
-- **No Private Keys**: Never stores or accesses private keys
+- **User Keys**: User private keys never leave their wallet; the badge signer is a separate server-only operational key
 - **User Consent**: All transactions require explicit user approval
 - **Network Validation**: Automatic network switching for safety
 
@@ -401,7 +381,7 @@ DrawCoin makes it easy for anyone to create, trade, and manage art-backed tokens
 
 - **Zora SDK** - For providing robust token infrastructure
 - **Base Network** - For fast and affordable transactions
-- **Farcaster** - For social protocol integration
+- **Farcaster** - For optional social sharing and profile enrichment
 - **Supabase** - For database and real-time functionality
 - **Vercel** - For deployment and hosting
 

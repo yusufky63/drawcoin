@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { DrawingElement } from "../types";
+import { cloneDrawingElements } from "../utils/draftUtils";
 
-export const useCanvasHistory = () => {
-  const [history, setHistory] = useState<DrawingElement[][]>([[]]);
+export const useCanvasHistory = (initialElements: DrawingElement[] = []) => {
+  const [history, setHistory] = useState<DrawingElement[][]>(() => [
+    cloneDrawingElements(initialElements),
+  ]);
   const [historyStep, setHistoryStep] = useState(0);
 
   const addToHistory = (elements: DrawingElement[]) => {
     const newHistory = history.slice(0, historyStep + 1);
-    newHistory.push(elements);
+    newHistory.push(cloneDrawingElements(elements));
     setHistory(newHistory);
     setHistoryStep(newHistory.length - 1);
   };
@@ -15,7 +18,7 @@ export const useCanvasHistory = () => {
   const undo = (): DrawingElement[] => {
     if (historyStep > 0) {
       setHistoryStep(historyStep - 1);
-      return history[historyStep - 1] || [];
+      return cloneDrawingElements(history[historyStep - 1] || []);
     }
     return [];
   };
@@ -23,7 +26,7 @@ export const useCanvasHistory = () => {
   const redo = (): DrawingElement[] | null => {
     if (historyStep < history.length - 1) {
       setHistoryStep(historyStep + 1);
-      return history[historyStep + 1];
+      return cloneDrawingElements(history[historyStep + 1]);
     }
     return null;
   };

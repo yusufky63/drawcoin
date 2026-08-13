@@ -1,258 +1,400 @@
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  useMemo,
-} from "react";
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
-import { Coin } from "../../lib/supabase";
-import TokenGrid from "./TokenGrid";
-import TokenFilters from "./TokenFilters";
-import DetailsModal from "./DetailsModal";
+import useSWRInfinite from "swr/infinite";
+
+import {
+  createCreatorAddressBatch,
+  MAX_CREATOR_IDENTITY_BATCH,
+} from "../../lib/creatorIdentity";
+import type { Coin } from "../../lib/supabase";
 import { useWatchlist } from "../../hooks/useWatchlist";
+import DetailsModal from "./DetailsModal";
+import TokenFilters, {
+  type CreationType,
+  type MarketSort,
+} from "./TokenFilters";
+import TokenGrid from "./TokenGrid";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
-import ExploreSection from "./ExploreSection";
+const PAGE_SIZE = 24;
+const validSorts = new Set<MarketSort>([
+  "newest",
+  "oldest",
+  "most-watched",
+]);
+const validCreationTypes = new Set<CreationType>(["all", "ai", "hand-drawn"]);
 
-interface MarketPageProps {
-  onTrade: (token: Coin) => void;
-  onView: (token: Coin) => void;
+interface MarketMeta {
+  limit: number;
+  page: number;
+  total: number;
+  totalPages: number;
 }
 
-// Fetcher function for SWR
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+interface MarketResponse {
+  data: Coin[];
+  meta: MarketMeta;
+}
 
-export default function MarketPage({ onView }: MarketPageProps) {
+interface BasenamesResponse {
+  basenames: Record<string, string | null>;
+}
+
+class ApiResponseError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiResponseError";
+    this.status = status;
+  }
+}
+
+async function fetcher(url: string): Promise<MarketResponse> {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | MarketResponse
+    | { error?: string }
+    | null;
+
+  if (!response.ok) {
+    const message =
+      payload && "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : "Market data could not be loaded.";
+    throw new ApiResponseError(message, response.status);
+  }
+  if (!payload || !("data" in payload) || !("meta" in payload)) {
+    throw new ApiResponseError("The server returned an invalid response.", 502);
+  }
+  return payload;
+}
+
+async function fetchBasenames(url: string): Promise<BasenamesResponse> {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) {
+    throw new ApiResponseError(
+      "Creator names could not be loaded.",
+      response.status
+    );
+  }
+  return (await response.json()) as BasenamesResponse;
+}
+
+function uniqueCoins(pages?: MarketResponse[]) {
+  const seen = new Set<string>();
+  const coins: Coin[] = [];
+
+  for (const page of pages ?? []) {
+    for (const coin of page.data) {
+      const key = coin.contract_address.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      coins.push(coin);
+    }
+  }
+  return coins;
+}
+
+export default function MarketPage() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("newest");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortBy, setSortBy] = useState<MarketSort>("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [creationType, setCreationType] = useState<"all" | "ai" | "hand-drawn">(
-    "all"
-  );
+  const [creationType, setCreationType] = useState<CreationType>("all");
+  const [selectedCreator, setSelectedCreator] = useState<string | null>(null);
+  const [filtersReady, setFiltersReady] = useState(false);
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [selectedToken, setSelectedToken] = useState<Coin | null>(null);
-  const [selectedCreator, setSelectedCreator] = useState<string | null>(null); // For Profile View
+  const marketTopRef = useRef<HTMLDivElement | null>(null);
 
-  // Data State
-  const [allTokens, setAllTokens] = useState<Coin[]>([]);
-  const [visibleCount, setVisibleCount] = useState(20); // Start with only 20 for faster initial load
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-  // Explore Data State
-  const [exploreData, setExploreData] = useState<{
-    mostWatchlisted: any[];
-    topAI: any[];
-    topHandDrawn: any[];
-  } | null>(null);
-
-  // Fetch Explore Data
   useEffect(() => {
-    fetch("/api/explore")
-      .then((res) => res.json())
-      .then((data) => setExploreData(data))
-      .catch((err) => console.error("Failed to fetch explore data", err));
+    const params = new URLSearchParams(window.location.search);
+    const query = (params.get("q") ?? "").slice(0, 100);
+    const requestedSort = params.get("sort") as MarketSort | null;
+    const requestedType = params.get("type") as CreationType | null;
+    const creator = params.get("creator")?.trim().toLowerCase() ?? "";
+
+    setSearchTerm(query);
+    setDebouncedSearch(query.trim());
+    if (requestedSort && validSorts.has(requestedSort)) setSortBy(requestedSort);
+    if (requestedType && validCreationTypes.has(requestedType)) {
+      setCreationType(requestedType);
+    }
+    if (/^0x[a-f0-9]{40}$/.test(creator)) setSelectedCreator(creator);
+    setFiltersReady(true);
   }, []);
 
-  // Fetch more tokens for client-side filtering, but render progressively
-  // Start with 500 tokens which covers most use cases without overwhelming the API
-  const apiUrl = `/api/market?limit=500`;
+  const apiSearch = selectedCreator ?? debouncedSearch;
+  const getKey = useCallback(
+    (pageIndex: number, previousPage: MarketResponse | null) => {
+      if (!filtersReady) return null;
+      if (previousPage && pageIndex >= previousPage.meta.totalPages) return null;
 
-  const { data, error, isLoading } = useSWR(apiUrl, fetcher, {
-    revalidateOnMount: true, // Only fetch on first mount
-    keepPreviousData: true, // Keep showing old data while revalidating
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        page: String(pageIndex + 1),
+        sort: sortBy,
+      });
+      if (apiSearch) params.set("search", apiSearch);
+      if (creationType !== "all") params.set("creationType", creationType);
+      return `/api/market?${params.toString()}`;
+    },
+    [apiSearch, creationType, filtersReady, sortBy]
+  );
+
+  const {
+    data: pages,
+    error,
+    isLoading,
+    isValidating,
+    mutate: retryMarket,
+    setSize,
+    size,
+  } = useSWRInfinite<MarketResponse, ApiResponseError>(getKey, fetcher, {
+    persistSize: false,
+    revalidateFirstPage: false,
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    errorRetryCount: 1,
+    errorRetryInterval: 2_000,
   });
 
-  // Update allTokens when data arrives (with safety check)
   useEffect(() => {
-    if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
-      console.log("✅ Market data loaded:", data.data.length, "tokens");
-      setAllTokens(data.data);
-    } else if (data && !data.data) {
-      console.warn("⚠️ Market API returned no data:", data);
-    }
-  }, [data]);
+    if (!filtersReady) return;
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+      void setSize(1);
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [filtersReady, searchTerm, setSize]);
 
-  // Client-side Filtering & Sorting
-  const filteredTokens = useMemo(() => {
-    let tokens = [...allTokens];
-
-    // 1. Filter by Creator (Profile View)
-    if (selectedCreator) {
-      tokens = tokens.filter(
-        (t) =>
-          t.creator_address?.toLowerCase() === selectedCreator.toLowerCase()
-      );
-    }
-
-    // 2. Filter by Search Term
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      tokens = tokens.filter(
-        (t) =>
-          t.name.toLowerCase().includes(lowerTerm) ||
-          t.symbol.toLowerCase().includes(lowerTerm) ||
-          t.creator_name?.toLowerCase().includes(lowerTerm) ||
-          t.creator_address?.toLowerCase().includes(lowerTerm)
-      );
-    }
-
-    // 3. Filter by Creation Type
-    if (creationType !== "all") {
-      tokens = tokens.filter((t) => t.creation_type === creationType);
-    }
-
-    // 4. Sort
-    tokens.sort((a, b) => {
-      switch (sortBy) {
-        case "newest":
-          return (
-            new Date(b.created_at || 0).getTime() -
-            new Date(a.created_at || 0).getTime()
-          );
-        case "oldest":
-          return (
-            new Date(a.created_at || 0).getTime() -
-            new Date(b.created_at || 0).getTime()
-          );
-        case "price-high":
-          return (b.current_price || 0) - (a.current_price || 0);
-        case "price-low":
-          return (a.current_price || 0) - (b.current_price || 0);
-        case "volume-high":
-          return (b.volume_24h || 0) - (a.volume_24h || 0);
-        case "holders-high":
-          return (b.holders || 0) - (a.holders || 0);
-        default:
-          return 0;
-      }
-    });
-
-    return tokens;
-  }, [allTokens, searchTerm, sortBy, creationType, selectedCreator]);
-
-  // Pagination (Visible Subset)
-  const visibleTokens = useMemo(() => {
-    return filteredTokens.slice(0, visibleCount);
-  }, [filteredTokens, visibleCount]);
-
-  const hasMore = visibleTokens.length < filteredTokens.length;
-
-  // Reset pagination when filters change
   useEffect(() => {
-    setVisibleCount(20); // Reset to 20 for faster filter response
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [searchTerm, sortBy, creationType, selectedCreator]);
+    if (!filtersReady) return;
+    const params = new URLSearchParams(window.location.search);
+    if (searchTerm.trim()) params.set("q", searchTerm.trim());
+    else params.delete("q");
+    if (sortBy !== "newest") params.set("sort", sortBy);
+    else params.delete("sort");
+    if (creationType !== "all") params.set("type", creationType);
+    else params.delete("type");
+    if (selectedCreator) params.set("creator", selectedCreator);
+    else params.delete("creator");
 
-  // Infinite scroll handler - load 20 more at a time
-  const loadMore = useCallback(() => {
-    if (hasMore) {
-      setVisibleCount((prev) => prev + 20);
-    }
-  }, [hasMore]);
-
-  // Intersection observer - trigger earlier with larger rootMargin
-  useEffect(() => {
-    if (!sentinelRef.current || !hasMore) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) loadMore();
-      },
-      {
-        rootMargin: "400px", // Load 400px before user reaches the sentinel
-        threshold: 0.01,
-      }
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
     );
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [loadMore, hasMore]);
+  }, [creationType, filtersReady, searchTerm, selectedCreator, sortBy]);
 
-  // Watchlist Stats Fetching (Lazy load for visible tokens)
-  const [watchlistStats, setWatchlistStats] = useState<Record<string, number>>(
-    {}
+  const tokens = useMemo(() => uniqueCoins(pages), [pages]);
+  const creatorAddressKey = useMemo(
+    () =>
+      createCreatorAddressBatch(
+        tokens.map((token) => token.creator_address),
+        MAX_CREATOR_IDENTITY_BATCH
+      ).join(","),
+    [tokens]
+  );
+  const { data: creatorIdentityData } = useSWR<
+    BasenamesResponse,
+    ApiResponseError
+  >(
+    creatorAddressKey
+      ? `/api/basenames?addresses=${encodeURIComponent(creatorAddressKey)}`
+      : null,
+    fetchBasenames,
+    {
+      dedupingInterval: 30 * 60 * 1000,
+      errorRetryCount: 0,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    }
+  );
+  const meta = pages?.[0]?.meta;
+  const total = meta?.total ?? 0;
+  const lastPage = pages?.[pages.length - 1];
+  const hasMore = Boolean(
+    lastPage && lastPage.meta.page < lastPage.meta.totalPages
+  );
+  const loadingMore = isValidating && size > (pages?.length ?? 0);
+
+  const [watchlistStats, setWatchlistStats] = useState<Record<string, number>>({});
+  const watchlistStatsRef = useRef<Record<string, number>>({});
+  const [watchlistStatsRefresh, setWatchlistStatsRefresh] = useState<{
+    address: string;
+    sequence: number;
+  } | null>(null);
+  const tokenAddressKey = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tokens
+            .map((token) => token.contract_address.trim().toLowerCase())
+            .filter((address) => /^0x[a-f0-9]{40}$/.test(address))
+        )
+      ).join(","),
+    [tokens]
   );
 
   useEffect(() => {
-    const fetchStats = async () => {
-      if (visibleTokens.length === 0) return;
+    if (!tokenAddressKey) return;
+    const controller = new AbortController();
+    const visibleAddresses = tokenAddressKey.split(",");
+    const missing = watchlistStatsRefresh
+      ? visibleAddresses.filter(
+          (address) => address === watchlistStatsRefresh.address
+        )
+      : visibleAddresses.filter(
+          (address) =>
+            !Object.prototype.hasOwnProperty.call(
+              watchlistStatsRef.current,
+              address
+            )
+        );
+    if (missing.length === 0) {
+      if (watchlistStatsRefresh) setWatchlistStatsRefresh(null);
+      return;
+    }
 
-      // Only fetch for tokens we don't have stats for yet (optimization)
-      // Or just fetch for current page to be safe and simple
-      const tokensToFetch = visibleTokens.map((t) => t.contract_address);
-
-      try {
-        const res = await fetch("/api/market/stats", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tokens: tokensToFetch }),
-        });
-        const data = await res.json();
-        if (data?.data) {
-          setWatchlistStats((prev) => ({ ...prev, ...data.data }));
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const received: Record<string, number> = {};
+          for (let index = 0; index < missing.length; index += 100) {
+            const response = await fetch("/api/market/stats", {
+              method: "POST",
+              credentials: "same-origin",
+              signal: controller.signal,
+              headers: { Accept: "application/json", "Content-Type": "application/json" },
+              body: JSON.stringify({ tokens: missing.slice(index, index + 100) }),
+            });
+            if (!response.ok) throw new Error(`Watchlist stats failed (${response.status}).`);
+            const payload = (await response.json()) as { data?: Record<string, unknown> };
+            for (const [address, count] of Object.entries(payload.data ?? {})) {
+              const numeric = Number(count);
+              received[address.toLowerCase()] = Number.isFinite(numeric)
+                ? Math.max(0, Math.floor(numeric))
+                : 0;
+            }
+          }
+          const next = { ...watchlistStatsRef.current, ...received };
+          watchlistStatsRef.current = next;
+          setWatchlistStats(next);
+        } catch (statsError) {
+          if (!(statsError instanceof DOMException && statsError.name === "AbortError")) {
+            console.error("Failed to fetch watchlist stats", statsError);
+          }
+        } finally {
+          if (watchlistStatsRefresh && !controller.signal.aborted) {
+            setWatchlistStatsRefresh((current) =>
+              current?.address === watchlistStatsRefresh.address &&
+              current.sequence === watchlistStatsRefresh.sequence
+                ? null
+                : current
+            );
+          }
         }
-      } catch (err) {
-        console.error("Failed to fetch watchlist stats", err);
-      }
+      })();
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
     };
+  }, [tokenAddressKey, watchlistStatsRefresh]);
 
-    // Debounce slightly to avoid too many requests during fast scroll
-    const timeout = setTimeout(fetchStats, 500);
-    return () => clearTimeout(timeout);
-  }, [visibleTokens.length]); // Re-run when more tokens become visible
-
-  // Handlers
-  const handleTrade = (token: Coin) => {
-    setSelectedToken(token);
-    setTradeModalOpen(true);
-  };
-
-  const handleCloseTradeModal = () => {
-    setTradeModalOpen(false);
-    setSelectedToken(null);
-  };
-
-  const handleViewDetails = (token: Coin) => {
-    onView(token);
-  };
-
-  const handleCreatorClick = (creatorAddress: string) => {
-    setSelectedCreator(creatorAddress);
-    setSearchTerm(""); // Clear search to show all from creator
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  // Watchlist Hook
+  const visibleWatchlistStats = useMemo(
+    () =>
+      Object.fromEntries(
+        tokens.map((token) => [
+          token.contract_address,
+          watchlistStats[token.contract_address.toLowerCase()] ?? 0,
+        ])
+      ),
+    [tokens, watchlistStats]
+  );
   const { watchlist, toggleWatchlist } = useWatchlist();
   const watchlistSet = useMemo(
-    () => new Set(watchlist.map((a) => a.toLowerCase())),
+    () => new Set(watchlist.map((address) => address.toLowerCase())),
     [watchlist]
   );
 
-  // Error State
-  if (error) {
-    console.error("❌ Market data fetch error:", error);
-  }
+  const handleToggleWatchlist = useCallback(
+    async (
+      tokenAddress: string,
+      priceHint?: Parameters<typeof toggleWatchlist>[1]
+    ) => {
+      const normalizedAddress = tokenAddress.toLowerCase();
+      const wasWatchlisted = watchlistSet.has(normalizedAddress);
+      const succeeded = await toggleWatchlist(tokenAddress, priceHint);
+      if (!succeeded) return;
 
-  // Loading State - Only show skeleton if NO data and currently loading
-  const showLoading = isLoading && allTokens.length === 0;
+      const nextStats = {
+        ...watchlistStatsRef.current,
+        [normalizedAddress]: Math.max(
+          0,
+          (watchlistStatsRef.current[normalizedAddress] ?? 0) +
+            (wasWatchlisted ? -1 : 1)
+        ),
+      };
+      watchlistStatsRef.current = nextStats;
+      setWatchlistStats(nextStats);
+      setWatchlistStatsRefresh((current) => ({
+        address: normalizedAddress,
+        sequence: (current?.sequence ?? 0) + 1,
+      }));
 
+      if (sortBy === "most-watched") {
+        void retryMarket();
+      }
+    },
+    [retryMarket, sortBy, toggleWatchlist, watchlistSet]
+  );
+
+  const resetToFirstPage = useCallback(() => {
+    void setSize(1);
+    marketTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [setSize]);
+
+  const showLoading = !filtersReady || (isLoading && tokens.length === 0);
   if (showLoading) {
     return (
-      <div className="min-h-screen bg-art-off-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-4 pt-6">
-          {/* Hand-Drawn Loading Skeleton */}
-          <div className="space-y-6 mt-8">
-            {/* Header Skeleton */}
-            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-              <HandDrawnSkeleton variant="text" className="w-48 h-8" />
-              <HandDrawnSkeleton variant="text" className="w-64 h-10" />
-            </div>
-
-            {/* Token Grid Skeleton */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <HandDrawnSkeleton variant="card" count={8} />
-            </div>
+      <div className="min-h-[420px] bg-art-off-white">
+        <div className="mx-auto max-w-7xl px-3 pt-4 sm:px-4">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <HandDrawnSkeleton variant="text" className="h-8 w-56" />
+            <HandDrawnSkeleton variant="text" className="hidden h-8 w-24 sm:block" />
           </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <HandDrawnSkeleton variant="card" count={8} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && tokens.length === 0) {
+    return (
+      <div className="min-h-[420px] bg-art-off-white px-3 pt-8">
+        <div className="mx-auto max-w-3xl rounded-2xl border-2 border-[#2d3748] bg-amber-50 p-6 text-center shadow-[3px_3px_0_#2d3748]" role="alert">
+          <h2 className="font-bold text-art-gray-900">Market data is temporarily unavailable</h2>
+          <p className="mb-4 mt-2 text-sm text-art-gray-600">{error.message}</p>
+          <button type="button" onClick={() => void retryMarket()} disabled={isValidating} className="rounded-xl border-2 border-[#2d3748] bg-[#0052ff] px-4 py-2 text-sm font-bold text-white shadow-[2px_2px_0_#2d3748] disabled:opacity-60">
+            {isValidating ? "Retrying..." : "Try again"}
+          </button>
         </div>
       </div>
     );
@@ -260,78 +402,113 @@ export default function MarketPage({ onView }: MarketPageProps) {
 
   return (
     <div className="min-h-screen bg-art-off-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-4 pt-6">
-        {/* Filters */}
+      <div ref={marketTopRef} className="mx-auto max-w-7xl scroll-mt-28 px-3 pt-2 sm:px-4 sm:pt-4">
+        <div className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#0052ff] sm:text-[11px]">Community sketchbook</p>
+            <div className="mt-0.5 flex min-w-0 items-baseline gap-2.5">
+              <h2 className="truncate font-art-sans text-2xl font-bold leading-tight tracking-[-0.025em] text-art-gray-900 sm:text-3xl md:text-4xl">Fresh from the canvas</h2>
+              <span className="shrink-0 rounded-full border border-[#0052ff]/30 bg-[#eef3ff] px-2 py-0.5 text-[10px] font-black text-[#003ecb] sm:text-xs" aria-live="polite">
+                {total} works
+              </span>
+            </div>
+          </div>
+          <p className="hidden max-w-sm text-right text-sm leading-5 text-art-gray-600 lg:block">Original drawings launched by the DrawCoin community on Base.</p>
+        </div>
+
+        {error ? (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs" role="status">
+            <span>Live data could not be refreshed. Showing the last loaded results.</span>
+            <button type="button" onClick={() => void retryMarket()} className="shrink-0 font-bold underline">Retry</button>
+          </div>
+        ) : null}
+
         <TokenFilters
-          selectedCategory=""
-          onCategoryChange={() => {}}
           searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
+          onSearchChange={(value) => {
+            setSelectedCreator(null);
+            setSearchTerm(value);
+          }}
           sortBy={sortBy}
-          onSortChange={setSortBy}
+          onSortChange={(value) => {
+            setSortBy(value);
+            resetToFirstPage();
+          }}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           creationType={creationType}
-          onCreationTypeChange={setCreationType}
+          onCreationTypeChange={(value) => {
+            setCreationType(value);
+            resetToFirstPage();
+          }}
         />
 
-        {/* Results Count */}
-        <div className="mb-2 flex justify-between items-end">
-          <p className="text-xs text-art-gray-500">
+        <div className="mb-2 flex min-h-7 items-center justify-between gap-3 text-[11px] text-art-gray-500 sm:text-xs">
+          <p aria-live="polite">
             {selectedCreator
-              ? `Found ${filteredTokens.length} tokens by this creator`
-              : `Showing ${visibleTokens.length} of ${filteredTokens.length} tokens`}
+              ? `${total} works by this creator`
+              : `Showing ${tokens.length} of ${total} works`}
           </p>
+          {isValidating && !loadingMore ? <span>Refreshing...</span> : null}
         </div>
 
-        {/* Explore Sections (Only show if no search/filter active) */}
-        {!searchTerm &&
-          !selectedCreator &&
-          creationType === "all" &&
-          exploreData && (
-            <div className="mb-8">
-              <ExploreSection
-                title="Most Watchlisted"
-                tokens={exploreData.mostWatchlisted}
-                type="watchlist"
-              />
-            </div>
-          )}
+        {selectedCreator ? (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-[#0052ff]/30 bg-[#eef3ff] px-3 py-2 text-xs text-[#003ecb]">
+            <p className="truncate font-bold">Creator: {selectedCreator.slice(0, 6)}…{selectedCreator.slice(-4)}</p>
+            <button type="button" onClick={() => { setSelectedCreator(null); resetToFirstPage(); }} className="shrink-0 font-black uppercase tracking-wide underline underline-offset-2">Clear</button>
+          </div>
+        ) : null}
 
-        {/* Profile Filter Banner */}
+        {tokens.length > 0 ? (
+          <TokenGrid
+            tokens={tokens}
+            onTrade={(token) => {
+              setSelectedToken(token);
+              setTradeModalOpen(true);
+            }}
+            loading={false}
+            viewMode={viewMode}
+            watchlistSet={watchlistSet}
+            onToggleWatchlist={handleToggleWatchlist}
+            onCreatorClick={(creatorAddress) => {
+              setSearchTerm("");
+              setDebouncedSearch("");
+              setSelectedCreator(creatorAddress.toLowerCase());
+              resetToFirstPage();
+            }}
+            watchlistStats={visibleWatchlistStats}
+            creatorBasenames={creatorIdentityData?.basenames}
+          />
+        ) : (
+          <div className="rounded-2xl border-2 border-[#2d3748] bg-white px-5 py-10 text-center shadow-[3px_3px_0_#2d3748]">
+            <h3 className="font-bold text-art-gray-900">No works found</h3>
+            <p className="mt-1 text-sm text-art-gray-500">Try a different search or filter.</p>
+          </div>
+        )}
 
-        {/* Token Grid */}
-        <TokenGrid
-          tokens={visibleTokens}
-          onTrade={handleTrade}
-          onView={handleViewDetails}
-          loading={false}
-          viewMode={viewMode}
-          watchlistSet={watchlistSet}
-          onToggleWatchlist={toggleWatchlist}
-          // Pass stats and handlers
-          onCreatorClick={handleCreatorClick}
-          watchlistStats={watchlistStats}
-        />
-
-        {/* Infinite scroll sentinel */}
-        <div
-          ref={sentinelRef}
-          className="text-center mt-8 md:mt-12 text-art-gray-500 py-8"
-        >
-          {hasMore
-            ? "Scroll down to load more coins"
-            : filteredTokens.length > 0
-            ? "No more coins to load"
-            : "No coins found matching your criteria"}
+        <div className="py-6 text-center sm:py-8">
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={() => void setSize((current) => current + 1)}
+              disabled={loadingMore}
+              className="min-h-11 rounded-xl border-2 border-[#2d3748] bg-white px-5 py-2.5 text-sm font-bold text-art-gray-900 shadow-[2px_2px_0_#2d3748] transition-transform hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60"
+            >
+              {loadingMore ? "Loading..." : "Load 24 more"}
+            </button>
+          ) : tokens.length > 0 ? (
+            <p className="text-xs text-art-gray-500">You have reached the end of the collection.</p>
+          ) : null}
         </div>
       </div>
 
-      {/* Trade Modal */}
       <DetailsModal
         token={selectedToken}
         isOpen={tradeModalOpen}
-        onClose={handleCloseTradeModal}
+        onClose={() => {
+          setTradeModalOpen(false);
+          setSelectedToken(null);
+        }}
       />
     </div>
   );

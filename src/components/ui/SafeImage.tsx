@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import {
@@ -6,6 +8,7 @@ import {
   getImageFromIpfsMetadata,
 } from "../../utils/ipfs";
 import { Camera } from "lucide-react";
+import { getSafeImageRenderStrategy } from "./safeImagePolicy";
 
 interface SafeImageProps {
   src: string;
@@ -17,6 +20,7 @@ interface SafeImageProps {
   fallbackIcon?: React.ReactNode;
   fluid?: boolean;
   lazy?: boolean; // Enable lazy loading
+  natural?: boolean; // Preserve the source image's intrinsic aspect ratio
 }
 
 export function SafeImage({
@@ -29,6 +33,7 @@ export function SafeImage({
   fallbackIcon = <Camera size={20} />,
   fluid = false,
   lazy = true, // Default lazy loading enabled
+  natural = false,
 }: SafeImageProps) {
   const [imageError, setImageError] = useState(false);
   const [imageSrc, setImageSrc] = useState("");
@@ -113,15 +118,19 @@ export function SafeImage({
     setImageError(true);
   };
 
+  const renderStrategy = getSafeImageRenderStrategy(imageSrc);
+
   // Placeholder for lazy loading (before visible)
   if (!isVisible) {
     return (
       <div
         ref={imgRef}
-        className={`flex items-center justify-center bg-gradient-to-br from-art-gray-100 to-art-gray-200 ${className} ${
-          fluid ? "w-full h-full" : ""
-        }`}
-        style={fluid ? undefined : { width, height }}
+        className={`flex items-center justify-center ${
+          natural
+            ? "min-h-24 w-full bg-art-gray-100"
+            : "bg-gradient-to-br from-art-gray-100 to-art-gray-200"
+        } ${className} ${fluid && !natural ? "w-full h-full" : ""}`}
+        style={fluid || natural ? undefined : { width, height }}
       >
         <div className="animate-pulse">
           <div className="w-8 h-8 bg-art-gray-300 rounded-full"></div>
@@ -130,14 +139,14 @@ export function SafeImage({
     );
   }
 
-  if (imageError || !imageSrc) {
+  if (imageError || renderStrategy === "invalid") {
     return (
       <div
         ref={imgRef}
         className={`flex items-center justify-center bg-retro-darker/30 border border-retro-primary/30 ${className} ${
-          fluid ? "w-full h-full" : ""
+          natural ? "min-h-40 w-full" : fluid ? "w-full h-full" : ""
         }`}
-        style={fluid ? undefined : { width, height }}
+        style={fluid || natural ? undefined : { width, height }}
       >
         <div className="text-center">
           <div className="text-retro-primary mb-1">{fallbackIcon}</div>
@@ -150,10 +159,10 @@ export function SafeImage({
   return (
     <div
       ref={imgRef}
-      className={`relative ${className} ${fluid ? "w-full h-full" : ""}`}
-      style={fluid ? undefined : { width, height }}
+      className={`relative ${className} ${natural ? "w-full" : fluid ? "w-full h-full" : ""}`}
+      style={fluid || natural ? undefined : { width, height }}
     >
-      {isLoading && (
+      {isLoading && !natural && (
         <div
           className="absolute inset-0 flex items-center justify-center bg-retro-darker/50"
           style={fluid ? undefined : { width, height }}
@@ -161,7 +170,57 @@ export function SafeImage({
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-retro-primary"></div>
         </div>
       )}
-      {fluid ? (
+      {natural ? (
+        // Intrinsic dimensions are intentionally delegated to the source so
+        // masonry cards preserve artwork proportions instead of inventing a
+        // crop or deterministic aspect ratio.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageSrc}
+          alt={alt}
+          className={`block h-auto w-full transition-opacity duration-300 ${
+            isLoading ? "opacity-0" : "opacity-100"
+          }`}
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+          loading={lazy ? "lazy" : "eager"}
+          decoding="async"
+          referrerPolicy="no-referrer"
+        />
+      ) : renderStrategy === "native" && fluid ? (
+        // Unknown external hosts are loaded by the visitor's browser. Passing
+        // them to Next/Image would either throw or turn the optimizer into an
+        // open remote-image proxy.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageSrc}
+          alt={alt}
+          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${
+            isLoading ? "opacity-0" : "opacity-100"
+          } ${className || ""}`}
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+          loading={lazy ? "lazy" : "eager"}
+          decoding="async"
+          referrerPolicy="no-referrer"
+        />
+      ) : renderStrategy === "native" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageSrc}
+          alt={alt}
+          width={width}
+          height={height}
+          className={`object-contain transition-opacity duration-300 ${
+            isLoading ? "opacity-0" : "opacity-100"
+          } ${className || ""}`}
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+          loading={lazy ? "lazy" : "eager"}
+          decoding="async"
+          referrerPolicy="no-referrer"
+        />
+      ) : fluid ? (
         <Image
           src={imageSrc}
           alt={alt}

@@ -1,13 +1,14 @@
 import React, { useMemo } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Coin } from "../../lib/supabase";
+import { getCreatorDisplayLabel } from "../../lib/creatorIdentity";
 import { WatchlistPriceHint } from "../../hooks/useWatchlist";
 import { SafeImage } from "../ui/SafeImage";
+import { CreationTypeBadge } from "./CreationTypeBadge";
 
 interface TokenCardProps {
   token: Coin;
   onTrade: (token: Coin) => void;
-  onView: (token: Coin) => void;
   showBalance?: boolean; // Optional prop to show user balance
   watchlistSet?: Set<string>; // Pre-computed Set for O(1) lookup
   onToggleWatchlist?: (
@@ -16,6 +17,7 @@ interface TokenCardProps {
   ) => void; // Callback from parent
   watchlistCount?: number; // NEW: Watchlist count
   onCreatorClick?: (creatorAddress: string) => void; // NEW: Callback for creator click
+  creatorBasename?: string | null;
 }
 
 export function TokenCard({
@@ -26,6 +28,7 @@ export function TokenCard({
   onToggleWatchlist,
   watchlistCount,
   onCreatorClick,
+  creatorBasename,
 }: TokenCardProps) {
   // Use watchlistSet for O(1) lookup - no more hook call!
   const isFavorite = useMemo(() => {
@@ -49,29 +52,35 @@ export function TokenCard({
     ),
   };
 
-  const router = useRouter();
-
-  const handleCardClick = () => {
-    // Navigate to coin detail page
-    router.push(`/coin/${token.contract_address}`);
-  };
-
   const handleTradeClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     onTrade(token);
   };
 
-  const handleViewClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    router.push(`/coin/${token.contract_address}`);
-  };
+  const tokenName = (token as any).name || token.name || "token";
+  const creatorAddress = token.creator_address;
+  const creatorProfile = (
+    token as Coin & { creatorProfile?: { handle?: string | null } }
+  ).creatorProfile;
+  const creatorLabel = getCreatorDisplayLabel({
+    address: creatorAddress,
+    persistedName: creatorProfile?.handle ?? token.creator_name ?? null,
+    resolvedBasename: creatorBasename,
+  });
 
   return (
-    <div
-      className="hand-drawn-card group cursor-pointer relative"
-      onClick={handleCardClick}
+    <article
+      className="hand-drawn-card token-card-shell group relative"
       style={{ transform: "rotate(-0.5deg)" }}
     >
+      <Link
+        href={`/coin/${token.contract_address}`}
+        aria-label={`View ${tokenName} details`}
+        className="absolute inset-0 z-10 rounded-art focus-visible:ring-4 focus-visible:ring-blue-500 focus-visible:ring-inset"
+      >
+        <span className="sr-only">View {tokenName} details</span>
+      </Link>
+
       {/* NEW Badge */}
       {(token as any).isNew && (
         <div
@@ -92,12 +101,19 @@ export function TokenCard({
       {/* Favorite Button */}
       {/* Favorite Button with Count */}
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
           if (onToggleWatchlist) {
             onToggleWatchlist(token.contract_address, watchlistPriceHint);
           }
         }}
+        aria-label={
+          isFavorite
+            ? `Remove ${tokenName} from watchlist`
+            : `Add ${tokenName} to watchlist`
+        }
+        aria-pressed={isFavorite}
         className={`absolute top-3 right-3 z-30 flex items-center gap-1 px-2 py-1 rounded-full transition-colors shadow-sm ${
           isFavorite
             ? "bg-white/90 text-red-500"
@@ -123,30 +139,26 @@ export function TokenCard({
       </button>
 
       {/* Creation Type Badge - Minimal Version */}
-      {token.creation_type && (
-        <div
-          className="absolute top-3 left-3 z-30 px-2 py-0.5 rounded-full text-[10px] font-bold border-2 border-art-gray-900 bg-white/90 text-art-gray-900 shadow-sm"
-          style={{ borderRadius: "12px 8px 12px 8px" }}
-        >
-          {token.creation_type === "ai" ? "AI Generated" : "Hand Drawn"}
-        </div>
-      )}
+      <CreationTypeBadge
+        creationType={token.creation_type}
+        className="absolute left-3 top-3 z-30"
+      />
 
       {/* Hover Overlay with Buttons */}
-      <div className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 z-20 overflow-hidden rounded-art">
-        <div className="flex gap-3">
-          <button
-            onClick={handleViewClick}
+      <div className="token-card-actions pointer-events-none absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-300 z-20 overflow-hidden rounded-art">
+        <div className="flex gap-3 pointer-events-auto">
+          <Link
+            href={`/coin/${token.contract_address}`}
             className="hand-drawn-btn text-sm font-bold py-3 px-6 transform -rotate-1 hover:scale-105 transition-transform duration-200"
             style={{
               borderRadius: "12px 4px 8px 6px",
-              backgroundColor: "#4299e1",
               minWidth: "80px",
             }}
           >
             View
-          </button>
+          </Link>
           <button
+            type="button"
             onClick={handleTradeClick}
             className="hand-drawn-btn text-sm font-bold py-3 px-6 transform rotate-1 hover:scale-105 transition-transform duration-200"
             style={{
@@ -193,48 +205,50 @@ export function TokenCard({
       {/* Token Info */}
       <div className="space-y-3">
         <div className="">
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="flex items-baseline gap-2">
-              <h3 className="font-bold text-art-gray-900 text-sm leading-tight truncate transform rotate-0.5">
+          <div className="flex min-w-0 items-baseline justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+              <h3 className="min-w-0 truncate font-bold text-art-gray-900 text-sm leading-tight transform rotate-0.5">
                 {(token as any).name || token.name}
               </h3>
-              <p className="text-[10px] text-art-gray-500 font-mono bg-art-gray-100 px-1 py-0.5 rounded-art transform -rotate-1">
+              <p className="max-w-[40%] shrink-0 truncate text-[10px] text-art-gray-500 font-mono bg-art-gray-100 px-1 py-0.5 rounded-art transform -rotate-1">
                 {(token as any).symbol || token.symbol}
               </p>
             </div>
             <div
-              className={`text-[12px] font-bold ${(() => {
+              className={`shrink-0 text-[12px] font-bold ${(() => {
                 const priceChange = (token as any).marketCapDelta24h;
-                if (priceChange && parseFloat(priceChange) > 0)
-                  return "text-green-600";
-                if (priceChange && parseFloat(priceChange) < 0)
-                  return "text-red-600";
+                const value = Number(priceChange);
+                if (Number.isFinite(value) && value > 0) return "text-green-600";
+                if (Number.isFinite(value) && value < 0) return "text-red-600";
                 return "text-art-gray-900";
               })()}`}
             >
               {(() => {
                 const priceChange = (token as any).marketCapDelta24h;
-                return priceChange
-                  ? `${parseFloat(priceChange) >= 0 ? "+" : ""}${parseFloat(
-                      priceChange
-                    ).toFixed(2)}%`
-                  : "0.00%";
+                const value = Number(priceChange);
+                return priceChange !== null &&
+                  priceChange !== undefined &&
+                  Number.isFinite(value)
+                  ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`
+                  : "—";
               })()}
             </div>
           </div>
-          {(token as any).creatorProfile?.handle && (
-            <p
-              className="text-[11px] text-art-gray-500 truncate transform -rotate-0.5 hover:text-blue-500 hover:underline"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onCreatorClick && token.creator_address) {
-                  onCreatorClick(token.creator_address);
-                }
-              }}
-            >
-              by {(token as any).creatorProfile.handle}
-            </p>
-          )}
+          {creatorLabel &&
+            (onCreatorClick && creatorAddress ? (
+              <button
+                type="button"
+                className="relative z-30 block max-w-full text-left text-[11px] text-art-gray-500 truncate transform -rotate-0.5 hover:text-blue-500 hover:underline focus-visible:text-blue-600 focus-visible:underline"
+                onClick={() => onCreatorClick(creatorAddress)}
+                aria-label={`View creator ${creatorLabel}`}
+              >
+                by {creatorLabel}
+              </button>
+            ) : (
+              <p className="text-[11px] text-art-gray-500 truncate transform -rotate-0.5">
+                by {creatorLabel}
+              </p>
+            ))}
         </div>
 
         {/* User Balance (only shown in portfolio) */}
@@ -260,14 +274,14 @@ export function TokenCard({
             style={{ borderRadius: "15px 5px 10px 8px" }}
           >
             <div className="text-sm font-bold text-art-gray-900">
-              $
               {(() => {
                 const mc = (token as any).marketCap;
-                if (!mc) return "0";
-                const numMc = parseFloat(mc);
-                if (numMc >= 1000000) return (numMc / 1000000).toFixed(1) + "M";
-                if (numMc >= 1000) return (numMc / 1000).toFixed(1) + "K";
-                return numMc.toFixed(0);
+                const numMc = Number(mc);
+                if (!Number.isFinite(numMc) || numMc <= 0) return "—";
+                if (numMc >= 1000000)
+                  return `$${(numMc / 1000000).toFixed(1)}M`;
+                if (numMc >= 1000) return `$${(numMc / 1000).toFixed(1)}K`;
+                return `$${numMc.toFixed(0)}`;
               })()}
             </div>
             <div className="text-xs text-art-gray-400">MC</div>
@@ -277,16 +291,20 @@ export function TokenCard({
             style={{ borderRadius: "10px 15px 8px 12px" }}
           >
             <div className="text-sm font-bold text-art-gray-900">
-              $
               {(() => {
-                const vol =
-                  (token as any).volume24h || (token as any).totalVolume;
-                if (!vol) return "0";
-                const numVol = parseFloat(vol);
+                const vol = (token as any).volume24h;
+                const numVol = Number(vol);
+                if (
+                  vol === null ||
+                  vol === undefined ||
+                  !Number.isFinite(numVol) ||
+                  numVol <= 0
+                )
+                  return "—";
                 if (numVol >= 1000000)
-                  return (numVol / 1000000).toFixed(1) + "M";
-                if (numVol >= 1000) return (numVol / 1000).toFixed(1) + "K";
-                return numVol.toFixed(0);
+                  return `$${(numVol / 1000000).toFixed(1)}M`;
+                if (numVol >= 1000) return `$${(numVol / 1000).toFixed(1)}K`;
+                return `$${numVol.toFixed(0)}`;
               })()}
             </div>
             <div className="text-xs text-art-gray-400">VOL</div>
@@ -296,7 +314,16 @@ export function TokenCard({
             style={{ borderRadius: "12px 6px 18px 10px" }}
           >
             <div className="text-sm font-bold text-art-gray-900">
-              {(token as any).holders || 0}
+              {(() => {
+                const holders = (token as any).holders;
+                const count = Number(holders);
+                return holders === null ||
+                  holders === undefined ||
+                  !Number.isFinite(count) ||
+                  count < 0
+                  ? "—"
+                  : count.toLocaleString();
+              })()}
             </div>
             <div className="text-xs text-art-gray-400">HOLDERS</div>
           </div>
@@ -304,7 +331,7 @@ export function TokenCard({
       </div>
 
       {/* Hand-drawn decoration */}
-    </div>
+    </article>
   );
 }
 

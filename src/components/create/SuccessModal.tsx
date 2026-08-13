@@ -1,7 +1,12 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { sdk as miniAppSdk } from "@farcaster/miniapp-sdk";
 import HandDrawnIcon from "../ui/HandDrawnIcon";
+import { openFarcasterComposer } from "@/utils/share";
+import type { CoinRecordStatus } from "@/lib/functions/createToken";
+
+const DIALOG_FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface SuccessModalProps {
   isOpen: boolean;
@@ -10,6 +15,11 @@ interface SuccessModalProps {
   tokenSymbol: string;
   tokenAddress: string;
   tokenImage?: string;
+  transactionHash?: string;
+  recordStatus?: CoinRecordStatus;
+  recordError?: string | null;
+  onRetrySync?: () => void;
+  isRetryingSync?: boolean;
 }
 
 export default function SuccessModal({
@@ -19,20 +29,96 @@ export default function SuccessModal({
   tokenSymbol,
   tokenAddress,
   tokenImage,
+  transactionHash,
+  recordStatus = "recorded",
+  recordError,
+  onRetrySync,
+  isRetryingSync = false,
 }: SuccessModalProps) {
   const router = useRouter();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const primaryActionRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  const isRecorded = recordStatus === "recorded";
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          DIALOG_FOCUSABLE_SELECTOR
+        )
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!dialogRef.current.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const primaryAction = primaryActionRef.current;
+      if (primaryAction && !primaryAction.disabled) {
+        primaryAction.focus();
+        return;
+      }
+
+      dialogRef.current
+        ?.querySelector<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR)
+        ?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isOpen, isRecorded]);
 
   const handleViewToken = () => {
+    if (!tokenAddress) return;
     router.push(`/coin/${tokenAddress}`);
   };
 
-  const handleShareFarcaster = async () => {
+  const handleShareFarcaster = () => {
     try {
       const shareText = `🎨✨ Just created my hand-drawn art token "${tokenName}" (${tokenSymbol}) on DrawCoin! Check out my artwork and trade it on Base! 🚀`;
 
-      await miniAppSdk.actions.composeCast({
+      openFarcasterComposer({
         text: shareText,
-        embeds: [`https://drawcoin.app/coin/${tokenAddress}`],
+        embed: `https://drawcoin.app/coin/${tokenAddress}`,
         channelKey: "base",
       });
     } catch (error) {
@@ -59,7 +145,12 @@ export default function SuccessModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div
-        className="hand-drawn-card max-w-md w-full"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="creation-result-title"
+        aria-describedby="creation-result-description"
+        className="hand-drawn-card max-h-[calc(100dvh-2rem)] max-w-md w-full overflow-y-auto"
         style={{
           transform: "rotate(-0.5deg)",
           maxWidth: "500px",
@@ -72,13 +163,17 @@ export default function SuccessModal({
         >
           <div className="flex items-center space-x-3">
             <div
-              className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center"
+              className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                isRecorded ? "bg-green-100" : "bg-amber-100"
+              }`}
               style={{
                 transform: "rotate(1deg)",
               }}
             >
               <svg
-                className="w-8 h-8 text-green-600"
+                className={`w-8 h-8 ${
+                  isRecorded ? "text-green-600" : "text-amber-700"
+                }`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -87,21 +182,31 @@ export default function SuccessModal({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M5 13l4 4L19 7"
+                  d={isRecorded ? "M5 13l4 4L19 7" : "M12 9v4m0 4h.01"}
                 />
               </svg>
             </div>
             <div>
-              <h2 className="text-xl font-bold text-art-gray-900 transform -rotate-0.5">
-                Token Created!
+              <h2
+                id="creation-result-title"
+                className="text-xl font-bold text-art-gray-900 transform -rotate-0.5"
+              >
+                {isRecorded ? "Token Created!" : "Created on Base"}
               </h2>
-              <p className="text-sm text-art-gray-500">
-                Your artwork is now live
+              <p
+                id="creation-result-description"
+                className="text-sm text-art-gray-500"
+              >
+                {isRecorded
+                  ? "Your artwork is live in DrawCoin"
+                  : "One final Explore sync is still needed"}
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close creation result"
             className="text-art-gray-400 hover:text-art-gray-600 transition-colors transform rotate-1"
           >
             <svg
@@ -133,9 +238,12 @@ export default function SuccessModal({
               }}
             >
               {tokenImage ? (
-                <img
+                <Image
                   src={tokenImage}
                   alt={tokenName}
+                  width={96}
+                  height={96}
+                  unoptimized
                   className="w-full h-full object-contain bg-white"
                   style={{ borderRadius: "17px 5px 12px 9px" }}
                 />
@@ -155,7 +263,11 @@ export default function SuccessModal({
 
           {/* Success Message */}
           <div
-            className="bg-green-50 border border-green-200 rounded-art p-4"
+            className={`rounded-art border p-4 ${
+              isRecorded
+                ? "border-green-200 bg-green-50"
+                : "border-amber-300 bg-amber-50"
+            }`}
             style={{
               transform: "rotate(-0.3deg)",
               borderRadius: "15px 5px 10px 8px",
@@ -163,7 +275,9 @@ export default function SuccessModal({
           >
             <div className="flex items-center">
               <svg
-                className="w-5 h-5 text-green-600 mr-3"
+                className={`w-5 h-5 mr-3 ${
+                  isRecorded ? "text-green-600" : "text-amber-700"
+                }`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -172,15 +286,32 @@ export default function SuccessModal({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  d={
+                    isRecorded
+                      ? "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                      : "M12 8v4m0 4h.01M4.93 19h14.14a2 2 0 001.73-3L13.73 4a2 2 0 00-3.46 0L3.2 16A2 2 0 004.93 19z"
+                  }
                 />
               </svg>
               <div>
-                <p className="text-sm font-medium text-green-800">
-                  Your hand-drawn art token has been successfully created!
+                <p
+                  className={`text-sm font-medium ${
+                    isRecorded ? "text-green-800" : "text-amber-950"
+                  }`}
+                >
+                  {isRecorded
+                    ? "Your art token is created and synced."
+                    : "Your token exists on Base; it has not been added to Explore yet."}
                 </p>
-                <p className="text-xs text-green-600 mt-1">
-                  It's now live on the Base network and ready for trading.
+                <p
+                  className={`text-xs mt-1 ${
+                    isRecorded ? "text-green-600" : "text-amber-800"
+                  }`}
+                >
+                  {isRecorded
+                    ? "It is ready to view, share, and trade."
+                    : recordError ??
+                      "Retrying the sync never sends a second mint transaction."}
                 </p>
               </div>
             </div>
@@ -188,67 +319,69 @@ export default function SuccessModal({
 
           {/* Action Buttons */}
           <div className="space-y-3">
-            {/* View Token Button */}
-            <button
-              onClick={handleViewToken}
-              className="hand-drawn-btn w-full text-lg py-4"
-              style={{
-                transform: "rotate(-0.5deg)",
-                backgroundColor: "#3182ce",
-              }}
-            >
-              <div className="flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            {isRecorded ? (
+              <>
+                <button
+                  ref={primaryActionRef}
+                  type="button"
+                  onClick={handleViewToken}
+                  disabled={!tokenAddress}
+                  className="hand-drawn-btn w-full text-lg py-4 disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{
+                    transform: "rotate(-0.5deg)",
+                  }}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                  />
-                </svg>
-                View Your Token
-              </div>
-            </button>
+                  View Your Token
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareFarcaster}
+                  className="hand-drawn-btn w-full text-lg py-4"
+                  style={{
+                    transform: "rotate(0.5deg)",
+                    backgroundColor: "#7c65c1",
+                  }}
+                >
+                  Share on Farcaster
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareTwitter}
+                  className="hand-drawn-btn w-full text-lg py-4 secondary"
+                  style={{
+                    transform: "rotate(-0.5deg)",
+                    backgroundColor: "#1DA1F2",
+                  }}
+                >
+                  Share on X
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  ref={primaryActionRef}
+                  type="button"
+                  onClick={onRetrySync}
+                  disabled={!onRetrySync || isRetryingSync}
+                  className="hand-drawn-btn w-full py-4 text-base disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRetryingSync ? "Syncing to Explore…" : "Sync to Explore"}
+                </button>
+                {transactionHash && (
+                  <a
+                    href={`https://basescan.org/tx/${transactionHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-12 w-full items-center justify-center rounded-art border-2 border-art-gray-900 bg-white px-4 text-sm font-bold text-art-gray-900 hover:bg-art-gray-100"
+                  >
+                    View confirmed Base transaction
+                  </a>
+                )}
+              </>
+            )}
 
-            {/* Farcaster Share Button */}
             <button
-              onClick={handleShareFarcaster}
-              className="hand-drawn-btn w-full text-lg py-4"
-              style={{
-                transform: "rotate(0.5deg)",
-                backgroundColor: "#7c65c1",
-              }}
-            >
-              <div className="flex items-center justify-center">
-                Share
-              </div>
-            </button>
-
-            {/* Twitter Share Button */}
-            <button
-              onClick={handleShareTwitter}
-              className="hand-drawn-btn w-full text-lg py-4 secondary"
-              style={{
-                transform: "rotate(-0.5deg)",
-                backgroundColor: "#1DA1F2",
-              }}
-            >
-              <div className="flex items-center justify-center">Share on X</div>
-            </button>
-
-            {/* Close Button */}
-            <button
+              type="button"
               onClick={onClose}
               className="hand-drawn-btn w-full text-lg py-4 secondary danger"
               style={{
@@ -269,7 +402,7 @@ export default function SuccessModal({
                     d="M6 18L18 6M6 6l12 12"
                   />
                 </svg>
-                Close
+                {isRecorded ? "Close" : "Finish later"}
               </div>
             </button>
           </div>

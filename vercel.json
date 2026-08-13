@@ -1,5 +1,15 @@
 {
   "version": 2,
   "buildCommand": "next build",
-  "framework": "nextjs"
-} 
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/sync-market?type=active",
+      "schedule": "10 1 * * *"
+    },
+    {
+      "path": "/api/cron/sync-market?type=stale",
+      "schedule": "40 1 * * *"
+    }
+  ]
+}

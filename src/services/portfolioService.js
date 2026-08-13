@@ -10,8 +10,21 @@ import {
   setApiKey,
 } from "@zoralabs/coins-sdk";
 
-// Initialize API key
-setApiKey(process.env.ZORA_API_KEY);
+// The private key may only initialize SDK calls during server rendering or in
+// route handlers. This module is also imported by a client component.
+const serverApiKey =
+  typeof window === "undefined" ? process.env.ZORA_API_KEY : undefined;
+if (serverApiKey) setApiKey(serverApiKey);
+
+const queryOptions = { throwOnError: true };
+
+const safeZoraError = (error) => ({
+  name: error instanceof Error ? error.name : "UnknownError",
+  status:
+    error && typeof error === "object" && "status" in error
+      ? error.status
+      : undefined,
+});
 
 /**
  * Fetches user profile information from Zora API
@@ -23,22 +36,13 @@ export const getUserProfile = async (walletAddress) => {
     const response = await getProfile(
       {
         identifier: walletAddress,
-        chainId: 8453,
       },
-      {
-        headers: {
-          "api-key": process.env.ZORA_API_KEY,
-        },
-      }
+      queryOptions
     );
-
-    if (response.errors && response.errors.length > 0) {
-      throw new Error(`Profile fetch error: ${response.errors[0].message}`);
-    }
 
     return response.data?.profile || null;
   } catch (error) {
-    console.error("Error fetching user profile:", error);
+    console.error("Error fetching user profile", safeZoraError(error));
     throw error;
   }
 };
@@ -61,18 +65,10 @@ export const getUserBalances = async (
         identifier: walletAddress,
         count: pageSize,
         after: cursor,
-        chainId: 8453,
+        chainIds: [8453],
       },
-      {
-        headers: {
-          "api-key": process.env.ZORA_API_KEY,
-        },
-      }
+      queryOptions
     );
-
-    if (response.errors && response.errors.length > 0) {
-      throw new Error(`Balances fetch error: ${response.errors[0].message}`);
-    }
 
     const profile = response.data?.profile;
     let balances = [];
@@ -97,7 +93,7 @@ export const getUserBalances = async (
       nextCursor,
     };
   } catch (error) {
-    console.error("Error fetching user balances:", error);
+    console.error("Error fetching user balances", safeZoraError(error));
     throw error;
   }
 };
@@ -128,7 +124,7 @@ export const getUserBalancesAll = async (walletAddress, pageSize = 50) => {
 
     return allBalances;
   } catch (error) {
-    console.error("Error fetching all user balances:", error);
+    console.error("Error fetching all user balances", safeZoraError(error));
     throw error;
   }
 };
@@ -153,18 +149,8 @@ export const getUserCreatedCoins = async (
         after: cursor,
         chainIds: [8453],
       },
-      {
-        headers: {
-          "api-key": process.env.ZORA_API_KEY,
-        },
-      }
+      queryOptions
     );
-
-    if (response.errors && response.errors.length > 0) {
-      throw new Error(
-        `Created coins fetch error: ${response.errors[0].message}`
-      );
-    }
 
     const profile = response.data?.profile;
     let coins = [];
@@ -184,7 +170,7 @@ export const getUserCreatedCoins = async (
       nextCursor,
     };
   } catch (error) {
-    console.error("Error fetching created coins:", error);
+    console.error("Error fetching created coins", safeZoraError(error));
     throw error;
   }
 };
@@ -215,7 +201,7 @@ export const getUserCreatedCoinsAll = async (walletAddress, pageSize = 50) => {
 
     return allCoins;
   } catch (error) {
-    console.error("Error fetching all created coins:", error);
+    console.error("Error fetching all created coins", safeZoraError(error));
     throw error;
   }
 };
@@ -291,7 +277,8 @@ export const transformZoraCoinToCoin = (zoraCoin, lightweight = false) => {
     chain_id: zoraCoin.chainId || 8453,
     currency: "ZORA",
     total_supply: zoraCoin.totalSupply,
-    current_price: zoraCoin.tokenPrice?.priceInPoolToken,
+    current_price:
+      zoraCoin.tokenPrice?.priceInUsdc || zoraCoin.tokenPrice?.priceInUsd,
     volume_24h: zoraCoin.volume24h || zoraCoin.totalVolume || "0",
     holders: zoraCoin.uniqueHolders || 0,
     created_at: zoraCoin.createdAt || new Date().toISOString(),
@@ -328,7 +315,8 @@ export const getLightweightCoinData = (zoraCoin) => {
     contract_address: zoraCoin.address || "",
     image_url: zoraCoin.mediaContent?.previewImage?.small || "",
     creator_address: zoraCoin.creatorAddress || "",
-    current_price: zoraCoin.tokenPrice?.priceInPoolToken,
+    current_price:
+      zoraCoin.tokenPrice?.priceInUsdc || zoraCoin.tokenPrice?.priceInUsd,
     holders: zoraCoin.uniqueHolders || 0,
     created_at: zoraCoin.createdAt || new Date().toISOString(),
   };

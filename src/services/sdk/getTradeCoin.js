@@ -6,7 +6,6 @@
 import { tradeCoin, setApiKey } from "@zoralabs/coins-sdk";
 import { parseEther, parseUnits } from "viem";
 import { checkAndSwitchNetwork } from "../networkUtils";
-import { getBuilderCodeSuffix } from "../../lib/builderCode";
 import {
   getZORATokenAddress,
   validateCoinForTrade,
@@ -16,6 +15,34 @@ import {
   validateTradeBalance,
 } from "./tradeUtils";
 import { AnalyticsService } from "../analyticsService";
+import {
+  assertSuccessfulZoraTradeReceipt,
+  assertZoraTradeWalletSupported,
+} from "../../lib/zoraTradeSafety";
+
+export const MIN_TRADE_SLIPPAGE = 0.001;
+export const MAX_TRADE_SLIPPAGE = 0.1;
+
+/**
+ * Fail closed before any wallet/RPC work when slippage is outside the UI's
+ * supported safety range. Values use SDK fractional units (0.01 = 1%).
+ * @param {number} slippage
+ * @returns {number}
+ */
+export function assertSafeTradeSlippage(slippage) {
+  if (
+    typeof slippage !== "number" ||
+    !Number.isFinite(slippage) ||
+    slippage < MIN_TRADE_SLIPPAGE ||
+    slippage > MAX_TRADE_SLIPPAGE
+  ) {
+    throw new RangeError(
+      `Slippage must be between ${MIN_TRADE_SLIPPAGE * 100}% and ${MAX_TRADE_SLIPPAGE * 100}%.`,
+    );
+  }
+
+  return slippage;
+}
 
 // Initialize API key for production environments
 // Uses environment variable or allows manual override
@@ -91,10 +118,11 @@ export {
  * @param {bigint} params.amountIn - Amount to sell (in token's smallest unit)
  * @param {string} params.sender - Sender address
  * @param {string} [params.recipient] - Recipient address (defaults to sender)
- * @param {number} [params.slippage] - Slippage tolerance (default: 0.05 = 5%)
+ * @param {number} [params.slippage] - Slippage tolerance (default: 0.05 = 5%, max: 0.1 = 10%)
  * @param {Object} params.walletClient - Viem wallet client
  * @param {Object} params.publicClient - Viem public client
  * @param {Object} params.account - Account object
+ * @param {string} params.walletConnectorId - Reviewed EOA connector ID
  * @param {Function} [params.switchChain] - Network switch function
  * @param {boolean} [params.validateTransaction] - Validate transaction (default: true)
  * @returns {Promise<Object>} Transaction receipt
@@ -109,12 +137,24 @@ export async function executeUniversalTrade({
   walletClient,
   publicClient,
   account,
+  walletConnectorId,
   switchChain,
   validateTransaction = true,
-  creatorAddress = null,
 }) {
-  // Wrap the entire trade execution in retry mechanism
-  return await retryWithBackoff(
+  const safeSlippage = assertSafeTradeSlippage(slippage);
+  assertZoraTradeWalletSupported(walletConnectorId);
+  const tradeParameters = {
+    sell: sellToken,
+    buy: buyToken,
+    amountIn,
+    slippage: safeSlippage,
+    sender,
+    recipient: recipient || sender,
+  };
+
+  // Transient read/preflight failures are safe to retry because no transaction
+  // has been submitted at this point.
+  await retryWithBackoff(
     async () => {
       // Validate Base network requirement
       const chainId = await walletClient.getChainId();
@@ -139,58 +179,43 @@ export async function executeUniversalTrade({
         }
       }
 
-      // Prepare trade parameters
-      const tradeParameters = {
-        sell: sellToken,
-        buy: buyToken,
-        amountIn: amountIn,
-        slippage: slippage,
-        sender: sender,
-        recipient: recipient || sender,
-      };
-
-      // Validate balance before trade (including creator restrictions)
-      if (sellToken.type === "erc20") {
-        const tradeType = "sell";
+      // Validate the actual onchain balance before asking the wallet to sign.
+      if (
+        sellToken.type === "erc20" ||
+        (sellToken.type === "eth" && buyToken.type === "erc20")
+      ) {
+        const tradeType = sellToken.type === "erc20" ? "sell" : "buy";
+        const coinAddress =
+          sellToken.type === "erc20" ? sellToken.address : buyToken.address;
         const validation = await validateTradeBalance(
           sender,
-          sellToken.address,
+          coinAddress,
           tradeType,
           amountIn,
           publicClient,
-          creatorAddress,
         );
 
         if (!validation.isValid) {
           throw new Error(validation.message);
         }
       }
+    },
+    3,
+    2000,
+  );
 
-      // Execute the trade using Zora SDK tradeCoin function
-      // Append ERC-8021 Builder Code suffix for Base attribution
-      const builderSuffix = getBuilderCodeSuffix();
-      const walletClientWithSuffix = builderSuffix
-        ? new Proxy(walletClient, {
-            get(target, prop) {
-              if (prop === "sendTransaction") {
-                return async (args) => {
-                  const data = args.data || "0x";
-                  const newData = data + builderSuffix.slice(2);
-                  return target.sendTransaction({ ...args, data: newData });
-                };
-              }
-              return target[prop];
-            },
-          })
-        : walletClient;
-
-      const result = await tradeCoin({
-        tradeParameters,
-        walletClient: walletClientWithSuffix,
-        account: walletClient.account || account,
-        publicClient,
-        validateTransaction,
-      });
+  // Submit exactly once. Retrying a write after an ambiguous timeout can create
+  // duplicate trades even when the first submission reached the wallet/RPC.
+  // Wagmi's Base client appends the ERC-8021 Builder Code data suffix.
+  const result = assertSuccessfulZoraTradeReceipt(
+    await tradeCoin({
+      tradeParameters,
+      walletClient,
+      account: walletClient.account || account,
+      publicClient,
+      validateTransaction,
+    }),
+  );
 
       // Record analytics for trade
       try {
@@ -280,20 +305,27 @@ export async function executeUniversalTrade({
           }
 
           // Fetch current ETH price from multi-source API
-          let ethPriceUSD = 3000; // Fallback
+          let ethPriceUSD = 0;
           try {
-            const priceResponse = await fetch("/api/crypto-price?symbol=ETH");
+            const priceResponse = await fetch("/api/crypto-price?symbol=ETH", {
+              cache: "no-store",
+            });
             const priceData = await priceResponse.json();
 
-            if (priceData.success && priceData.price) {
-              ethPriceUSD = priceData.price;
-            } else if (priceData.fallbackPrice) {
-              ethPriceUSD = priceData.fallbackPrice;
-              console.warn("[Analytics] Using fallback price:", ethPriceUSD);
+            const parsedPrice = Number(priceData.price);
+            if (
+              !priceResponse.ok ||
+              priceData.success !== true ||
+              !Number.isFinite(parsedPrice) ||
+              parsedPrice <= 0
+            ) {
+              throw new Error("Live ETH price is unavailable.");
             }
+
+            ethPriceUSD = parsedPrice;
           } catch (priceError) {
             console.warn(
-              "[Analytics] Could not fetch ETH price, using fallback:",
+              "[Analytics] Could not fetch ETH price; USD analytics will be omitted.",
               priceError,
             );
           }
@@ -313,7 +345,9 @@ export async function executeUniversalTrade({
                   tokenData.tokenPrice.priceInUsdc,
                 );
                 amountUsd = amountToken * tokenPriceUsd;
-                amountEth = amountUsd / ethPriceUSD;
+                if (ethPriceUSD > 0) {
+                  amountEth = amountUsd / ethPriceUSD;
+                }
               } else {
                 console.warn(
                   `[Analytics] Sell - Could not get token price, using 0`,
@@ -353,8 +387,7 @@ export async function executeUniversalTrade({
             price_usd: ethPriceUSD,
           };
 
-          const recordResult =
-            await AnalyticsService.recordTransaction(transactionData);
+          await AnalyticsService.recordTransaction(transactionData);
         } else {
           console.warn(
             "[Analytics] Trade type not recognized, skipping analytics",
@@ -364,11 +397,7 @@ export async function executeUniversalTrade({
         console.error("❌ Analytics error (non-blocking):", analyticsError);
       }
 
-      return result;
-    },
-    3,
-    2000,
-  ); // 3 retries with 2 second base delay
+  return result;
 }
 
 /**
@@ -410,6 +439,7 @@ async function getTokenDecimals(tokenAddress, publicClient) {
  * @param {Object} params.walletClient - Viem wallet client
  * @param {Object} params.publicClient - Viem public client
  * @param {Object} params.account - Account object
+ * @param {string} params.walletConnectorId - Reviewed EOA connector ID
  * @param {Function} [params.switchChain] - Network switch function
  * @returns {Promise<Object>} Transaction receipt
  */
@@ -422,9 +452,12 @@ export async function executeTrade({
   walletClient,
   publicClient,
   account,
+  walletConnectorId,
   switchChain,
-  creatorAddress = null,
 }) {
+  const safeSlippage = assertSafeTradeSlippage(slippage);
+  assertZoraTradeWalletSupported(walletConnectorId);
+
   // Determine sender address
   const senderAddress =
     (typeof account === "string" ? account : account?.address) || recipient;
@@ -450,12 +483,12 @@ export async function executeTrade({
     amountIn: amountInBigInt,
     sender: senderAddress,
     recipient: recipient || senderAddress,
-    slippage,
+    slippage: safeSlippage,
     walletClient,
     publicClient,
     account,
+    walletConnectorId,
     switchChain,
-    creatorAddress,
   });
 }
 
@@ -470,6 +503,7 @@ export async function executeTrade({
  * @param {Object} params.walletClient - Wallet client
  * @param {Object} params.publicClient - Public client
  * @param {Object} params.account - Account object
+ * @param {string} params.walletConnectorId - Reviewed EOA connector ID
  * @param {Function} [params.switchChain] - Network switch function
  * @returns {Promise<Object>} Transaction receipt
  */
@@ -482,9 +516,12 @@ export async function executeERC20Trade({
   walletClient,
   publicClient,
   account,
+  walletConnectorId,
   switchChain,
-  creatorAddress = null,
 }) {
+  const safeSlippage = assertSafeTradeSlippage(slippage);
+  assertZoraTradeWalletSupported(walletConnectorId);
+
   const senderAddress =
     (typeof account === "string" ? account : account?.address) || recipient;
 
@@ -494,12 +531,12 @@ export async function executeERC20Trade({
     amountIn: amountIn,
     sender: senderAddress,
     recipient: recipient || senderAddress,
-    slippage,
+    slippage: safeSlippage,
     walletClient,
     publicClient,
     account,
+    walletConnectorId,
     switchChain,
-    creatorAddress,
   });
 }
 
@@ -590,6 +627,7 @@ export function createTokenToTokenTrade(
  * @param {Object} tradeParams - Trade parameters from helper functions
  * @param {Object} clients - Wallet and public clients
  * @param {Object} account - Account object
+ * @param {string} walletConnectorId - Reviewed EOA connector ID
  * @param {Function} [switchChain] - Network switch function
  * @returns {Promise<Object>} Transaction receipt
  */
@@ -597,15 +635,17 @@ export async function executeTradeWithParams(
   tradeParams,
   clients,
   account,
+  walletConnectorId,
   switchChain,
-  creatorAddress = null,
 ) {
+  assertZoraTradeWalletSupported(walletConnectorId);
+
   return await executeUniversalTrade({
     ...tradeParams,
     walletClient: clients.walletClient,
     publicClient: clients.publicClient,
     account,
+    walletConnectorId,
     switchChain,
-    creatorAddress,
   });
 }

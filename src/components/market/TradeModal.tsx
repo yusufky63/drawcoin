@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   useAccount,
   useWalletClient,
@@ -11,6 +11,10 @@ import { showError } from "../../utils/toastUtils";
 import { Coin } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
 import TradeSuccessModal from "./TradeSuccessModal";
+import {
+  isZoraTradeWalletSupported,
+  ZORA_TRADE_EOA_ONLY_MESSAGE,
+} from "../../lib/zoraTradeSafety";
 
 interface TradeModalProps {
   token: Coin | null;
@@ -34,7 +38,7 @@ export default function TradeModal({
   isOpen,
   onClose,
 }: TradeModalProps) {
-  const { address, isConnected } = useAccount();
+  const { address, connector, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
 
@@ -43,32 +47,32 @@ export default function TradeModal({
   const [trading, setTrading] = useState(false);
   const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
-  const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 30%)
+  const [slippage, setSlippage] = useState(0.05); // 5% default slippage (max: 10%)
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const quickEthOptions = ["0.01", "0.02", "0.05"];
+  const tokenContractAddress = token?.contract_address;
+  const tokenName = token?.name ?? "";
+  const tokenSymbol = token?.symbol ?? "";
+  const detailsRequestRef = useRef(0);
+  const isTradeWalletSupported = isZoraTradeWalletSupported(connector?.id);
 
-  // Fetch token details from Zora API
-  useEffect(() => {
-    if (isOpen && token && address) {
-      fetchTokenDetails();
-    }
-  }, [isOpen, token, address]);
+  const fetchTokenDetails = useCallback(async () => {
+    if (!tokenContractAddress) return;
 
-  const fetchTokenDetails = async () => {
-    if (!token?.contract_address) return;
+    const requestId = ++detailsRequestRef.current;
 
     setLoading(true);
     try {
-      const response: any = await getCoinDetails(token.contract_address);
+      const response: any = await getCoinDetails(tokenContractAddress);
       const details = response?.zora20Token || response;
 
-      if (details) {
+      if (details && requestId === detailsRequestRef.current) {
         // Fetch user balance if connected
         let userBalance = { raw: "0", formatted: "0" };
         if (address && publicClient) {
           try {
             const balance = (await publicClient.readContract({
-              address: token.contract_address as `0x${string}`,
+              address: tokenContractAddress as `0x${string}`,
               abi: [
                 {
                   constant: true,
@@ -102,10 +106,12 @@ export default function TradeModal({
             : details.totalSupply
           : "0";
 
+        if (requestId !== detailsRequestRef.current) return;
+
         setTokenDetails({
-          address: token.contract_address,
-          name: details.name || token.name,
-          symbol: details.symbol || token.symbol,
+          address: tokenContractAddress,
+          name: details.name || tokenName,
+          symbol: details.symbol || tokenSymbol,
           marketCap: {
             raw: details.marketCap || "0",
             formatted: details.marketCap
@@ -125,12 +131,29 @@ export default function TradeModal({
         });
       }
     } catch (error) {
+      if (requestId !== detailsRequestRef.current) return;
       console.error("Error fetching token details:", error);
       showError("Failed to load token data", "token data loading");
     } finally {
+      if (requestId === detailsRequestRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [address, publicClient, tokenContractAddress, tokenName, tokenSymbol]);
+
+  // Fetch token details from Zora API
+  useEffect(() => {
+    if (isOpen && tokenContractAddress && address) {
+      void fetchTokenDetails();
+    } else {
+      detailsRequestRef.current += 1;
       setLoading(false);
     }
-  };
+
+    return () => {
+      detailsRequestRef.current += 1;
+    };
+  }, [isOpen, tokenContractAddress, address, fetchTokenDetails]);
 
   // Refresh balances function
   const refreshBalances = async () => {
@@ -154,6 +177,11 @@ export default function TradeModal({
       return;
     }
 
+    if (!isTradeWalletSupported) {
+      showError(ZORA_TRADE_EOA_ONLY_MESSAGE, "wallet compatibility");
+      return;
+    }
+
     if (!amount || parseFloat(amount) <= 0) {
       showError("Please enter a valid amount", "form validation");
       return;
@@ -173,7 +201,7 @@ export default function TradeModal({
       if (chainId !== 8453) {
         try {
           await switchChain({ chainId: 8453 });
-        } catch (switchError) {
+        } catch {
           showError("Please switch to Base network", "network switch");
           return;
         }
@@ -191,8 +219,8 @@ export default function TradeModal({
         walletClient,
         publicClient,
         account: address!,
+        walletConnectorId: connector?.id ?? "",
         switchChain,
-        creatorAddress: token.creator_address || null,
       };
 
       console.log("Executing trade with params:", tradeParams);
@@ -459,7 +487,12 @@ export default function TradeModal({
               ) : (
                 <>
                   <button
-                    onClick={() => setAmount("0.25")}
+                    onClick={() => {
+                      const balance = Number.parseFloat(
+                        tokenDetails?.userBalance?.formatted || "0"
+                      );
+                      setAmount((balance * 0.25).toFixed(4));
+                    }}
                     className="hand-drawn-btn text-xs font-bold"
                     style={{
                       padding: "0.4rem 0.6rem",
@@ -469,7 +502,12 @@ export default function TradeModal({
                     25%
                   </button>
                   <button
-                    onClick={() => setAmount("0.5")}
+                    onClick={() => {
+                      const balance = Number.parseFloat(
+                        tokenDetails?.userBalance?.formatted || "0"
+                      );
+                      setAmount((balance * 0.5).toFixed(4));
+                    }}
                     className="hand-drawn-btn text-xs font-bold"
                     style={{
                       padding: "0.4rem 0.6rem",
@@ -550,17 +588,26 @@ export default function TradeModal({
             </div>
           )}
 
+          {isConnected && !isTradeWalletSupported && (
+            <div className="rounded-art border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+              {ZORA_TRADE_EOA_ONLY_MESSAGE}
+            </div>
+          )}
+
           {/* Trade Button */}
           <button
             onClick={handleTrade}
-            disabled={trading || !amount || !isConnected}
+            disabled={
+              trading || !amount || !isConnected || !isTradeWalletSupported
+            }
             className={`hand-drawn-btn w-full text-sm font-bold ${
               tradeType === "buy" ? "secondary" : "danger"
             }`}
             style={{
               padding: "0.75rem 1.5rem",
               transform: "rotate(-0.5deg)",
-              opacity: !amount || !isConnected ? 0.5 : 1,
+              opacity:
+                !amount || !isConnected || !isTradeWalletSupported ? 0.5 : 1,
             }}
           >
             {trading ? (
@@ -570,6 +617,8 @@ export default function TradeModal({
               </div>
             ) : !isConnected ? (
               "Connect Wallet"
+            ) : !isTradeWalletSupported ? (
+              "Use an EOA Wallet"
             ) : (
               `${tradeType === "buy" ? "Buy" : "Sell"} ${token.symbol}`
             )}

@@ -1,6 +1,28 @@
 import React, { useState } from "react";
-import { Tool, PenStyle } from "../types";
-import { CANVAS_COLORS, PEN_TOOLS } from "../constants";
+import {
+  ArrowRight,
+  Circle,
+  Download,
+  Eraser,
+  Minus,
+  MoreHorizontal,
+  MousePointer2,
+  PaintBucket,
+  PenLine,
+  Redo2,
+  Settings2,
+  Shapes,
+  Square,
+  Star,
+  Trash2,
+  Triangle,
+  Type,
+  Undo2,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { PenStyle, Tool } from "../types";
+import { QUICK_CANVAS_COLORS } from "../constants";
+import { ERASER_COLOR, getEraserStrokeWidth } from "../utils/eraserUtils";
 
 interface MobileToolbarProps {
   tool: Tool;
@@ -15,12 +37,108 @@ interface MobileToolbarProps {
   onRedo: () => void;
   onClear: () => void;
   onDownload: () => void;
-  onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   historyStep: number;
   historyLength: number;
 }
 
-type MenuType = "colors" | "pen" | "shapes" | null;
+type MenuType = "colors" | "pen" | "eraser" | "shapes" | "more" | null;
+
+const PEN_STYLES: Array<{ id: PenStyle; label: string }> = [
+  { id: "pen", label: "Pen" },
+  { id: "brush", label: "Brush" },
+  { id: "marker", label: "Marker" },
+  { id: "highlighter", label: "Highlight" },
+];
+
+const SHAPES: Array<{ id: Tool; label: string; icon: LucideIcon }> = [
+  { id: "line", label: "Line", icon: Minus },
+  { id: "rectangle", label: "Rectangle", icon: Square },
+  { id: "circle", label: "Circle", icon: Circle },
+  { id: "triangle", label: "Triangle", icon: Triangle },
+  { id: "arrow", label: "Arrow", icon: ArrowRight },
+  { id: "star", label: "Star", icon: Star },
+];
+
+interface DockButtonProps {
+  label: string;
+  icon: LucideIcon;
+  swatchColor?: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+function DockButton({
+  label,
+  icon: Icon,
+  swatchColor,
+  active = false,
+  disabled = false,
+  onClick,
+}: DockButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052ff] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-30 ${
+        active
+          ? "bg-[#0052ff] text-white"
+          : "text-gray-700 hover:bg-gray-50"
+      }`}
+      aria-label={label}
+      aria-pressed={active}
+    >
+      {swatchColor ? (
+        <span
+          className="h-[18px] w-[18px] rounded-full border border-gray-300"
+          style={{ backgroundColor: swatchColor }}
+          aria-hidden="true"
+        />
+      ) : (
+        <Icon aria-hidden="true" className="h-[18px] w-[18px]" />
+      )}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+interface MenuActionProps {
+  label: string;
+  icon: LucideIcon;
+  active?: boolean;
+  disabled?: boolean;
+  danger?: boolean;
+  onClick: () => void;
+}
+
+function MenuAction({
+  label,
+  icon: Icon,
+  active = false,
+  disabled = false,
+  danger = false,
+  onClick,
+}: MenuActionProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex min-h-12 items-center gap-2 rounded-lg border px-2 text-left text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
+        active
+          ? "border-[#0052ff] bg-[#eef3ff] text-[#003ecb]"
+          : danger
+            ? "border-red-100 text-red-600 hover:bg-red-50"
+            : "border-gray-200 text-gray-700 hover:bg-gray-50"
+      }`}
+      aria-pressed={active}
+    >
+      <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+      <span>{label}</span>
+    </button>
+  );
+}
 
 export const MobileToolbar: React.FC<MobileToolbarProps> = ({
   tool,
@@ -35,323 +153,279 @@ export const MobileToolbar: React.FC<MobileToolbarProps> = ({
   onRedo,
   onClear,
   onDownload,
-  onImageUpload,
   historyStep,
   historyLength,
 }) => {
   const [activeMenu, setActiveMenu] = useState<MenuType>(null);
 
-  const toggleMenu = (menu: MenuType) => {
-    setActiveMenu(activeMenu === menu ? null : menu);
+  const toggleMenu = (menu: Exclude<MenuType, null>) => {
+    setActiveMenu((current) => (current === menu ? null : menu));
   };
-
   const closeMenu = () => setActiveMenu(null);
 
   return (
-    <>
-      {/* Backdrop */}
-      {activeMenu && (
-        <div
-          className="md:hidden fixed inset-0 bg-black/20 z-[80]"
+    <div className="relative z-[90] mt-2 rounded-xl border-2 border-[#2d3748] bg-white shadow-[2px_2px_0_#171717] lg:hidden">
+      {activeMenu ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-[80] touch-pan-y bg-black/20 lg:hidden"
           onClick={closeMenu}
+          aria-label="Close drawing settings"
         />
-      )}
+      ) : null}
 
-      {/* Toolbar - Canvas'ın hemen altında */}
-      <div className="md:hidden relative z-[90] bg-white border-t border-gray-200 shadow-sm">
-        {/* Expanded Menu - Positioned above toolbar */}
-        {activeMenu && (
-          <div className="absolute bottom-full left-0 right-0 border-t border-gray-200 bg-gray-50 shadow-md">
-            {/* Colors Menu */}
-            {activeMenu === "colors" && (
-              <div className="p-4">
-                <div className="grid grid-cols-8 gap-1 mb-3">
-                  {CANVAS_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => {
-                        onColorChange(c);
-                        closeMenu();
-                      }}
-                      className={`w-8 h-8 rounded-md transition-all ${
-                        color === c
-                          ? "ring-2 ring-blue-500 scale-110 shadow-lg"
-                          : "ring-1 ring-gray-200"
+      {activeMenu ? (
+        <section
+          id="canvas-mobile-toolbar-menu"
+          className="absolute bottom-[calc(100%+0.5rem)] left-0 right-0 z-[90] max-h-[min(42dvh,17rem)] overflow-y-auto rounded-xl border-2 border-[#2d3748] bg-white p-2 shadow-[3px_3px_0_#171717]"
+          aria-label={`${activeMenu} drawing settings`}
+        >
+          {activeMenu === "colors" ? (
+            <div>
+              <div className="grid grid-cols-4 justify-items-center gap-1">
+                {QUICK_CANVAS_COLORS.map((canvasColor) => (
+                  <button
+                    type="button"
+                    key={canvasColor}
+                    onClick={() => {
+                      onColorChange(canvasColor);
+                      closeMenu();
+                    }}
+                    className={`flex h-11 w-11 items-center justify-center rounded-lg ${
+                      color === canvasColor ? "bg-[#eef3ff]" : "hover:bg-gray-50"
+                    }`}
+                    aria-label={`Use color ${canvasColor}`}
+                    aria-pressed={color === canvasColor}
+                  >
+                    <span
+                      className={`h-5 w-5 rounded-full border ${
+                        color === canvasColor
+                          ? "border-[#0052ff] ring-2 ring-blue-200"
+                          : "border-gray-300"
                       }`}
-                      style={{ backgroundColor: c }}
+                      style={{ backgroundColor: canvasColor }}
+                      aria-hidden="true"
                     />
-                  ))}
-                </div>
+                  </button>
+                ))}
+              </div>
+              <label className="mt-1.5 flex min-h-11 items-center justify-between rounded-lg border border-gray-200 px-3 text-xs font-semibold text-gray-600">
+                Custom color
                 <input
                   type="color"
                   value={color}
-                  onChange={(e) => onColorChange(e.target.value)}
-                  className="w-full h-12 rounded-lg border-2 border-gray-200 cursor-pointer"
+                  onChange={(event) => onColorChange(event.target.value)}
+                  className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                  aria-label="Choose a custom canvas color"
                 />
-              </div>
-            )}
+              </label>
+            </div>
+          ) : null}
 
-            {/* Pen Settings Menu */}
-            {activeMenu === "pen" && (
-              <div className="p-4 space-y-4">
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-2 block">
-                    Pen Style
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {PEN_TOOLS.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => {
-                          onToolChange("pen");
-                          onPenStyleChange(t.id as PenStyle);
-                        }}
-                        className={`p-3 rounded-lg transition-all ${
-                          penStyle === t.id
-                            ? "bg-blue-500 text-white"
-                            : "bg-white border border-gray-200"
-                        }`}
-                      >
-                        <div className="text-2xl">{t.icon}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-2 block">
-                    Brush Size: {lineWidth}px
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="30"
-                    value={lineWidth}
-                    onChange={(e) => onLineWidthChange(Number(e.target.value))}
-                    className="w-full h-2 rounded-lg appearance-none cursor-pointer"
-                    style={{
-                      background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${
-                        ((lineWidth - 1) / 29) * 100
-                      }%, #e5e7eb ${((lineWidth - 1) / 29) * 100}%, #e5e7eb 100%)`,
+          {activeMenu === "pen" ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-1.5">
+                {PEN_STYLES.map((style) => (
+                  <button
+                    type="button"
+                    key={style.id}
+                    onClick={() => {
+                      onToolChange("pen");
+                      onPenStyleChange(style.id);
                     }}
-                  />
-                </div>
+                    className={`min-h-10 rounded-lg border px-2 text-xs font-semibold ${
+                      penStyle === style.id
+                        ? "border-[#0052ff] bg-[#eef3ff] text-[#003ecb]"
+                        : "border-gray-200 text-gray-600"
+                    }`}
+                    aria-pressed={tool === "pen" && penStyle === style.id}
+                  >
+                    {style.label}
+                  </button>
+                ))}
               </div>
-            )}
+              <label className="block text-[11px] font-semibold text-gray-600">
+                Brush size · {lineWidth}px
+                <input
+                  type="range"
+                  min="1"
+                  max="30"
+                  value={lineWidth}
+                  onChange={(event) =>
+                    onLineWidthChange(Number(event.target.value))
+                  }
+                  className="mt-1 h-8 w-full"
+                  style={{ accentColor: "#0052ff" }}
+                />
+              </label>
+            </div>
+          ) : null}
 
-            {/* Shapes Menu */}
-            {activeMenu === "shapes" && (
-              <div className="p-4">
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { id: "line", label: "Line", icon: "📏" },
-                    { id: "rectangle", label: "Rectangle", icon: "▭" },
-                    { id: "circle", label: "Circle", icon: "⭕" },
-                    { id: "triangle", label: "Triangle", icon: "△" },
-                    { id: "arrow", label: "Arrow", icon: "➡️" },
-                    { id: "star", label: "Star", icon: "⭐" },
-                  ].map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => {
-                        onToolChange(s.id as Tool);
-                        closeMenu();
-                      }}
-                      className={`p-3 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
-                        tool === s.id
-                          ? "bg-blue-500 text-white shadow-md scale-105"
-                          : "bg-white text-gray-700 border border-gray-200"
-                      }`}
-                    >
-                      <span className="text-2xl">{s.icon}</span>
-                      <span className="text-xs font-medium">{s.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Main Toolbar */}
-        <div className="px-2 py-2">
-          {/* Row 1: Main Drawing Tools */}
-          <div className="flex items-center justify-center gap-1 mb-2">
-            {/* Select Tool */}
-            <button
-              onClick={() => {
-                onToolChange("select");
-                closeMenu();
-              }}
-              className={`p-2 rounded-lg transition-all ${
-                tool === "select" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Select"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2z" />
-              </svg>
-            </button>
-
-            {/* Pen Tool */}
-            <button
-              onClick={() => {
-                onToolChange("pen");
-                closeMenu();
-              }}
-              className={`p-2 rounded-lg transition-all ${
-                tool === "pen" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Pen"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-            </button>
-
-            {/* Eraser Tool */}
-            <button
-              onClick={() => {
-                onToolChange("eraser");
-                closeMenu();
-              }}
-              className={`p-2 rounded-lg transition-all ${
-                tool === "eraser" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Eraser"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 4L4 10l8 8 6-6-8-8z" />
-              </svg>
-            </button>
-
-            {/* Text Tool */}
-            <button
-              onClick={() => {
-                onToolChange("text");
-                closeMenu();
-              }}
-              className={`p-2 px-3 rounded-lg transition-all ${
-                tool === "text" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Text"
-            >
-              <div className="text-base font-bold">T</div>
-            </button>
-
-            {/* Pen Settings */}
-            <button
-              onClick={() => toggleMenu("pen")}
-              className={`p-2 rounded-lg transition-all ${
-                activeMenu === "pen" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Pen Style"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-              </svg>
-            </button>
-
-            {/* Color Picker */}
-            <button
-              onClick={() => toggleMenu("colors")}
-              className={`p-1.5 rounded-lg transition-all ${
-                activeMenu === "colors" ? "bg-blue-500 ring-2 ring-blue-300" : "ring-2 ring-gray-200"
-              }`}
-              style={{ backgroundColor: activeMenu === "colors" ? undefined : color }}
-              title="Colors"
-            >
-              <div className="w-6 h-6"></div>
-            </button>
-
-            {/* Shapes */}
-            <button
-              onClick={() => toggleMenu("shapes")}
-              className={`p-2 rounded-lg transition-all ${
-                activeMenu === "shapes" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Shapes"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <rect x="3" y="3" width="18" height="18" strokeWidth={2} rx="2" />
-              </svg>
-            </button>
-
-            {/* Fill Tool */}
-            <button
-              onClick={() => {
-                onToolChange("fill");
-                closeMenu();
-              }}
-              className={`p-2 rounded-lg transition-all ${
-                tool === "fill" ? "bg-blue-500 text-white" : "hover:bg-gray-100"
-              }`}
-              title="Fill"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 008 10.586V5L7 4z" />
-              </svg>
-            </button>
-
-            {/* Image Upload */}
-            <label className="p-2 rounded-lg hover:bg-gray-100 cursor-pointer transition-all" title="Upload Image">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <input type="file" accept="image/*" onChange={onImageUpload} className="hidden" />
+          {activeMenu === "eraser" ? (
+            <label className="block text-[11px] font-semibold text-gray-600">
+              Eraser size · {getEraserStrokeWidth(lineWidth)}px
+              <input
+                type="range"
+                min="1"
+                max="30"
+                value={lineWidth}
+                onChange={(event) =>
+                  onLineWidthChange(Number(event.target.value))
+                }
+                className="mt-1 h-8 w-full"
+                style={{ accentColor: "#0052ff" }}
+              />
             </label>
-          </div>
+          ) : null}
 
-          {/* Row 2: History & Actions */}
-          <div className="flex items-center justify-between gap-1">
-            {/* Undo */}
-            <button
-              onClick={onUndo}
-              disabled={historyStep <= 0}
-              className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30 transition-all flex-1"
-              title="Undo"
-            >
-              <svg className="w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-            </button>
+          {activeMenu === "shapes" ? (
+            <div className="grid grid-cols-3 gap-1.5">
+              {SHAPES.map(({ id, label, icon: Icon }) => (
+                <button
+                  type="button"
+                  key={id}
+                  onClick={() => {
+                    onToolChange(id);
+                    closeMenu();
+                  }}
+                  className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg border text-[10px] font-semibold ${
+                    tool === id
+                      ? "border-[#0052ff] bg-[#0052ff] text-white"
+                      : "border-gray-200 text-gray-600"
+                  }`}
+                  aria-pressed={tool === id}
+                >
+                  <Icon aria-hidden="true" className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
-            {/* Redo */}
-            <button
-              onClick={onRedo}
-              disabled={historyStep >= historyLength - 1}
-              className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30 transition-all flex-1"
-              title="Redo"
-            >
-              <svg className="w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
-              </svg>
-            </button>
+          {activeMenu === "more" ? (
+            <div className="grid grid-cols-3 gap-1.5">
+              <MenuAction
+                label="Select"
+                icon={MousePointer2}
+                active={tool === "select"}
+                onClick={() => {
+                  onToolChange("select");
+                  closeMenu();
+                }}
+              />
+              <MenuAction
+                label="Brush"
+                icon={Settings2}
+                onClick={() => setActiveMenu("pen")}
+              />
+              <MenuAction
+                label="Fill"
+                icon={PaintBucket}
+                active={tool === "fill"}
+                onClick={() => {
+                  onToolChange("fill");
+                  closeMenu();
+                }}
+              />
+              <MenuAction
+                label="Shapes"
+                icon={Shapes}
+                onClick={() => setActiveMenu("shapes")}
+              />
+              <MenuAction
+                label="Text"
+                icon={Type}
+                active={tool === "text"}
+                onClick={() => {
+                  onToolChange("text");
+                  closeMenu();
+                }}
+              />
+              <MenuAction
+                label="Redo"
+                icon={Redo2}
+                disabled={historyStep >= historyLength - 1}
+                onClick={() => {
+                  onRedo();
+                  closeMenu();
+                }}
+              />
+              <MenuAction
+                label="Save"
+                icon={Download}
+                onClick={() => {
+                  onDownload();
+                  closeMenu();
+                }}
+              />
+              <MenuAction
+                label="Clear"
+                icon={Trash2}
+                danger
+                onClick={() => {
+                  onClear();
+                  closeMenu();
+                }}
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-            {/* Clear */}
-            <button
-              onClick={onClear}
-              className="p-2 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all flex-1"
-              title="Clear Canvas"
-            >
-              <svg className="w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-
-            {/* Download */}
-            <button
-              onClick={onDownload}
-              className="p-2 rounded-lg hover:bg-green-50 hover:text-green-600 transition-all flex-1"
-              title="Download"
-            >
-              <svg className="w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            </button>
-          </div>
-        </div>
+      <div
+        className="relative z-[95] grid grid-cols-5 gap-1 p-1.5"
+        role="toolbar"
+        aria-label="Essential canvas tools"
+      >
+        <DockButton
+          label="Pen"
+          icon={PenLine}
+          active={tool === "pen"}
+          onClick={() => {
+            if (tool === "pen") toggleMenu("pen");
+            else {
+              onToolChange("pen");
+              closeMenu();
+            }
+          }}
+        />
+        <DockButton
+          label="Erase"
+          icon={Eraser}
+          active={tool === "eraser"}
+          onClick={() => {
+            if (tool === "eraser") toggleMenu("eraser");
+            else {
+              onToolChange("eraser");
+              closeMenu();
+            }
+          }}
+        />
+        <DockButton
+          label="Color"
+          icon={Circle}
+          swatchColor={tool === "eraser" ? ERASER_COLOR : color}
+          active={activeMenu === "colors"}
+          disabled={tool === "eraser"}
+          onClick={() => toggleMenu("colors")}
+        />
+        <DockButton
+          label="Undo"
+          icon={Undo2}
+          disabled={historyStep <= 0}
+          onClick={() => {
+            onUndo();
+            closeMenu();
+          }}
+        />
+        <DockButton
+          label="More"
+          icon={MoreHorizontal}
+          active={activeMenu === "more"}
+          onClick={() => toggleMenu("more")}
+        />
       </div>
-    </>
+
+    </div>
   );
 };
-

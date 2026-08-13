@@ -1,64 +1,136 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { processImageAndUploadToIPFS } from '../../../../services/imageUtils';
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type'
-};
+import { requireWalletSession, SessionError } from "@/lib/auth/session";
+import { IpfsQuotaError, reserveIpfsUpload } from "@/lib/ipfs/quota";
+import {
+  decodeDataImageUrl,
+  IpfsInputError,
+  MAX_IPFS_UPLOAD_REQUEST_BYTES,
+  readStreamWithLimit,
+} from "@/lib/ipfs/security";
+import { processImageBlobAndUploadToIPFS } from "@/services/imageUtils";
 
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: corsHeaders
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
+const uploadSchema = z.object({
+  imageUrl: z.string(),
+  name: z.string().trim().min(1).max(100),
+  symbol: z.string().trim().min(1).max(20),
+  description: z.string().trim().min(1).max(2_000),
+});
+
+function jsonResponse(body: unknown, status = 200, headers?: HeadersInit) {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+      ...headers,
+    },
   });
 }
 
-export async function POST(request: NextRequest) {
+async function parseUploadBody(request: NextRequest) {
+  const rawBody = await readStreamWithLimit(
+    request.body,
+    MAX_IPFS_UPLOAD_REQUEST_BYTES
+  );
+
   try {
-    // Parse JSON request body
-    const data = await request.json();
-    const { imageUrl, name, symbol, description } = data;
-    
-    if (!imageUrl) {
-      return NextResponse.json(
-        { error: 'Image URL is required' },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-    
-    console.log("⬆️ IPFS Upload requested:", {
-      imageUrl: typeof imageUrl === 'string' ? `${imageUrl.substring(0, 30)}...` : 'Invalid URL',
-      name,
-      symbol
-    });
-    
-    // Process the image and upload it to IPFS
-    const { ipfsUrl, displayUrl } = await processImageAndUploadToIPFS(imageUrl, name, symbol, description);
-    
-    console.log("✅ IPFS Upload successful:", {
-      ipfsUrl,
-      displayUrl: displayUrl || 'No display URL'
-    });
-    
-    // Return the IPFS URL and HTTP gateway URL for display
-    return NextResponse.json({
-      ipfsUrl,
-      displayUrl,
-      success: true
-    }, { headers: corsHeaders });
-    
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(rawBody);
+    return uploadSchema.parse(JSON.parse(text));
   } catch (error) {
-    console.error("❌ IPFS Upload error:", error);
-    
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : "Unknown error during IPFS upload";
-      
-    return NextResponse.json(
-      { error: errorMessage, success: false },
-      { status: 500, headers: corsHeaders }
+    if (error instanceof z.ZodError || error instanceof SyntaxError || error instanceof TypeError) {
+      throw new IpfsInputError("The upload payload is invalid.", 400);
+    }
+    throw error;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  let session;
+  try {
+    session = await requireWalletSession();
+  } catch (error) {
+    if (error instanceof SessionError) {
+      return jsonResponse({ error: error.code, success: false }, error.status);
+    }
+    return jsonResponse(
+      { error: "UPLOAD_AUTH_UNAVAILABLE", success: false },
+      503
     );
   }
-} 
+
+  const contentType = request.headers.get("content-type")?.split(";", 1)[0];
+  if (contentType?.trim().toLowerCase() !== "application/json") {
+    return jsonResponse(
+      { error: "JSON_BODY_REQUIRED", success: false },
+      415
+    );
+  }
+
+  const declaredLength = request.headers.get("content-length");
+  if (
+    declaredLength &&
+    (!/^\d+$/.test(declaredLength) ||
+      Number(declaredLength) > MAX_IPFS_UPLOAD_REQUEST_BYTES)
+  ) {
+    return jsonResponse(
+      { error: "UPLOAD_TOO_LARGE", success: false },
+      413
+    );
+  }
+
+  try {
+    const input = await parseUploadBody(request);
+    const image = decodeDataImageUrl(input.imageUrl);
+    await reserveIpfsUpload(session.address, image.bytes.byteLength);
+    const imageBuffer = new ArrayBuffer(image.bytes.byteLength);
+    new Uint8Array(imageBuffer).set(image.bytes);
+    const imageBlob = new Blob([imageBuffer], { type: image.mimeType });
+    const result = await processImageBlobAndUploadToIPFS(
+      imageBlob,
+      input.name,
+      input.symbol,
+      input.description
+    );
+
+    return jsonResponse({ ...result, success: true });
+  } catch (error) {
+    if (error instanceof IpfsQuotaError) {
+      return jsonResponse(
+        {
+          error:
+            error.status === 429
+              ? "UPLOAD_RATE_LIMITED"
+              : "UPLOAD_QUOTA_UNAVAILABLE",
+          success: false,
+        },
+        error.status,
+        { "Retry-After": String(error.retryAfterSeconds) }
+      );
+    }
+    if (error instanceof IpfsInputError) {
+      return jsonResponse(
+        {
+          error:
+            error.status === 413
+              ? "UPLOAD_TOO_LARGE"
+              : error.status === 415
+                ? "UNSUPPORTED_IMAGE"
+                : "INVALID_UPLOAD",
+          success: false,
+        },
+        error.status
+      );
+    }
+    console.error("IPFS upload failed", error);
+    return jsonResponse(
+      { error: "UPLOAD_SERVICE_UNAVAILABLE", success: false },
+      503
+    );
+  }
+}

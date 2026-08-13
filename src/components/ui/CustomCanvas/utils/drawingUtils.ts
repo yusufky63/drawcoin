@@ -1,12 +1,16 @@
 import { DrawingElement } from "../types";
+import { drawEraserStroke } from "./eraserUtils";
+
+const getElementOpacity = (element: DrawingElement) =>
+  Math.min(1, Math.max(0, element.opacity ?? 1));
 
 export const drawLine = (
   ctx: CanvasRenderingContext2D,
   element: DrawingElement
 ) => {
-  if (!element.points) return;
+  if (!element.points || element.lineWidth <= 0) return;
 
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
   ctx.strokeStyle = element.color;
   ctx.lineWidth = element.lineWidth;
   ctx.lineCap = "round";
@@ -32,7 +36,7 @@ export const drawRectangle = (
   const width = element.endPoint.x - element.startPoint.x;
   const height = element.endPoint.y - element.startPoint.y;
 
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
   ctx.strokeStyle = element.color;
   ctx.lineWidth = element.lineWidth;
   ctx.lineCap = "round";
@@ -42,7 +46,9 @@ export const drawRectangle = (
     ctx.fillStyle = element.fillColor;
     ctx.fillRect(element.startPoint.x, element.startPoint.y, width, height);
   }
-  ctx.strokeRect(element.startPoint.x, element.startPoint.y, width, height);
+  if (element.lineWidth > 0) {
+    ctx.strokeRect(element.startPoint.x, element.startPoint.y, width, height);
+  }
 };
 
 export const drawCircle = (
@@ -56,7 +62,7 @@ export const drawCircle = (
       Math.pow(element.endPoint.y - element.startPoint.y, 2)
   );
 
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
   ctx.strokeStyle = element.color;
   ctx.lineWidth = element.lineWidth;
   ctx.lineCap = "round";
@@ -74,7 +80,7 @@ export const drawCircle = (
     ctx.fillStyle = element.fillColor;
     ctx.fill();
   }
-  ctx.stroke();
+  if (element.lineWidth > 0) ctx.stroke();
 };
 
 export const drawTriangle = (
@@ -86,7 +92,7 @@ export const drawTriangle = (
   const width = element.endPoint.x - element.startPoint.x;
   const height = element.endPoint.y - element.startPoint.y;
 
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
   ctx.strokeStyle = element.color;
   ctx.lineWidth = element.lineWidth;
   ctx.lineCap = "round";
@@ -102,14 +108,14 @@ export const drawTriangle = (
     ctx.fillStyle = element.fillColor;
     ctx.fill();
   }
-  ctx.stroke();
+  if (element.lineWidth > 0) ctx.stroke();
 };
 
 export const drawArrow = (
   ctx: CanvasRenderingContext2D,
   element: DrawingElement
 ) => {
-  if (!element.startPoint || !element.endPoint) return;
+  if (!element.startPoint || !element.endPoint || element.lineWidth <= 0) return;
 
   const angle = Math.atan2(
     element.endPoint.y - element.startPoint.y,
@@ -117,7 +123,7 @@ export const drawArrow = (
   );
   const headLength = 15;
 
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
   ctx.strokeStyle = element.color;
   ctx.lineWidth = element.lineWidth;
   ctx.lineCap = "round";
@@ -152,7 +158,7 @@ export const drawStar = (
   const outerRadius = radius;
   const innerRadius = radius / 2;
 
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
   ctx.strokeStyle = element.color;
   ctx.lineWidth = element.lineWidth;
   ctx.lineCap = "round";
@@ -176,7 +182,7 @@ export const drawStar = (
     ctx.fillStyle = element.fillColor;
     ctx.fill();
   }
-  ctx.stroke();
+  if (element.lineWidth > 0) ctx.stroke();
 };
 
 export const drawText = (
@@ -199,7 +205,7 @@ export const drawText = (
 
   ctx.font = `${fontSize}px ${font}`;
   ctx.fillStyle = element.color;
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
 
   const lines = element.text.split("\n");
   const lineHeight = fontSize * 1.2;
@@ -218,29 +224,23 @@ export const drawText = (
 export const drawImage = (
   ctx: CanvasRenderingContext2D,
   element: DrawingElement,
-  imageCache: Map<string, HTMLImageElement>
+  imageCache: Map<string, HTMLImageElement>,
+  onImageReady?: () => void
 ) => {
   if (!element.imageData || !element.startPoint) return;
 
-  ctx.globalAlpha = element.opacity || 1;
+  ctx.globalAlpha = getElementOpacity(element);
 
   let img = imageCache.get(element.imageData);
 
   if (!img) {
     img = new Image();
-    img.src = element.imageData;
     imageCache.set(element.imageData, img);
-
-    img.onload = () => {
-      ctx.drawImage(
-        img!,
-        element.startPoint!.x,
-        element.startPoint!.y,
-        element.width || 200,
-        element.height || 200
-      );
-    };
-  } else if (img.complete) {
+    img.addEventListener("load", () => onImageReady?.(), { once: true });
+    img.src = element.imageData;
+  } else if (img.complete && img.naturalWidth > 0) {
+    ctx.save();
+    ctx.globalAlpha = getElementOpacity(element);
     ctx.drawImage(
       img,
       element.startPoint.x,
@@ -248,15 +248,20 @@ export const drawImage = (
       element.width || 200,
       element.height || 200
     );
+    ctx.restore();
   }
 };
 
 export const drawElement = (
   ctx: CanvasRenderingContext2D,
   element: DrawingElement,
-  imageCache: Map<string, HTMLImageElement>
+  imageCache: Map<string, HTMLImageElement>,
+  onImageReady?: () => void
 ) => {
   switch (element.type) {
+    case "eraser":
+      drawEraserStroke(ctx, element);
+      break;
     case "line":
       drawLine(ctx, element);
       break;
@@ -279,9 +284,8 @@ export const drawElement = (
       drawText(ctx, element);
       break;
     case "image":
-      drawImage(ctx, element, imageCache);
+      drawImage(ctx, element, imageCache, onImageReady);
       break;
   }
   ctx.globalAlpha = 1;
 };
-

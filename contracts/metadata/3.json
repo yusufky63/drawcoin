@@ -1,0 +1,11 @@
+{
+  "name": "Curator",
+  "description": "Awarded for curating five distinct DrawCoins.",
+  "image": "https://drawcoin.app/badges/curator.svg",
+  "external_url": "https://drawcoin.app/missions",
+  "attributes": [
+    { "trait_type": "Mission", "value": "curator" },
+    { "trait_type": "Category", "value": "Community" },
+    { "trait_type": "Soulbound", "value": "Yes" }
+  ]
+}

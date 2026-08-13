@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { Tool } from "../types";
+import type { Tool } from "../types";
 
 interface UseKeyboardShortcutsProps {
+  enabled: boolean;
   showTextInput: boolean;
   onUndo: () => void;
   onRedo: () => void;
@@ -11,6 +12,7 @@ interface UseKeyboardShortcutsProps {
 }
 
 export const useKeyboardShortcuts = ({
+  enabled,
   showTextInput,
   onUndo,
   onRedo,
@@ -19,6 +21,8 @@ export const useKeyboardShortcuts = ({
   onCloseTextInput,
 }: UseKeyboardShortcutsProps) => {
   useEffect(() => {
+    if (!enabled) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if typing in input or textarea
       if (
@@ -89,6 +93,13 @@ export const useKeyboardShortcuts = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showTextInput, onUndo, onRedo, onToolChange, onDeselectElement, onCloseTextInput]);
+  }, [
+    enabled,
+    showTextInput,
+    onUndo,
+    onRedo,
+    onToolChange,
+    onDeselectElement,
+    onCloseTextInput,
+  ]);
 };
-

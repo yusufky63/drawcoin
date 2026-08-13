@@ -1,5 +1,6 @@
 import React from "react";
 import { Coin } from "../../../lib/supabase";
+import { ZORA_TRADE_EOA_ONLY_MESSAGE } from "../../../lib/zoraTradeSafety";
 
 interface CoinTradeCardProps {
   token: Coin;
@@ -13,16 +14,10 @@ interface CoinTradeCardProps {
   setShowSlippageSettings: (show: boolean) => void;
   ethBalance: string;
   tokenBalance: string;
-  usdcBalance: string;
-  selectedCurrency: "ETH" | "USDC";
-  setSelectedCurrency: (currency: "ETH" | "USDC") => void;
-  showTokenSelect: boolean;
-  setShowTokenSelect: (show: boolean) => void;
-  availableTokens: Array<{ symbol: string; address: string; balance: string }>;
   handleTrade: () => void;
   loading: boolean;
   isConnected: boolean;
-  isCreator: boolean;
+  isTradeWalletSupported: boolean;
   usdValue: number;
   maxBalance: number;
 }
@@ -39,16 +34,10 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
   setShowSlippageSettings,
   ethBalance,
   tokenBalance,
-  usdcBalance,
-  selectedCurrency,
-  setSelectedCurrency,
-  showTokenSelect,
-  setShowTokenSelect,
-  availableTokens,
   handleTrade,
   loading,
   isConnected,
-  isCreator,
+  isTradeWalletSupported,
   usdValue,
   maxBalance,
 }) => {
@@ -113,7 +102,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
 
                 {/* Quick Slippage Options */}
                 <div className="flex gap-2">
-                  {[0.01, 0.05, 0.1, 0.5].map((value) => (
+                  {[0.005, 0.01, 0.03, 0.05, 0.1].map((value) => (
                     <button
                       key={value}
                       onClick={() => setSlippage(value)}
@@ -141,12 +130,12 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
                   <input
                     type="number"
                     min="0.1"
-                    max="50"
+                    max="10"
                     step="0.1"
                     value={slippage * 100}
                     onChange={(e) => {
                       const value = parseFloat(e.target.value);
-                      if (!isNaN(value) && value >= 0.1 && value <= 50) {
+                      if (!isNaN(value) && value >= 0.1 && value <= 10) {
                         setSlippage(value / 100);
                       }
                     }}
@@ -168,7 +157,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
           )}
         </div>
 
-        {/* Amount Input with Currency Selection */}
+        {/* Amount Input */}
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
             <label className="text-sm font-bold text-art-gray-600 transform -rotate-0.5">
@@ -176,16 +165,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
             </label>
             <div className="text-xs text-art-gray-500">
               {tradeType === "buy"
-                ? `Your ${selectedCurrency}: ${(() => {
-                    switch (selectedCurrency) {
-                      case "ETH":
-                        return `${ethBalance} ETH`;
-                      case "USDC":
-                        return `${usdcBalance} USDC`;
-                      default:
-                        return `${ethBalance} ETH`;
-                    }
-                  })()}`
+                ? `Your ETH: ${ethBalance} ETH`
                 : `Your ${token.symbol}: ${tokenBalance} ${token.symbol}`}
             </div>
           </div>
@@ -198,67 +178,21 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
               placeholder="0.0"
               className="hand-drawn-input flex-1 p-2 font-mono text-lg"
             />
-            {/* Currency Selection */}
+            {/* This trade path currently settles buys with native ETH only. */}
             {tradeType === "buy" && (
-              <div className="relative flex-shrink-0">
-                <button
-                  onClick={() => setShowTokenSelect(true)}
-                  className="hand-drawn-btn text-sm font-bold py-2 px-3 transform rotate-1"
-                  style={{
-                    padding: "0.5rem 0.75rem",
-                    borderRadius: "8px 3px 6px 4px",
-                    minWidth: "80px",
-                  }}
-                >
-                  {selectedCurrency}
-                </button>
-
-                {/* Visual Cue for USDC */}
-                {selectedCurrency === "ETH" && (
-                  <div className="absolute top-full -right-6 mt-2 md:-right-20 md:mt-4 pointer-events-none z-20">
-                    <div className="relative flex flex-col items-end">
-                      <svg
-                        width="80"
-                        height="60"
-                        viewBox="0 0 80 60"
-                        className="absolute -top-8 right-4 w-16 h-12 md:-top-12 md:right-12 md:w-20 md:h-16 text-[#4299e1] transform -rotate-12"
-                        style={{
-                          filter: "drop-shadow(1px 1px 0px rgba(0,0,0,0.1))",
-                        }}
-                      >
-                        <path
-                          d="M 70 50 Q 40 40 10 10"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeDasharray="80"
-                          className="animate-[dash_1s_ease-out_forwards]"
-                        />
-                        <path
-                          d="M 10 10 L 25 12"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                        />
-                        <path
-                          d="M 10 10 L 12 25"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <span className="relative block text-[#4299e1] font-bold text-xs md:text-sm transform -rotate-6 bg-white/90 px-2 py-0.5 md:px-3 md:py-1 rounded-lg border-2 border-indigo-200 shadow-sm whitespace-nowrap mt-4 md:mt-0">
-                        Select USDC!
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <span
+                className="hand-drawn-btn text-sm font-bold py-2 px-3 flex-shrink-0 cursor-default"
+                aria-label="Buy currency: ETH only"
+              >
+                ETH
+              </span>
             )}
           </div>
+          {tradeType === "buy" && (
+            <p className="mt-2 text-xs font-medium text-art-gray-600">
+              Buys currently use ETH on Base.
+            </p>
+          )}
           {amount && (
             <div className="mt-1 text-xs text-art-gray-500">
               ≈ ${usdValue?.toFixed(2) || "0.00"} USD
@@ -284,14 +218,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
               const percentage = parseFloat(e.target.value) / 100;
 
               // Apply safety buffer
-              let safetyFactor = percentage;
-              if (tradeType === "sell") {
-                // For sell, maxBalance already includes creator restrictions
-                safetyFactor = percentage === 1 ? 0.999 : percentage;
-              } else {
-                // For buy, use standard safety buffer
-                safetyFactor = percentage === 1 ? 0.999 : percentage;
-              }
+              const safetyFactor = percentage === 1 ? 0.999 : percentage;
 
               const newAmount = (maxBalance * safetyFactor).toFixed(4);
               setAmount(newAmount);
@@ -302,7 +229,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
                 if (!amount || !maxBalance)
                   return "linear-gradient(to right, #e2e8f0 0%, #e2e8f0 100%)";
                 const percentage = (parseFloat(amount) / maxBalance) * 100;
-                return `linear-gradient(to right, #4299e1 0%, #4299e1 ${percentage}%, #e2e8f0 ${percentage}%, #e2e8f0 100%)`;
+                return `linear-gradient(to right, var(--base-blue) 0%, var(--base-blue) ${percentage}%, #e2e8f0 ${percentage}%, #e2e8f0 100%)`;
               })(),
             }}
           />
@@ -323,21 +250,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
               <button
                 key={p}
                 onClick={() => {
-                  // Apply safety buffer based on user type and percentage
-                  let safetyFactor = p;
-
-                  if (tradeType === "sell") {
-                    if (isCreator) {
-                      // Creator: already has 10M reserve + 0.5% buffer in maxBalance
-                      safetyFactor = p === 1 ? 0.999 : p;
-                    } else {
-                      // Regular user: use 99.9% for 100%
-                      safetyFactor = p === 1 ? 0.999 : p;
-                    }
-                  } else {
-                    // Buy: use 99.9% for 100%
-                    safetyFactor = p === 1 ? 0.999 : p;
-                  }
+                  const safetyFactor = p === 1 ? 0.999 : p;
 
                   const newAmount = (maxBalance * safetyFactor).toFixed(4);
                   setAmount(newAmount);
@@ -354,54 +267,6 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
           </div>
         </div>
 
-        {/* Creator Restriction Notice */}
-        {tradeType === "sell" && isCreator && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-art p-3 mb-4">
-            <div className="flex items-center">
-              <svg
-                className="w-4 h-4 text-yellow-600 mr-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z"
-                />
-              </svg>
-              <div>
-                <p className="text-sm text-yellow-800 font-medium">
-                  Creator Restriction
-                </p>
-                <p className="text-xs text-yellow-600 mt-1">
-                  {(() => {
-                    const totalBalance = parseFloat(tokenBalance);
-                    const CREATOR_RESERVED = 10_000_000;
-                    const availableTokens = Math.max(
-                      0,
-                      totalBalance - CREATOR_RESERVED
-                    );
-                    const safeAmount = Math.floor(availableTokens * 0.995);
-
-                    return (
-                      <>
-                        Available to sell:{" "}
-                        <strong>{safeAmount.toLocaleString()}</strong> tokens
-                        <br />
-                        <span className="text-yellow-500">
-                          (10M tokens reserved + 0.5% safety buffer)
-                        </span>
-                      </>
-                    );
-                  })()}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Trade Summary */}
         {amount && (
           <div
@@ -415,31 +280,6 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
               <span className="text-art-gray-500 ml-2">
                 ≈ ${usdValue?.toFixed(2) || "0.00"} USD
               </span>
-            </div>
-          </div>
-        )}
-
-        {/* ERC20 Token Info */}
-        {tradeType === "buy" && selectedCurrency !== "ETH" && (
-          <div className="border rounded-art p-3 mb-4 bg-blue-50 border-blue-200">
-            <div className="flex items-center">
-              <svg
-                className="w-4 h-4 mr-2 text-blue-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <p className="text-xs text-blue-800">
-                {selectedCurrency} trading may require 2 transactions: approval
-                + trade
-              </p>
             </div>
           </div>
         )}
@@ -468,11 +308,22 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
           </div>
         )}
 
+        {isConnected && !isTradeWalletSupported && (
+          <div className="mb-4 rounded-art border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+            {ZORA_TRADE_EOA_ONLY_MESSAGE}
+          </div>
+        )}
+
         {/* Trade Button */}
         <div className="pt-2">
           <button
             onClick={handleTrade}
-            disabled={loading || !amount || parseFloat(amount) <= 0}
+            disabled={
+              loading ||
+              !amount ||
+              parseFloat(amount) <= 0 ||
+              !isTradeWalletSupported
+            }
             className={`w-full hand-drawn-btn text-sm font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed ${
               tradeType === "buy" ? "secondary" : "danger"
             }`}
@@ -483,94 +334,13 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
           >
             {loading
               ? "Processing..."
+              : isConnected && !isTradeWalletSupported
+                ? "Use an EOA Wallet"
               : `${tradeType === "buy" ? "Buy" : "Sell"} ${token.symbol}`}
           </button>
         </div>
       </div>
 
-      {/* Token Select Modal */}
-      {showTokenSelect && (
-        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4">
-          <div
-            className="hand-drawn-card w-full max-w-md"
-            style={{ transform: "rotate(0.5deg)" }}
-          >
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-art-gray-900 transform -rotate-1">
-                  Select Token
-                </h3>
-                <button
-                  onClick={() => setShowTokenSelect(false)}
-                  className="text-art-gray-400 hover:text-art-gray-600 transform rotate-1"
-                >
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {availableTokens.map((token) => (
-                  <button
-                    key={token.symbol}
-                    onClick={() => {
-                      setSelectedCurrency(token.symbol as "ETH" | "USDC");
-                      setShowTokenSelect(false);
-                    }}
-                    className={`w-full p-3 text-left rounded-art transition-all duration-200 ${
-                      selectedCurrency === token.symbol
-                        ? "bg-art-gray-900 text-art-white"
-                        : "bg-art-gray-100 text-art-gray-700 hover:bg-art-gray-200"
-                    }`}
-                    style={{
-                      borderRadius:
-                        selectedCurrency === token.symbol
-                          ? "12px 3px 8px 6px"
-                          : "8px 12px 6px 10px",
-                      transform:
-                        selectedCurrency === token.symbol
-                          ? "rotate(-1deg)"
-                          : "rotate(0.5deg)",
-                      border: "2px solid #2d3748",
-                      boxShadow:
-                        selectedCurrency === token.symbol
-                          ? "2px 2px 0 #2d3748"
-                          : "1px 1px 0 #2d3748",
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-bold">{token.symbol}</div>
-                        <div className="text-xs opacity-75">
-                          {token.symbol === "ETH"
-                            ? "Ethereum"
-                            : token.symbol === "USDC"
-                            ? "USD Coin"
-                            : "ZORA Token"}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold">{token.balance}</div>
-                        <div className="text-xs opacity-75">{token.symbol}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -1281,11 +1281,13 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       )}
     </div>
   );
+  const toolsComponentRef = useRef(toolsComponent);
+  toolsComponentRef.current = toolsComponent;
 
   // Call onToolsRender if provided
   useEffect(() => {
     if (onToolsRender) {
-      onToolsRender(toolsComponent);
+      onToolsRender(toolsComponentRef.current);
     }
   }, [
     currentTool,
@@ -1298,8 +1300,13 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     redoStack,
     textValue,
     textSize,
+    shapeFill,
+    fillTolerance,
     toolsVariant,
     onToolsRender,
+    onImageChange,
+    width,
+    height,
     isLocked,
   ]);
 

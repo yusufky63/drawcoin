@@ -260,10 +260,11 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                   zoraData?.mediaContent?.previewImage?.medium ||
                   zoraData?.mediaContent?.previewImage?.small ||
                   token.image_url,
-                // Live market data from Zora
-                // Note: Zora API structure uses tokenPrice.priceInPoolToken for price
+                // Live USD-denominated market data from Zora
                 current_price:
-                  zoraData?.tokenPrice?.priceInPoolToken || token.current_price,
+                  zoraData?.tokenPrice?.priceInUsdc ||
+                  zoraData?.tokenPrice?.priceInUsd ||
+                  token.current_price,
                 volume_24h:
                   zoraData?.volume24h ||
                   zoraData?.totalVolume ||
@@ -543,7 +544,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
               onClick={() => setActiveTab("portfolio")}
               className={`flex-1 px-4 py-2.5 text-sm font-bold transition-all ${
                 activeTab === "portfolio"
-                  ? "hand-drawn-btn bg-blue-500 text-white border-blue-600"
+                  ? "hand-drawn-btn text-white"
                   : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"
               }`}
             >
@@ -553,7 +554,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
               onClick={() => setActiveTab("created")}
               className={`flex-1 px-4 py-2.5 text-sm font-bold transition-all ${
                 activeTab === "created"
-                  ? "hand-drawn-btn bg-blue-500 text-white border-blue-600"
+                  ? "hand-drawn-btn text-white"
                   : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"
               }`}
             >
@@ -563,7 +564,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
               onClick={() => setActiveTab("transactions")}
               className={`flex-1 px-4 py-2.5 text-sm font-bold transition-all hidden md:block ${
                 activeTab === "transactions"
-                  ? "hand-drawn-btn bg-blue-500 text-white border-blue-600"
+                  ? "hand-drawn-btn text-white"
                   : "hand-drawn-btn-dotted text-art-gray-700 border-art-gray-300 hover:bg-art-gray-50"
               }`}
             >

@@ -7,9 +7,15 @@
   --foreground: #121212;
   --card-background: #ffffff;
   --card-foreground: #121212;
-  --primary: #7c65c1;
-  --primary-light: #9f91d0;
-  --primary-dark: #6952a3;
+  /* Base is the single brand color for user-triggered primary actions. */
+  --base-blue: #0052ff;
+  --base-blue-hover: #0047e5;
+  --base-blue-dark: #003ecb;
+  --base-blue-ring: #9ab7ff;
+  --base-blue-soft: #eef3ff;
+  --primary: var(--base-blue);
+  --primary-light: var(--base-blue-ring);
+  --primary-dark: var(--base-blue-dark);
   --accent: #ffa020;
   --gray-light: #f7f7f7;
   --gray-mid: #e0e0e0;
@@ -17,6 +23,7 @@
   --success: #4caf50;
   --error: #ef476f;
   --radius: 0.75rem;
+  --mobile-bottom-nav-space: 5.25rem;
 }
 
 body {
@@ -24,6 +31,25 @@ body {
   background: var(--background);
   font-family: var(--font-poppins), "Inter", system-ui, -apple-system,
     BlinkMacSystemFont, sans-serif;
+  padding-bottom: calc(
+    var(--mobile-bottom-nav-space) + env(safe-area-inset-bottom)
+  );
+}
+
+.art-toasts {
+  top: calc(env(safe-area-inset-top) + 4.25rem) !important;
+  padding-inline: 1rem;
+  pointer-events: none;
+}
+
+@media (min-width: 1024px) {
+  .art-toasts {
+    top: 1rem !important;
+  }
+
+  body {
+    padding-bottom: 0;
+  }
 }
 
 /* Art Theme Base Styles */
@@ -33,13 +59,18 @@ body {
   font-family: var(--font-poppins), "Inter", system-ui, sans-serif;
 }
 
-* {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-*::-webkit-scrollbar {
+.no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--base-blue);
+  outline-offset: 3px;
 }
 
 @layer base {
@@ -98,7 +129,7 @@ body {
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 9999px;
-  background-color: rgba(124, 101, 193, 0.1);
+  background-color: var(--base-blue-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -135,18 +166,7 @@ body {
   }
 }
 
-/* Add Farcaster safe area insets support */
-.farcaster-safe-container {
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  position: relative;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
 /* Hand-Drawn UI Styles */
-@import url("https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&display=swap");
 
 /* Global Font Override - Removed to prevent conflicts */
 
@@ -218,7 +238,7 @@ body {
   border-radius: 20px 5px 15px 10px;
   transform: rotate(1deg);
   box-shadow: 4px 4px 0 #2d3748;
-  background: linear-gradient(45deg, #4299e1, #3182ce);
+  background: var(--base-blue);
   color: white;
 
   font-weight: bold;
@@ -232,7 +252,7 @@ body {
 .hand-drawn-btn:hover {
   transform: rotate(-0.5deg) translateY(-2px);
   box-shadow: 6px 6px 0 #2d3748;
-  background: linear-gradient(45deg, #3182ce, #2c5282);
+  background: var(--base-blue-hover);
 }
 
 .hand-drawn-btn:active {
@@ -297,7 +317,7 @@ body {
   outline: none;
   transform: rotate(0deg);
   box-shadow: 3px 3px 0 #2d3748;
-  border-color: #4299e1;
+  border-color: var(--base-blue);
 }
 
 .hand-drawn-textarea {
@@ -317,7 +337,7 @@ body {
   outline: none;
   transform: rotate(0deg);
   box-shadow: 3px 3px 0 #2d3748;
-  border-color: #4299e1;
+  border-color: var(--base-blue);
 }
 
 .hand-drawn-label {
@@ -490,7 +510,7 @@ body {
   outline: none;
   transform: rotate(0deg);
   box-shadow: 3px 3px 0 #2d3748;
-  border-color: #4299e1;
+  border-color: var(--base-blue);
 }
 
 .hand-drawn-textarea {
@@ -510,7 +530,7 @@ body {
   outline: none;
   transform: rotate(0deg);
   box-shadow: 3px 3px 0 #2d3748;
-  border-color: #4299e1;
+  border-color: var(--base-blue);
 }
 
 .hand-drawn-label {
@@ -702,4 +722,40 @@ body {
 }
 .animate-marquee {
   animation: marquee 30s linear infinite;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .token-card-shell {
+    padding-bottom: 5.5rem;
+  }
+
+  .token-card-actions {
+    inset: auto 0.75rem 0.75rem;
+    justify-content: flex-end;
+    overflow: visible;
+    background: transparent;
+    opacity: 1;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .animate-marquee {
+    animation: none !important;
+    transform: none !important;
+  }
 }

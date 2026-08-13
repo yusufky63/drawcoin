@@ -13,7 +13,7 @@ import {
 /**
  * Example 1: ETH to Creator Coin (Traditional way)
  */
-export async function buyCoinWithETH(coinAddress, ethAmount, walletClient, publicClient, account) {
+export async function buyCoinWithETH(coinAddress, ethAmount, walletClient, publicClient, account, walletConnectorId) {
   return await executeTrade({
     direction: 'buy',
     coinAddress: coinAddress,
@@ -21,14 +21,15 @@ export async function buyCoinWithETH(coinAddress, ethAmount, walletClient, publi
     recipient: account.address,
     walletClient,
     publicClient,
-    account
+    account,
+    walletConnectorId
   });
 }
 
 /**
  * Example 2: Creator Coin to ETH (Traditional way)
  */
-export async function sellCoinForETH(coinAddress, tokenAmount, walletClient, publicClient, account) {
+export async function sellCoinForETH(coinAddress, tokenAmount, walletClient, publicClient, account, walletConnectorId) {
   return await executeTrade({
     direction: 'sell',
     coinAddress: coinAddress,
@@ -36,14 +37,15 @@ export async function sellCoinForETH(coinAddress, tokenAmount, walletClient, pub
     recipient: account.address,
     walletClient,
     publicClient,
-    account
+    account,
+    walletConnectorId
   });
 }
 
 /**
  * Example 3: ETH to Creator Coin (New universal way)
  */
-export async function buyCoinWithETHUniversal(coinAddress, ethAmount, walletClient, publicClient, account) {
+export async function buyCoinWithETHUniversal(coinAddress, ethAmount, walletClient, publicClient, account, walletConnectorId) {
   return await executeUniversalTrade({
     sellToken: { type: "eth" },
     buyToken: { type: "erc20", address: coinAddress },
@@ -51,14 +53,15 @@ export async function buyCoinWithETHUniversal(coinAddress, ethAmount, walletClie
     sender: account.address,
     walletClient,
     publicClient,
-    account
+    account,
+    walletConnectorId
   });
 }
 
 /**
  * Example 4: Creator Coin to ETH (New universal way)
  */
-export async function sellCoinForETHUniversal(coinAddress, tokenAmount, tokenDecimals, walletClient, publicClient, account) {
+export async function sellCoinForETHUniversal(coinAddress, tokenAmount, tokenDecimals, walletClient, publicClient, account, walletConnectorId) {
   return await executeUniversalTrade({
     sellToken: { type: "erc20", address: coinAddress },
     buyToken: { type: "eth" },
@@ -66,14 +69,15 @@ export async function sellCoinForETHUniversal(coinAddress, tokenAmount, tokenDec
     sender: account.address,
     walletClient,
     publicClient,
-    account
+    account,
+    walletConnectorId
   });
 }
 
 /**
  * Example 5: USDC to Creator Coin
  */
-export async function buyCoinWithUSDC(coinAddress, usdcAmount, walletClient, publicClient, account) {
+export async function buyCoinWithUSDC(coinAddress, usdcAmount, walletClient, publicClient, account, walletConnectorId) {
   const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // Base USDC
   const usdcAmountBigInt = BigInt(Math.floor(parseFloat(usdcAmount) * 10**6)); // USDC has 6 decimals
   
@@ -84,14 +88,15 @@ export async function buyCoinWithUSDC(coinAddress, usdcAmount, walletClient, pub
     sender: account.address,
     walletClient,
     publicClient,
-    account
+    account,
+    walletConnectorId
   });
 }
 
 /**
  * Example 6: Creator Coin to USDC
  */
-export async function sellCoinForUSDC(coinAddress, tokenAmount, tokenDecimals, walletClient, publicClient, account) {
+export async function sellCoinForUSDC(coinAddress, tokenAmount, tokenDecimals, walletClient, publicClient, account, walletConnectorId) {
   const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // Base USDC
   
   return await executeUniversalTrade({
@@ -101,14 +106,15 @@ export async function sellCoinForUSDC(coinAddress, tokenAmount, tokenDecimals, w
     sender: account.address,
     walletClient,
     publicClient,
-    account
+    account,
+    walletConnectorId
   });
 }
 
 /**
  * Example 7: Creator Coin to Creator Coin
  */
-export async function swapCoinToCoin(sellCoinAddress, buyCoinAddress, tokenAmount, tokenDecimals, walletClient, publicClient, account) {
+export async function swapCoinToCoin(sellCoinAddress, buyCoinAddress, tokenAmount, tokenDecimals, walletClient, publicClient, account, walletConnectorId) {
   return await executeUniversalTrade({
     sellToken: { type: "erc20", address: sellCoinAddress },
     buyToken: { type: "erc20", address: buyCoinAddress },
@@ -116,14 +122,15 @@ export async function swapCoinToCoin(sellCoinAddress, buyCoinAddress, tokenAmoun
     sender: account.address,
     walletClient,
     publicClient,
-    account
+    account,
+    walletConnectorId
   });
 }
 
 /**
  * Example 8: Using helper functions
  */
-export async function buyCoinWithHelperFunctions(coinAddress, ethAmount, walletClient, publicClient, account) {
+export async function buyCoinWithHelperFunctions(coinAddress, ethAmount, walletClient, publicClient, account, walletConnectorId) {
   // Create trade parameters
   const tradeParams = createETHToTokenTrade(
     coinAddress,
@@ -137,14 +144,15 @@ export async function buyCoinWithHelperFunctions(coinAddress, ethAmount, walletC
   return await executeTradeWithParams(
     tradeParams,
     { walletClient, publicClient },
-    account
+    account,
+    walletConnectorId
   );
 }
 
 /**
  * Example 9: Advanced trading with custom slippage
  */
-export async function advancedTrade(coinAddress, amount, tradeType, slippage, walletClient, publicClient, account) {
+export async function advancedTrade(coinAddress, amount, tradeType, slippage, walletClient, publicClient, account, walletConnectorId) {
   if (tradeType === 'buy') {
     return await executeUniversalTrade({
       sellToken: { type: "eth" },
@@ -155,6 +163,7 @@ export async function advancedTrade(coinAddress, amount, tradeType, slippage, wa
       walletClient,
       publicClient,
       account,
+      walletConnectorId,
       validateTransaction: true
     });
   } else {
@@ -169,6 +178,7 @@ export async function advancedTrade(coinAddress, amount, tradeType, slippage, wa
       walletClient,
       publicClient,
       account,
+      walletConnectorId,
       validateTransaction: true
     });
   }

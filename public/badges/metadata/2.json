@@ -1,0 +1,11 @@
+{
+  "name": "Collector",
+  "description": "Awarded for completing a verified DrawCoin purchase on Base.",
+  "image": "https://drawcoin.app/badges/collector.svg",
+  "external_url": "https://drawcoin.app/missions",
+  "attributes": [
+    { "trait_type": "Mission", "value": "collector" },
+    { "trait_type": "Category", "value": "Collector" },
+    { "trait_type": "Soulbound", "value": "Yes" }
+  ]
+}
