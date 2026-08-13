@@ -1,4 +1,4 @@
-# DrawCoin 🎨
+# DrawCoin
 
 For the current Base Account, missions, sponsored badge, and Base Dashboard
 setup, see [Base App and Missions setup](docs/BASE_APP_MISSIONS_SETUP.md).
@@ -10,21 +10,9 @@ tokens. Built for Base App with Base Account and the Zora SDK, it combines a
 guided drawing flow with verified missions and non-transferable achievement
 badges.
 
-## 🌟 Features
-
-### 🎨 Art Creation
-
 - **Hand-drawn Canvas**: Interactive drawing canvas with professional tools
 - **Custom Drawing Tools**: Brushes, colors, shapes, and layers
 - **High-Quality Output**: 1024x1024 resolution artwork
-
-### 🪙 Coin Creation & Trading
-
-- **ERC-20 Coin Minting**: Create your own tradeable coins backed by artwork
-- **Zora Protocol Integration**: Leverages Zora's robust coin creation infrastructure
-- **Base Network**: Fast and low-cost transactions on Base L2
-- **Multiple Trading Pairs**: ETH, ZORA, and coin-to-coin trading
-
 ### 🌐 Base App & Web Access
 
 - **Base App**: The primary DrawCoin experience, with Base Account wallet support
@@ -114,8 +102,6 @@ npx supabase db reset
 
 ```bash
 npm run dev
-# or
-yarn dev
 ```
 
 Visit `http://localhost:3000` to see the application.
