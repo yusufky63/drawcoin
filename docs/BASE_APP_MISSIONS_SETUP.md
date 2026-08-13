@@ -98,7 +98,7 @@ The contract lives at `contracts/DrawCoinMissionBadges.sol`. Test it on Base
 Sepolia first. Constructor arguments are:
 
 1. an operational owner, preferably a multisig;
-2. the address derived from `BADGE_CLAIM_SIGNER_PRIVATE_KEY`;
+2. the address derived from the server-only `PRIVATE_KEY`;
 3. the HTTPS or IPFS directory ending in `/` that serves `1.json`, `2.json`,
    and `3.json`.
 

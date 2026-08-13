@@ -51,10 +51,10 @@ function isPaymasterProxyExplicitlyEnabled(): boolean {
 }
 
 function getClaimSigner() {
-  const privateKey = process.env.BADGE_CLAIM_SIGNER_PRIVATE_KEY?.trim();
+  const privateKey = process.env.PRIVATE_KEY?.trim();
   if (!privateKey || !PRIVATE_KEY_PATTERN.test(privateKey)) {
     throw new BadgeConfigurationError(
-      "BADGE_CLAIM_SIGNER_PRIVATE_KEY must be a server-only 32-byte private key."
+      "PRIVATE_KEY must be a server-only 32-byte private key."
     );
   }
 

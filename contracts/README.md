@@ -30,7 +30,7 @@ Deploy with these constructor arguments:
 
 1. `initialOwner`: a multisig or other operational owner.
 2. `initialClaimSigner`: the address derived from the server-side
-   `BADGE_CLAIM_SIGNER_PRIVATE_KEY`.
+   server-only `PRIVATE_KEY`.
 3. `initialBaseURI`: the HTTPS or IPFS directory containing `1.json` through
    `6.json`. It must end with `/`; the contract appends `<tokenId>.json`.
 
@@ -76,7 +76,7 @@ BADGE_CONTRACT_ADDRESS=0x...
 NEXT_PUBLIC_BADGE_CONTRACT_ADDRESS=0x...
 
 # Server-only claim signer and RPC
-BADGE_CLAIM_SIGNER_PRIVATE_KEY=0x...
+PRIVATE_KEY=0x...
 BADGE_RPC_URL=https://...
 
 # Server-only ERC-7677 proxy configuration
@@ -88,7 +88,7 @@ BASE_DASHBOARD_API_KEY=...
 BASE_APP_URL=https://your-registered-app.example
 ```
 
-The address derived from `BADGE_CLAIM_SIGNER_PRIVATE_KEY` must equal the
+The address derived from `PRIVATE_KEY` must equal the
 contract's `claimSigner()`. In CDP, set per-operation, per-address, and global
 spend limits in addition to allowlisting only the badge contract and its
 `claim` function. Register `BASE_APP_URL` exactly as written in the Base
