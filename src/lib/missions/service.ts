@@ -204,6 +204,11 @@ export async function evaluateMissions(
     existingProgress.map((row) => [row.mission_id, row])
   );
   const evaluatedAt = new Date().toISOString();
+  const hasMissionActivity = Object.values(metricValues.verified).some(
+    (value) => value > 0
+  );
+  const shouldPersistProgress =
+    existingProgress.length > 0 || hasMissionActivity;
 
   const progressRows = definitions.map((mission) => {
     const previous = progressByMissionId.get(mission.id);
@@ -223,7 +228,7 @@ export async function evaluateMissions(
     };
   });
 
-  if (progressRows.length > 0) {
+  if (shouldPersistProgress && progressRows.length > 0) {
     const upsertResult = await supabaseAdmin
       .from("user_missions")
       .upsert(progressRows, { onConflict: "address,mission_id" });
@@ -240,7 +245,7 @@ export async function evaluateMissions(
       updated_at: evaluatedAt,
     }));
 
-  if (earnedBadgeRows.length > 0) {
+  if (shouldPersistProgress && earnedBadgeRows.length > 0) {
     const badgeInsertResult = await supabaseAdmin
       .from("user_badges")
       .upsert(earnedBadgeRows, {

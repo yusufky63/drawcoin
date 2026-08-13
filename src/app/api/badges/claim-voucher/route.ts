@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SessionError, requireWalletSession } from "@/lib/auth/session";
 import {
   BadgeConfigurationError,
   getBadgeConfigurationStatus,
@@ -11,6 +10,7 @@ import {
   getPaymasterConfigurationStatus,
 } from "@/lib/badges/voucher";
 import { getCompletedMissionForAddress } from "@/lib/missions/service";
+import { parseMissionRequestAddress } from "@/lib/missions/requestAddress";
 
 export const dynamic = "force-dynamic";
 
@@ -18,20 +18,23 @@ const MISSION_SLUG_PATTERN = /^[a-z0-9-]{1,64}$/;
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireWalletSession();
-    const body = (await request.json()) as { missionSlug?: unknown };
+    const body = (await request.json()) as {
+      address?: unknown;
+      missionSlug?: unknown;
+    };
+    const address = parseMissionRequestAddress(body.address);
     const missionSlug =
       typeof body.missionSlug === "string" ? body.missionSlug.trim() : "";
 
-    if (!MISSION_SLUG_PATTERN.test(missionSlug)) {
+    if (!address || !MISSION_SLUG_PATTERN.test(missionSlug)) {
       return NextResponse.json(
-        { error: "A valid mission slug is required." },
+        { error: "A valid wallet address and mission slug are required." },
         { status: 400, headers: { "Cache-Control": "no-store" } }
       );
     }
 
     const completedMission = await getCompletedMissionForAddress(
-      session.address,
+      address,
       missionSlug
     );
     if (!completedMission) {
@@ -56,7 +59,7 @@ export async function POST(request: NextRequest) {
     }
 
     const tokenId = BigInt(completedMission.badge.tokenId);
-    const voucher = await createBadgeClaimVoucher(session.address, tokenId);
+    const voucher = await createBadgeClaimVoucher(address, tokenId);
     const paymasterGrantToken = await createPaymasterGrantToken(voucher);
     const paymasterStatus = getPaymasterConfigurationStatus();
 
@@ -99,12 +102,6 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (error) {
-    if (error instanceof SessionError) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: error.status, headers: { "Cache-Control": "no-store" } }
-      );
-    }
     if (error instanceof BadgeAlreadyClaimedError) {
       return NextResponse.json(
         { error: error.message, alreadyClaimed: true },

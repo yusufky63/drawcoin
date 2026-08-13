@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { waitForCallsStatus } from "@wagmi/core";
-import { LockKeyhole, Wallet } from "lucide-react";
+import { Wallet } from "lucide-react";
 import useSWR from "swr";
 import {
   useAccount,
@@ -12,10 +12,8 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { base, baseSepolia } from "wagmi/chains";
-import type { Address, Hex } from "viem";
+import { isAddressEqual, type Address, type Hex } from "viem";
 
-import { useWalletSession } from "@/hooks/useWalletSession";
-import { getWalletVerificationHint } from "@/lib/auth/walletVerification";
 import { getMissionClaimAction } from "@/lib/missions/claimUi";
 import type {
   MissionCatalog,
@@ -25,16 +23,9 @@ import type {
   MissionSnapshot,
 } from "@/lib/missions/types";
 
-type NotificationStatus =
-  | { configured: false }
-  | {
-      configured: true;
-      appPinned: boolean;
-      notificationsEnabled: boolean;
-    };
-
 type ClaimVoucherResponse = {
   claim: {
+    account: Address;
     to: Address;
     data: Hex;
     value: Hex;
@@ -46,12 +37,6 @@ type ClaimVoucherResponse = {
 };
 
 type ApiError = { error?: string; detail?: string };
-type LegacyWatchlistResponse = {
-  success: true;
-  confirmed: number;
-  remaining: number;
-  missions: MissionSnapshot;
-};
 
 const fetchJson = async <T,>(url: string): Promise<T> => {
   const response = await fetch(url, {
@@ -291,14 +276,11 @@ export default function MissionsPage() {
   const { connect, connectors, isPending: isConnecting } = useConnect();
   const { sendCallsAsync } = useSendCalls();
   const { switchChainAsync } = useSwitchChain();
-  const { session, status, signIn } = useWalletSession();
   const [claimingSlug, setClaimingSlug] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [verificationHint, setVerificationHint] = useState<string | null>(null);
-  const [isReconfirmingWatchlist, setIsReconfirmingWatchlist] = useState(false);
 
-  const isAuthenticated = status === "authenticated" && Boolean(session);
+  const hasConnectedWallet = isConnected && Boolean(address);
   const {
     data: catalog,
     error: catalogError,
@@ -319,7 +301,9 @@ export default function MissionsPage() {
     isLoading: missionsLoading,
     mutate: refreshMissions,
   } = useSWR<MissionSnapshot>(
-    isAuthenticated ? "/api/missions" : null,
+    hasConnectedWallet && address
+      ? `/api/missions?address=${encodeURIComponent(address)}`
+      : null,
     fetchJson,
     {
       revalidateOnFocus: true,
@@ -327,29 +311,6 @@ export default function MissionsPage() {
       errorRetryInterval: 2_000,
     }
   );
-  const { data: notificationStatus } = useSWR<NotificationStatus>(
-    isAuthenticated ? "/api/badges/notifications/status" : null,
-    fetchJson,
-    { revalidateOnFocus: false, shouldRetryOnError: false }
-  );
-
-  useEffect(() => {
-    if (!verificationHint) return;
-
-    const timeout = window.setTimeout(() => setVerificationHint(null), 6_000);
-    return () => window.clearTimeout(timeout);
-  }, [verificationHint]);
-
-  const handleSignIn = useCallback(async () => {
-    setActionError(null);
-    setVerificationHint(null);
-    try {
-      await signIn();
-    } catch (error) {
-      setVerificationHint(getWalletVerificationHint(error));
-    }
-  }, [signIn]);
-
   const handleClaim = useCallback(
     async (mission: MissionProgress) => {
       if (!address || claimingSlug) return;
@@ -364,7 +325,7 @@ export default function MissionsPage() {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ missionSlug: mission.slug }),
+          body: JSON.stringify({ address, missionSlug: mission.slug }),
         });
         const voucher = (await voucherResponse.json()) as
           | ClaimVoucherResponse
@@ -377,6 +338,9 @@ export default function MissionsPage() {
               apiError.error ||
               "Badge claiming is not available yet."
           );
+        }
+        if (!isAddressEqual(voucher.claim.account, address)) {
+          throw new Error("The badge claim was prepared for a different wallet.");
         }
         if (
           voucher.claim.chainId !== base.id &&
@@ -429,6 +393,7 @@ export default function MissionsPage() {
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            address,
             missionSlug: mission.slug,
             transactionHash,
           }),
@@ -490,47 +455,6 @@ export default function MissionsPage() {
     ]
   );
 
-  const handleLegacyWatchlistConfirmation = useCallback(async () => {
-    if (isReconfirmingWatchlist) return;
-    setIsReconfirmingWatchlist(true);
-    setActionError(null);
-    setActionNotice(null);
-
-    try {
-      const response = await fetch("/api/watchlist", {
-        method: "PATCH",
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      const body = (await response.json()) as
-        | LegacyWatchlistResponse
-        | ApiError;
-      if (!response.ok || !("success" in body)) {
-        const apiError = body as ApiError;
-        throw new Error(
-          apiError.detail ||
-            apiError.error ||
-            "Older watchlist items could not be confirmed."
-        );
-      }
-
-      await refreshMissions(body.missions, { revalidate: false });
-      setActionNotice(
-        body.confirmed > 0
-          ? `${body.confirmed} older watchlist item${body.confirmed === 1 ? " was" : "s were"} confirmed.`
-          : "No older watchlist items qualified yet."
-      );
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Older watchlist items could not be confirmed."
-      );
-    } finally {
-      setIsReconfirmingWatchlist(false);
-    }
-  }, [isReconfirmingWatchlist, refreshMissions]);
-
   const visibleMissions = useMemo(() => {
     if (!catalog) return snapshot?.missions;
 
@@ -543,14 +467,12 @@ export default function MissionsPage() {
     );
   }, [catalog, snapshot]);
   const missionContentLoading =
-    !visibleMissions && (catalogLoading || (isAuthenticated && missionsLoading));
+    !visibleMissions &&
+    (catalogLoading || (hasConnectedWallet && missionsLoading));
   const missionContentError = !visibleMissions && catalogError;
   const claimingConfigured = catalog
     ? catalog.claiming.configured
     : null;
-  const legacyWatchlistCount =
-    snapshot?.missions.find((mission) => mission.metric === "watchlist_token")
-      ?.legacyProgress ?? 0;
   const completedMissionCount =
     snapshot?.missions.filter((mission) => mission.isCompleted).length ?? 0;
   const missionCount = visibleMissions?.length ?? 0;
@@ -577,7 +499,7 @@ export default function MissionsPage() {
           </div>
         </div>
 
-        {isAuthenticated ? (
+        {hasConnectedWallet ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 sm:mt-6">
             <div>
               <p className="text-sm font-bold text-art-gray-900">
@@ -590,108 +512,36 @@ export default function MissionsPage() {
                 {snapshot?.address.slice(-4) || address?.slice(-4)}
               </p>
             </div>
-            {notificationStatus?.configured ? (
-              <span
-                className={`hidden rounded-full px-3 py-1.5 text-xs font-bold sm:inline-flex ${
-                  notificationStatus.notificationsEnabled
-                    ? "bg-green-100 text-green-700"
-                    : "bg-amber-100 text-amber-800"
-                }`}
-              >
-                {notificationStatus.notificationsEnabled
-                  ? "Base notifications on"
-                  : notificationStatus.appPinned
-                    ? "Enable Base notifications"
-                    : "Pin DrawCoin in Base App"}
-              </span>
-            ) : null}
           </div>
         ) : (
           <div className="mt-4 rounded-xl border-2 border-dashed border-art-gray-300 bg-white px-3 py-3 sm:mt-5 sm:px-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2.5 sm:items-start sm:gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700 sm:mt-0.5">
-                  {isConnected ? (
-                    <LockKeyhole className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <Wallet className="h-4 w-4" aria-hidden="true" />
-                  )}
+                  <Wallet className="h-4 w-4" aria-hidden="true" />
                 </div>
                 <div className="min-w-0">
                   <h2 className="truncate text-sm font-bold text-art-gray-900">
-                    {isConnected
-                      ? "Sign in to view progress and claim badges"
-                      : "Connect wallet to view progress and claim badges"}
+                    Connect wallet to view progress and claim badges
                   </h2>
                 </div>
               </div>
               <button
                 type="button"
                 className="hand-drawn-btn shrink-0 px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60 sm:px-4"
-                disabled={
-                  isConnected
-                    ? status === "loading" || status === "signing"
-                    : isConnecting || connectors.length === 0
-                }
+                disabled={isConnecting || connectors.length === 0}
                 onClick={() => {
-                  if (isConnected) {
-                    void handleSignIn();
-                    return;
-                  }
-
                   const connector = connectors[0];
                   if (connector) connect({ connector });
                 }}
               >
-                {isConnected
-                  ? status === "signing"
-                    ? "Opening progress…"
-                    : status === "loading"
-                      ? "Checking session…"
-                      : "View progress"
-                  : isConnecting
-                    ? "Connecting…"
-                    : "Connect wallet"}
+                {isConnecting ? "Connecting…" : "Connect wallet"}
               </button>
             </div>
-            {verificationHint ? (
-              <p
-                className="mt-2 text-xs font-medium text-art-gray-500 sm:pl-12"
-                role="status"
-                aria-live="polite"
-              >
-                {verificationHint}
-              </p>
-            ) : null}
           </div>
         )}
 
-        {isAuthenticated && legacyWatchlistCount > 0 ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 sm:mt-5">
-            <div>
-              <p className="text-sm font-bold text-amber-950">
-                Older watchlist activity found
-              </p>
-              <p className="mt-1 hidden text-xs leading-5 text-amber-800 sm:block">
-                Confirm {legacyWatchlistCount} old item
-                {legacyWatchlistCount === 1 ? "" : "s"} so they can count toward
-                your mission.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="hand-drawn-btn shrink-0 px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={isReconfirmingWatchlist}
-              onClick={() => void handleLegacyWatchlistConfirmation()}
-            >
-              {isReconfirmingWatchlist
-                ? "Confirming…"
-                : "Confirm old watchlist"}
-            </button>
-          </div>
-        ) : null}
-
-        {isAuthenticated && missionsError && visibleMissions ? (
+        {hasConnectedWallet && missionsError && visibleMissions ? (
           <div
             className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900"
             role="status"
@@ -728,7 +578,7 @@ export default function MissionsPage() {
                 isClaiming={claimingSlug === mission.slug}
                 claimingConfigured={claimingConfigured}
                 onClaim={
-                  isAuthenticated && "progress" in mission
+                  hasConnectedWallet && "progress" in mission
                     ? (selectedMission) => void handleClaim(selectedMission)
                     : undefined
                 }

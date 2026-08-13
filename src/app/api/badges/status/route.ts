@@ -5,7 +5,6 @@ import {
   isAddressEqual,
   type Hex,
 } from "viem";
-import { SessionError, requireWalletSession } from "@/lib/auth/session";
 import { drawCoinMissionBadgesAbi } from "@/lib/badges/abi";
 import {
   BadgeConfigurationError,
@@ -17,6 +16,7 @@ import {
   getCompletedMissionForAddress,
   markBadgeClaimPending,
 } from "@/lib/missions/service";
+import { parseMissionRequestAddress } from "@/lib/missions/requestAddress";
 
 export const dynamic = "force-dynamic";
 
@@ -28,26 +28,21 @@ function missionSlugFromRequest(request: NextRequest): string | null {
   return MISSION_SLUG_PATTERN.test(missionSlug) ? missionSlug : null;
 }
 
-function sessionErrorResponse(error: SessionError) {
-  return NextResponse.json(
-    { error: error.message },
-    { status: error.status, headers: { "Cache-Control": "no-store" } }
-  );
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireWalletSession();
+    const address = parseMissionRequestAddress(
+      request.nextUrl.searchParams.get("address")
+    );
     const missionSlug = missionSlugFromRequest(request);
-    if (!missionSlug) {
+    if (!address || !missionSlug) {
       return NextResponse.json(
-        { error: "A valid mission query parameter is required." },
+        { error: "A valid wallet address and mission query are required." },
         { status: 400, headers: { "Cache-Control": "no-store" } }
       );
     }
 
     const completedMission = await getCompletedMissionForAddress(
-      session.address,
+      address,
       missionSlug
     );
     if (!completedMission) {
@@ -71,7 +66,7 @@ export async function GET(request: NextRequest) {
     }
 
     const state = await reconcileOnchainBadgeClaim({
-      address: session.address,
+      address,
       mission: completedMission,
     });
 
@@ -89,7 +84,6 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (error) {
-    if (error instanceof SessionError) return sessionErrorResponse(error);
     if (error instanceof BadgeConfigurationError) {
       return NextResponse.json(
         { error: "Onchain badge claiming is not configured.", detail: error.message },
@@ -105,28 +99,33 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requireWalletSession();
     const body = (await request.json()) as {
+      address?: unknown;
       missionSlug?: unknown;
       transactionHash?: unknown;
     };
+    const address = parseMissionRequestAddress(body.address);
     const missionSlug =
       typeof body.missionSlug === "string" ? body.missionSlug.trim() : "";
     const transactionHash =
       typeof body.transactionHash === "string" ? body.transactionHash.trim() : "";
 
     if (
+      !address ||
       !MISSION_SLUG_PATTERN.test(missionSlug) ||
       !TRANSACTION_HASH_PATTERN.test(transactionHash)
     ) {
       return NextResponse.json(
-        { error: "A valid mission slug and transaction hash are required." },
+        {
+          error:
+            "A valid wallet address, mission slug, and transaction hash are required.",
+        },
         { status: 400, headers: { "Cache-Control": "no-store" } }
       );
     }
 
     const completedMission = await getCompletedMissionForAddress(
-      session.address,
+      address,
       missionSlug
     );
     if (!completedMission) {
@@ -144,7 +143,7 @@ export async function POST(request: NextRequest) {
       });
     } catch {
       await markBadgeClaimPending(
-        session.address,
+        address,
         missionSlug,
         transactionHash
       );
@@ -161,7 +160,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const expectedAccount = getAddress(session.address);
+    const expectedAccount = getAddress(address);
     const expectedTokenId = BigInt(completedMission.badge.tokenId);
     const matchingLog = receipt.logs.some((log) => {
       if (!isAddressEqual(log.address, config.contractAddress)) return false;
@@ -190,7 +189,7 @@ export async function POST(request: NextRequest) {
     }
 
     const state = await reconcileOnchainBadgeClaim({
-      address: session.address,
+      address,
       mission: completedMission,
       transactionHash: transactionHash as Hex,
     });
@@ -212,7 +211,6 @@ export async function POST(request: NextRequest) {
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (error) {
-    if (error instanceof SessionError) return sessionErrorResponse(error);
     if (error instanceof BadgeConfigurationError) {
       return NextResponse.json(
         { error: "Onchain badge claiming is not configured.", detail: error.message },

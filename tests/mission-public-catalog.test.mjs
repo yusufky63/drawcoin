@@ -41,14 +41,18 @@ test("the public catalog lists every definition without requiring a wallet sessi
   );
 });
 
-test("signed-in progress enriches the public catalog instead of replacing it", () => {
+test("connected-wallet progress enriches the public catalog without message signing", () => {
   assert.match(pageSource, /progressByMissionId/);
   assert.match(pageSource, /catalog\.missions\.map/);
   assert.match(
     pageSource,
     /Connect wallet to view progress and claim badges/,
   );
-  assert.doesNotMatch(pageSource, /Progress stays private/);
+  assert.match(pageSource, /\/api\/missions\?address=/);
+  assert.doesNotMatch(
+    pageSource,
+    /useWalletSession|handleSignIn|Sign in to view progress|verificationHint/,
+  );
 });
 
 test("claim APIs fail closed and persist a submitted transaction as pending", () => {
@@ -56,4 +60,10 @@ test("claim APIs fail closed and persist a submitted transaction as pending", ()
   assert.match(voucherSource, /deployable metadata is not ready yet/);
   assert.match(statusSource, /markBadgeClaimPending/);
   assert.match(statusSource, /confirmed: false, pending: true/);
+  assert.match(voucherSource, /parseMissionRequestAddress\(body\.address\)/);
+  assert.match(statusSource, /parseMissionRequestAddress\(body\.address\)/);
+  assert.doesNotMatch(
+    `${voucherSource}\n${statusSource}`,
+    /requireWalletSession|SessionError/,
+  );
 });
