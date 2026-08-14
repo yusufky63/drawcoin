@@ -16,10 +16,9 @@ const coinServiceSource = await readFile(
 );
 
 test("market rows and exact totals share search and creation filters", () => {
-  assert.match(
-    marketRouteSource,
-    /const filters = \{ search, creation_type: creationType \}/,
-  );
+  assert.match(marketRouteSource, /activity,/);
+  assert.match(marketRouteSource, /min_holders: minHolders/);
+  assert.match(marketRouteSource, /creation_type: creationType/);
   assert.match(
     marketRouteSource,
     /getCoinsPage\(\s*\{ \.\.\.filters, limit, offset, sort \}/,
@@ -29,6 +28,23 @@ test("market rows and exact totals share search and creation filters", () => {
     marketRouteSource,
     /if \(total === 0 \|\| offset >= total\)/,
   );
+});
+
+test("market activity sorts use persisted indexed summary fields", () => {
+  for (const [sort, field] of [
+    ["recently-traded", "last_trade_at"],
+    ["most-traded", "verified_trade_count"],
+    ["most-holders", "holders"],
+    ["volume-high", "volume_24h"],
+  ]) {
+    const blocks = coinServiceSource.match(
+      new RegExp(`case "${sort}":[\\s\\S]*?break;`, "g"),
+    );
+    assert.equal(blocks?.length, 2, `${sort} must cover list and page queries`);
+    for (const block of blocks ?? []) assert.match(block, new RegExp(field));
+  }
+  assert.match(coinServiceSource, /gt\("verified_trade_count", 0\)/);
+  assert.match(coinServiceSource, /gte\("holders", params(?:\?)?\.min_holders\)/);
 });
 
 test("market row and count searches both include contract addresses", () => {

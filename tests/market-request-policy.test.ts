@@ -20,24 +20,31 @@ function assertInvalid(query: string) {
 
 test("market query defaults and supported filters are bounded", () => {
   assert.deepEqual(parse(), {
+    activity: "",
     creationType: "",
     limit: 100,
+    minHolders: 0,
     page: 1,
     search: "",
     sort: "newest",
   });
   assert.deepEqual(
-    parse("?page=2&limit=25&search=%20Base%20Art%20&sort=most-watched&creationType=hand-drawn"),
+    parse("?page=2&limit=25&search=%20Base%20Art%20&sort=recently-traded&creationType=hand-drawn&activity=traded&minHolders=5"),
     {
+      activity: "traded",
       creationType: "hand-drawn",
       limit: 25,
+      minHolders: 5,
       page: 2,
       search: "Base Art",
-      sort: "most-watched",
+      sort: "recently-traded",
     }
   );
   assert.equal(parse("?sort=most-watched").sort, "most-watched");
   assert.equal(parse("?sort=market-cap").sort, "market-cap");
+  assert.equal(parse("?sort=most-traded").sort, "most-traded");
+  assert.equal(parse("?sort=most-holders").sort, "most-holders");
+  assert.equal(parse("?sort=volume-high").sort, "volume-high");
 });
 
 test("market query rejects amplification and cache-key inputs", () => {
@@ -51,8 +58,10 @@ test("market query rejects amplification and cache-key inputs", () => {
     "?sort=random",
     "?sort=price-high",
     "?sort=price-low",
-    "?sort=volume-high",
     "?sort=holders-high",
+    "?activity=active",
+    "?minHolders=0",
+    "?minHolders=1000000001",
     "?creationType=generated",
     "?limit=10&limit=20",
     "?tracking=random",

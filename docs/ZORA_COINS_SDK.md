@@ -44,6 +44,12 @@ routes when an authenticated or higher-rate Zora query is needed.
 
 - Zora coin transactions in this project run on Base mainnet (`8453`).
 - ZORA-backed creation is not offered on Base Sepolia.
+- Coin creation uses SDK `createCoinCall` only to prepare the verified Zora
+  factory call. The connected wallet submits that call through Wagmi
+  `sendCalls` with an `eth_sendTransaction` fallback. Do not restore the SDK
+  0.4.1 high-level `createCoin` sender: it estimates gas before Wagmi adds the
+  ERC-8021 Builder Code suffix, so the final Base App payload can be
+  under-estimated.
 - The SDK's high-level trade helper is treated as EOA-only. Base Account users
   must not be shown a transaction as supported until a smart-account flow is
   implemented and tested explicitly.

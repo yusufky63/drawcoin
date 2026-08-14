@@ -80,3 +80,28 @@ test("unsupported creation controls and the unused gas multiplier stay removed",
   assert.doesNotMatch(creationSource, /smartWalletRouting/);
   assert.doesNotMatch(creationSource, /gasMultiplier/);
 });
+
+test("Base creation prepares one Zora call and lets the connected wallet estimate the final payload", async () => {
+  const [sdkSource, createPageSource] = await Promise.all([
+    readFile(
+      new URL("../src/services/sdk/getCreateCoin.js", import.meta.url),
+      "utf8"
+    ),
+    readFile(
+      new URL("../src/components/create/CreatePage.tsx", import.meta.url),
+      "utf8"
+    ),
+  ]);
+
+  assert.match(sdkSource, /createCoinCall/);
+  assert.doesNotMatch(sdkSource, /\bcreateCoin\s*\(/);
+  assert.match(sdkSource, /coinFactoryAddress\[targetChainId\]/);
+  assert.match(sdkSource, /preparedCall\.value !== BigInt\(0\)/);
+  assert.match(sdkSource, /receipt\.status !== "success"/);
+  assert.doesNotMatch(sdkSource, /\bgasPrice\b|\bgas:\s*gas/);
+
+  assert.match(createPageSource, /sendCallsAsync\(\{/);
+  assert.match(createPageSource, /experimental_fallback: true/);
+  assert.match(createPageSource, /waitForCallsStatus\(wagmiConfig/);
+  assert.match(createPageSource, /throwOnFailure: true/);
+});

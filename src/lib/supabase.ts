@@ -31,6 +31,9 @@ export interface Coin {
   volume_24h?: number;
   total_supply?: number;
   holders?: number;
+  last_trade_at?: string | null;
+  last_trade_type?: "buy" | "sell" | null;
+  verified_trade_count?: number;
   last_synced_at?: string;
   created_at?: string;
   updated_at?: string;
@@ -147,6 +150,32 @@ export interface Database {
           stub_calls?: number;
           data_calls?: number;
           created_at?: string;
+          updated_at?: string;
+        };
+      };
+      creator_identity_cache: {
+        Row: {
+          address: string;
+          basename: string | null;
+          source: "profile" | "base-l2" | "ensip19" | "none";
+          checked_at: string;
+          expires_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          address: string;
+          basename?: string | null;
+          source?: "profile" | "base-l2" | "ensip19" | "none";
+          checked_at?: string;
+          expires_at: string;
+          updated_at?: string;
+        };
+        Update: {
+          address?: string;
+          basename?: string | null;
+          source?: "profile" | "base-l2" | "ensip19" | "none";
+          checked_at?: string;
+          expires_at?: string;
           updated_at?: string;
         };
       };

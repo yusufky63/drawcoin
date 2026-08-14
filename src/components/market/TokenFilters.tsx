@@ -1,10 +1,16 @@
-import { Grid2X2, List, Search, X } from "lucide-react";
+import { useState } from "react";
+import { Grid2X2, List, Search, SlidersHorizontal, X } from "lucide-react";
 
 export type CreationType = "all" | "ai" | "hand-drawn";
 export type MarketSort =
   | "newest"
   | "oldest"
-  | "most-watched";
+  | "most-watched"
+  | "market-cap"
+  | "recently-traded"
+  | "most-holders";
+export type MarketActivity = "all" | "traded";
+export type MinimumHolders = 0 | 2 | 5;
 
 interface TokenFiltersProps {
   searchTerm: string;
@@ -15,11 +21,18 @@ interface TokenFiltersProps {
   onViewModeChange: (mode: "grid" | "list") => void;
   creationType: CreationType;
   onCreationTypeChange: (type: CreationType) => void;
+  activity: MarketActivity;
+  onActivityChange: (activity: MarketActivity) => void;
+  minHolders: MinimumHolders;
+  onMinHoldersChange: (minimum: MinimumHolders) => void;
 }
 
 const sortOptions: ReadonlyArray<{ value: MarketSort; label: string }> = [
   { value: "newest", label: "Newest" },
+  { value: "recently-traded", label: "Recent trades" },
+  { value: "market-cap", label: "Market cap" },
   { value: "most-watched", label: "Most watched" },
+  { value: "most-holders", label: "Most holders" },
   { value: "oldest", label: "Oldest" },
 ];
 
@@ -32,7 +45,14 @@ export default function TokenFilters({
   onViewModeChange,
   creationType,
   onCreationTypeChange,
+  activity,
+  onActivityChange,
+  minHolders,
+  onMinHoldersChange,
 }: TokenFiltersProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const extraFilterCount = Number(activity === "traded") + Number(minHolders > 0);
+
   return (
     <section aria-label="Explore controls" className="mb-3 sm:mb-4">
       <div className="rounded-2xl border-2 border-[#2d3748] bg-white p-2.5 shadow-[3px_3px_0_#2d3748] sm:p-3">
@@ -97,6 +117,21 @@ export default function TokenFilters({
               </select>
             </label>
 
+            <button
+              type="button"
+              aria-expanded={moreOpen}
+              aria-controls="explore-extra-filters"
+              onClick={() => setMoreOpen((open) => !open)}
+              className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl border-2 px-2.5 text-xs font-bold transition focus-visible:ring-2 focus-visible:ring-[var(--base-blue)] ${
+                extraFilterCount > 0
+                  ? "border-[var(--base-blue)] bg-[var(--base-blue-soft)] text-[var(--base-blue-hover)]"
+                  : "border-[#2d3748] bg-white text-art-gray-600 hover:bg-art-gray-100"
+              }`}
+            >
+              <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5" />
+              Filters{extraFilterCount > 0 ? ` ${extraFilterCount}` : ""}
+            </button>
+
             <div role="group" aria-label="Token view" className="ml-auto flex h-10 shrink-0 items-center rounded-xl border-2 border-[#2d3748] bg-white p-0.5">
               {(["grid", "list"] as const).map((mode) => {
                 const Icon = mode === "grid" ? Grid2X2 : List;
@@ -115,6 +150,46 @@ export default function TokenFilters({
               })}
             </div>
           </div>
+
+          {moreOpen ? (
+            <div
+              id="explore-extra-filters"
+              className="grid gap-2 rounded-xl border border-art-gray-200 bg-art-off-white p-2 sm:grid-cols-2"
+            >
+              <div>
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-art-gray-500">Activity</p>
+                <div className="flex gap-1" role="group" aria-label="Filter by trading activity">
+                  {(["all", "traded"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={activity === value}
+                      onClick={() => onActivityChange(value)}
+                      className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${activity === value ? "bg-art-gray-900 text-white" : "bg-white text-art-gray-600 hover:bg-art-gray-100"}`}
+                    >
+                      {value === "all" ? "All activity" : "Has trades"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-art-gray-500">Minimum holders</p>
+                <div className="flex gap-1" role="group" aria-label="Minimum holder count">
+                  {([0, 2, 5] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={minHolders === value}
+                      onClick={() => onMinHoldersChange(value)}
+                      className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${minHolders === value ? "bg-art-gray-900 text-white" : "bg-white text-art-gray-600 hover:bg-art-gray-100"}`}
+                    >
+                      {value === 0 ? "Any" : `${value}+`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
       </div>

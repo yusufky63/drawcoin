@@ -8,13 +8,18 @@ import {
   formatTradeBalance,
   parseTradeAmount,
   percentageForAmount,
+  tokenSellQuoteReserve,
 } from "../src/lib/tradeAmount.ts";
 
-test("100% token sell preserves the exact raw balance", () => {
+test("Max token sell uses 98% of the raw balance without Number rounding", () => {
   const balance = BigInt("140716531123456789012345678");
-  const amount = amountForPercentage(balance, 18, 100);
-  assert.equal(parseUnits(amount, 18), balance);
-  assert.equal(percentageForAmount(amount, 18, balance), 100);
+  const reserve = tokenSellQuoteReserve(balance);
+  const amount = amountForPercentage(balance, 18, 100, reserve);
+  assert.equal(
+    parseUnits(amount, 18),
+    (balance * BigInt(9_800)) / BigInt(10_000)
+  );
+  assert.equal(percentageForAmount(amount, 18, balance, reserve), 100);
 });
 
 test("small balances and six-decimal USDC never round through Number", () => {

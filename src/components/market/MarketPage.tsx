@@ -7,12 +7,19 @@ import useSWRInfinite from "swr/infinite";
 import {
   createCreatorAddressBatch,
   MAX_CREATOR_IDENTITY_BATCH,
+  normalizeBasename,
 } from "../../lib/creatorIdentity";
+import {
+  fetchCreatorBasenames,
+  type BasenamesResponse,
+} from "../../lib/creatorIdentityClient";
 import type { Coin } from "../../lib/supabase";
 import { useWatchlist } from "../../hooks/useWatchlist";
 import TokenFilters, {
   type CreationType,
+  type MarketActivity,
   type MarketSort,
+  type MinimumHolders,
 } from "./TokenFilters";
 import TokenGrid from "./TokenGrid";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
@@ -22,8 +29,13 @@ const validSorts = new Set<MarketSort>([
   "newest",
   "oldest",
   "most-watched",
+  "market-cap",
+  "recently-traded",
+  "most-holders",
 ]);
 const validCreationTypes = new Set<CreationType>(["all", "ai", "hand-drawn"]);
+const validActivities = new Set<MarketActivity>(["all", "traded"]);
+const validMinimumHolders = new Set<MinimumHolders>([0, 2, 5]);
 
 interface MarketMeta {
   limit: number;
@@ -35,10 +47,6 @@ interface MarketMeta {
 interface MarketResponse {
   data: Coin[];
   meta: MarketMeta;
-}
-
-interface BasenamesResponse {
-  basenames: Record<string, string | null>;
 }
 
 class ApiResponseError extends Error {
@@ -75,21 +83,6 @@ async function fetcher(url: string): Promise<MarketResponse> {
   return payload;
 }
 
-async function fetchBasenames(url: string): Promise<BasenamesResponse> {
-  const response = await fetch(url, {
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(5_000),
-  });
-  if (!response.ok) {
-    throw new ApiResponseError(
-      "Creator names could not be loaded.",
-      response.status
-    );
-  }
-  return (await response.json()) as BasenamesResponse;
-}
-
 function uniqueCoins(pages?: MarketResponse[]) {
   const seen = new Set<string>();
   const coins: Coin[] = [];
@@ -111,6 +104,8 @@ export default function MarketPage() {
   const [sortBy, setSortBy] = useState<MarketSort>("newest");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [creationType, setCreationType] = useState<CreationType>("all");
+  const [activity, setActivity] = useState<MarketActivity>("all");
+  const [minHolders, setMinHolders] = useState<MinimumHolders>(0);
   const [selectedCreator, setSelectedCreator] = useState<string | null>(null);
   const [filtersReady, setFiltersReady] = useState(false);
   const marketTopRef = useRef<HTMLDivElement | null>(null);
@@ -120,6 +115,8 @@ export default function MarketPage() {
     const query = (params.get("q") ?? "").slice(0, 100);
     const requestedSort = params.get("sort") as MarketSort | null;
     const requestedType = params.get("type") as CreationType | null;
+    const requestedActivity = params.get("activity") as MarketActivity | null;
+    const requestedMinHolders = Number(params.get("holders") ?? 0) as MinimumHolders;
     const creator = params.get("creator")?.trim().toLowerCase() ?? "";
 
     setSearchTerm(query);
@@ -127,6 +124,12 @@ export default function MarketPage() {
     if (requestedSort && validSorts.has(requestedSort)) setSortBy(requestedSort);
     if (requestedType && validCreationTypes.has(requestedType)) {
       setCreationType(requestedType);
+    }
+    if (requestedActivity && validActivities.has(requestedActivity)) {
+      setActivity(requestedActivity);
+    }
+    if (validMinimumHolders.has(requestedMinHolders)) {
+      setMinHolders(requestedMinHolders);
     }
     if (/^0x[a-f0-9]{40}$/.test(creator)) setSelectedCreator(creator);
     setFiltersReady(true);
@@ -145,9 +148,11 @@ export default function MarketPage() {
       });
       if (apiSearch) params.set("search", apiSearch);
       if (creationType !== "all") params.set("creationType", creationType);
+      if (activity === "traded") params.set("activity", "traded");
+      if (minHolders > 0) params.set("minHolders", String(minHolders));
       return `/api/market?${params.toString()}`;
     },
-    [apiSearch, creationType, filtersReady, sortBy]
+    [activity, apiSearch, creationType, filtersReady, minHolders, sortBy]
   );
 
   const {
@@ -185,6 +190,10 @@ export default function MarketPage() {
     else params.delete("sort");
     if (creationType !== "all") params.set("type", creationType);
     else params.delete("type");
+    if (activity === "traded") params.set("activity", "traded");
+    else params.delete("activity");
+    if (minHolders > 0) params.set("holders", String(minHolders));
+    else params.delete("holders");
     if (selectedCreator) params.set("creator", selectedCreator);
     else params.delete("creator");
 
@@ -194,13 +203,15 @@ export default function MarketPage() {
       "",
       `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
     );
-  }, [creationType, filtersReady, searchTerm, selectedCreator, sortBy]);
+  }, [activity, creationType, filtersReady, minHolders, searchTerm, selectedCreator, sortBy]);
 
   const tokens = useMemo(() => uniqueCoins(pages), [pages]);
   const creatorAddressKey = useMemo(
     () =>
       createCreatorAddressBatch(
-        tokens.map((token) => token.creator_address),
+        tokens
+          .filter((token) => !normalizeBasename(token.creator_name))
+          .map((token) => token.creator_address),
         MAX_CREATOR_IDENTITY_BATCH
       ).join(","),
     [tokens]
@@ -212,7 +223,7 @@ export default function MarketPage() {
     creatorAddressKey
       ? `/api/basenames?addresses=${encodeURIComponent(creatorAddressKey)}`
       : null,
-    fetchBasenames,
+    fetchCreatorBasenames,
     {
       dedupingInterval: 30 * 60 * 1000,
       errorRetryCount: 0,
@@ -436,6 +447,16 @@ export default function MarketPage() {
           creationType={creationType}
           onCreationTypeChange={(value) => {
             setCreationType(value);
+            resetToFirstPage();
+          }}
+          activity={activity}
+          onActivityChange={(value) => {
+            setActivity(value);
+            resetToFirstPage();
+          }}
+          minHolders={minHolders}
+          onMinHoldersChange={(value) => {
+            setMinHolders(value);
             resetToFirstPage();
           }}
         />

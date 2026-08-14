@@ -86,6 +86,13 @@ export function getWalletActionErrorMessage(
   if (text.includes("slippage")) {
     return "Price moved too much. Adjust slippage and try again.";
   }
+  if (
+    text.includes("failed to get quote") ||
+    text.includes("swaperror") ||
+    text.includes("quote unavailable")
+  ) {
+    return "No quote is available for that amount. Try Max or a smaller amount.";
+  }
   if (text.includes("wrong chain") || text.includes("switch to base")) {
     return "Switch your wallet to Base and try again.";
   }

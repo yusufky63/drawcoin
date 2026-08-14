@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   BASE_CHAIN_ID,
+  syncFreshCreation,
   syncCreatedToken,
   type CoinCreationRecordPayload,
 } from "../src/lib/functions/coinCreationSync.ts";
@@ -89,4 +90,50 @@ test("unknown server errors fall back to status-based safe codes", async () => {
   assert.equal(result.error?.code, "RECORD_CONFLICT");
   assert.equal(result.error?.retryable, false);
   assert.doesNotMatch(result.error?.message ?? "", /unsafe raw error/);
+});
+
+test("a fresh creation retries only the idempotent record step while Base state propagates", async () => {
+  let calls = 0;
+  const delays: number[] = [];
+  const result = await syncFreshCreation(payload, {
+    fetcher: async () => {
+      calls += 1;
+      if (calls < 3) {
+        return Response.json(
+          { code: "BASE_STATE_PENDING", error: "provider lag" },
+          { status: 503 }
+        );
+      }
+      return Response.json({
+        success: true,
+        data: { contract_address: payload.contract_address },
+      });
+    },
+    sleep: async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+  });
+
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [700, 1_400]);
+  assert.equal(result.status, "recorded");
+});
+
+test("a deterministic creation mismatch is never retried", async () => {
+  let calls = 0;
+  const result = await syncFreshCreation(payload, {
+    fetcher: async () => {
+      calls += 1;
+      return Response.json(
+        { code: "ONCHAIN_CREATION_MISMATCH", error: "mismatch" },
+        { status: 422 }
+      );
+    },
+    sleep: async () => {
+      throw new Error("a permanent mismatch must not sleep or retry");
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(result.error?.code, "ONCHAIN_CREATION_MISMATCH");
 });

@@ -8,6 +8,7 @@ import {
 } from "../../../lib/tradeAmount";
 
 export type BuyCurrency = "ETH" | "USDC";
+const BUY_CURRENCIES = ["ETH", "USDC"] as const;
 
 interface CoinTradeCardProps {
   token: Coin;
@@ -58,6 +59,8 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
   buyCurrency,
   setBuyCurrency,
 }) => {
+  const [currencyPickerOpen, setCurrencyPickerOpen] = React.useState(false);
+  const currencyButtonRef = React.useRef<HTMLButtonElement>(null);
   const sliderPercentage = percentageForAmount(
     amount,
     balanceDecimals,
@@ -75,6 +78,22 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
       )
     );
   };
+
+  React.useEffect(() => {
+    if (!currencyPickerOpen) return;
+    const currencyButton = currencyButtonRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCurrencyPickerOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      currencyButton?.focus();
+    };
+  }, [currencyPickerOpen]);
 
   return (
     <div>
@@ -216,31 +235,34 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
               className="hand-drawn-input flex-1 p-2 font-mono text-lg"
             />
             {tradeType === "buy" && (
-              <div
-                className="inline-flex shrink-0 rounded-lg border-2 border-art-gray-900 bg-white p-0.5"
-                aria-label="Buy currency"
+              <button
+                ref={currencyButtonRef}
+                type="button"
+                onClick={() => setCurrencyPickerOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={currencyPickerOpen}
+                className="inline-flex min-w-[6.75rem] shrink-0 items-center justify-between gap-2 rounded-[9px_4px_8px_5px] border-2 border-art-gray-900 bg-white px-3 py-2 text-sm font-bold text-art-gray-900 shadow-[2px_2px_0_#2d3748] transition-transform hover:-translate-y-0.5"
               >
-                {(["ETH", "USDC"] as const).map((currency) => (
-                  <button
-                    key={currency}
-                    type="button"
-                    onClick={() => setBuyCurrency(currency)}
-                    aria-pressed={buyCurrency === currency}
-                    className={`rounded-md px-2 py-1.5 text-xs font-bold transition-colors ${
-                      buyCurrency === currency
-                        ? "bg-[var(--base-blue)] text-white"
-                        : "text-art-gray-600 hover:bg-art-gray-100"
+                <span className="inline-flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black text-white ${
+                      buyCurrency === "ETH" ? "bg-[#343434]" : "bg-[#2775ca]"
                     }`}
                   >
-                    {currency}
-                  </button>
-                ))}
-              </div>
+                    {buyCurrency === "ETH" ? "◆" : "$"}
+                  </span>
+                  {buyCurrency}
+                </span>
+                <span aria-hidden="true" className="text-xs text-art-gray-500">
+                  ▾
+                </span>
+              </button>
             )}
           </div>
           {tradeType === "buy" && (
             <p className="mt-2 text-xs font-medium text-art-gray-600">
-              Buy with ETH or native USDC on Base.
+              Buy with ETH or USDC on Base.
             </p>
           )}
           {amount && (
@@ -274,7 +296,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
           <div className="flex justify-between text-xs text-art-gray-500 mt-1">
             <span>0%</span>
             <span>50%</span>
-            <span>100%</span>
+            <span>{tradeType === "sell" ? "Max" : "100%"}</span>
           </div>
         </div>
 
@@ -289,13 +311,25 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
                 key={percentage}
                 type="button"
                 onClick={() => setPercentage(percentage)}
+                aria-label={
+                  percentage === 100 && tradeType === "sell"
+                    ? "Use safe maximum sell amount"
+                    : `Use ${percentage}% of available balance`
+                }
+                title={
+                  percentage === 100 && tradeType === "sell"
+                    ? "Uses 98% of the token balance for quote reliability"
+                    : undefined
+                }
                 className="hand-drawn-btn text-xs font-bold"
                 style={{
                   padding: "0.5rem 0.75rem",
                   transform: `rotate(${index % 2 === 0 ? "1deg" : "-1deg"})`,
                 }}
               >
-                {percentage}%
+                {percentage === 100 && tradeType === "sell"
+                  ? "Max"
+                  : `${percentage}%`}
               </button>
             ))}
           </div>
@@ -373,6 +407,117 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
           </button>
         </div>
       </div>
+
+      {currencyPickerOpen && tradeType === "buy" ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setCurrencyPickerOpen(false);
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="buy-currency-title"
+            className="hand-drawn-card w-full max-w-sm p-4 sm:p-5"
+          >
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h3
+                  id="buy-currency-title"
+                  className="text-lg font-bold text-art-gray-900"
+                >
+                  Pay with
+                </h3>
+                <p className="text-xs font-medium text-art-gray-500">
+                  Choose a Base asset
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrencyPickerOpen(false)}
+                aria-label="Close currency picker"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-art-gray-900 bg-white text-xl font-bold shadow-[2px_2px_0_#2d3748]"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {BUY_CURRENCIES.map((symbol) =>
+                symbol === "ETH"
+                  ? {
+                      symbol,
+                      name: "Ethereum",
+                      balance: ethBalance,
+                      icon: "◆",
+                      iconClass: "bg-[#343434]",
+                    }
+                  : {
+                      symbol,
+                      name: "USD Coin",
+                      balance: usdcBalance,
+                      icon: "$",
+                      iconClass: "bg-[#2775ca]",
+                    }
+              ).map((currency, index) => (
+                <button
+                  key={currency.symbol}
+                  type="button"
+                  autoFocus={index === 0}
+                  onClick={() => {
+                    setBuyCurrency(currency.symbol);
+                    setCurrencyPickerOpen(false);
+                  }}
+                  aria-pressed={buyCurrency === currency.symbol}
+                  className={`flex min-h-16 w-full items-center justify-between gap-3 rounded-[12px_5px_10px_7px] border-2 border-art-gray-900 px-3 py-3 text-left shadow-[2px_2px_0_#2d3748] transition-colors ${
+                    buyCurrency === currency.symbol
+                      ? "bg-[var(--base-blue)] text-white"
+                      : "bg-white text-art-gray-900 hover:bg-art-gray-50"
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span
+                      aria-hidden="true"
+                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-white ${currency.iconClass}`}
+                    >
+                      {currency.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-bold">{currency.symbol}</span>
+                      <span
+                        className={`block text-xs ${
+                          buyCurrency === currency.symbol
+                            ? "text-blue-100"
+                            : "text-art-gray-500"
+                        }`}
+                      >
+                        {currency.name}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    <span className="block font-mono text-sm font-bold">
+                      {currency.balance}
+                    </span>
+                    <span
+                      className={`block text-xs ${
+                        buyCurrency === currency.symbol
+                          ? "text-blue-100"
+                          : "text-art-gray-500"
+                      }`}
+                    >
+                      Balance
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
     </div>
   );
