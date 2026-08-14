@@ -10,7 +10,7 @@ const migrationFiles = [
   "20260811173610_harden_legacy_activity_privileges.sql",
   "20260811202443_redefine_first_stroke_verified_creation.sql",
   "20260813163658_expand_verified_missions.sql",
-  "20260814130948_replace_curator_with_trade_missions.sql",
+  "20260814134854_replace_curator_with_trade_missions.sql",
 ];
 
 test(

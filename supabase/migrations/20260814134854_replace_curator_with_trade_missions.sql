@@ -1,5 +1,7 @@
 begin;
 
+-- Remote migration version: 20260814134854.
+
 -- Curator depended on historical watchlist rows that cannot be proven from
 -- Base. Keep the definition for audit/history, but remove it from the active
 -- catalog and never recycle token id 3.
