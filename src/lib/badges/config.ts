@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   createPublicClient,
+  fallback,
   getAddress,
   http,
   isAddress,
@@ -76,22 +77,47 @@ function parseVoucherTtl(): number {
   return Math.min(900, Math.max(60, Math.floor(requestedTtl)));
 }
 
+function parseOptionalRpcUrl(name: string): string | undefined {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) return undefined;
+
+  try {
+    const url = new URL(rawValue);
+    if (url.protocol !== "https:") throw new Error("HTTPS is required");
+    return url.toString();
+  } catch {
+    throw new BadgeConfigurationError(`${name} must be a valid HTTPS RPC URL.`);
+  }
+}
+
 export function getBadgeRuntimeConfig() {
   const chainId = parseChainId();
   const chain = chainId === base.id ? base : baseSepolia;
-  const rpcUrl =
-    process.env.BADGE_RPC_URL?.trim() || process.env.BASE_RPC_URL?.trim() || undefined;
+  const primaryRpcUrl =
+    parseOptionalRpcUrl("BADGE_RPC_URL") ||
+    parseOptionalRpcUrl("BASE_RPC_URL");
+  const fallbackRpcUrl = parseOptionalRpcUrl("BADGE_RPC_FALLBACK_URL");
+  const primaryTransport = http(primaryRpcUrl, {
+    timeout: 5_000,
+    retryCount: 0,
+  });
+  const rpcTransport =
+    fallbackRpcUrl && fallbackRpcUrl !== primaryRpcUrl
+      ? fallback(
+          [
+            primaryTransport,
+            http(fallbackRpcUrl, { timeout: 5_000, retryCount: 0 }),
+          ],
+          { rank: false, retryCount: 0 }
+        )
+      : primaryTransport;
 
   return {
     chainId,
     contractAddress: parseContractAddress(),
     publicClient: createPublicClient({
       chain,
-      transport: http(rpcUrl, {
-        timeout: 5_000,
-        retryCount: 1,
-        retryDelay: 250,
-      }),
+      transport: rpcTransport,
     }),
     voucherTtlSeconds: parseVoucherTtl(),
   };

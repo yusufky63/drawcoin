@@ -71,7 +71,9 @@ Copy `.env.example` to a local environment file and replace every placeholder.
 Generate `AUTH_SESSION_SECRET` with at least 32 random characters. Keep
 `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_SESSION_SECRET`, and `BASE_RPC_URL`
 server-only. A dedicated authenticated Base RPC is recommended for reliable
-receipt verification. Set a private Ethereum mainnet `ETHEREUM_RPC_URL` for
+receipt verification. Set `BADGE_RPC_FALLBACK_URL` to a second server-only Base
+RPC so badge reads can fail over without exposing the provider key. Set a
+private Ethereum mainnet `ETHEREUM_RPC_URL` for
 ENSIP-19 Basename resolution; the resolver uses `toCoinType(base.id)` as Base's
 official guide requires.
 
