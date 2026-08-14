@@ -50,11 +50,24 @@ function isPaymasterProxyExplicitlyEnabled(): boolean {
   return process.env.PAYMASTER_PROXY_ENABLED?.trim().toLowerCase() === "true";
 }
 
+function normalizePrivateKey(rawValue: string | undefined): Hex | null {
+  let value = rawValue?.trim();
+  if (!value) return null;
+
+  const hasMatchingQuotes =
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"));
+  if (hasMatchingQuotes) value = value.slice(1, -1).trim();
+
+  if (/^[0-9a-fA-F]{64}$/.test(value)) value = `0x${value}`;
+  return PRIVATE_KEY_PATTERN.test(value) ? (value as Hex) : null;
+}
+
 function getClaimSigner() {
-  const privateKey = process.env.PRIVATE_KEY?.trim();
-  if (!privateKey || !PRIVATE_KEY_PATTERN.test(privateKey)) {
+  const privateKey = normalizePrivateKey(process.env.PRIVATE_KEY);
+  if (!privateKey) {
     throw new BadgeConfigurationError(
-      "PRIVATE_KEY must be a server-only 32-byte private key."
+      "PRIVATE_KEY must contain exactly 64 hexadecimal characters, with an optional 0x prefix."
     );
   }
 

@@ -12,7 +12,9 @@ test("badge vouchers use the shared server-only PRIVATE_KEY", async () => {
     readFile(new URL("docs/BASE_APP_MISSIONS_SETUP.md", root), "utf8"),
   ]);
 
-  assert.match(voucher, /process\.env\.PRIVATE_KEY\?\.trim\(\)/);
+  assert.match(voucher, /normalizePrivateKey\(process\.env\.PRIVATE_KEY\)/);
+  assert.match(voucher, /\^\[0-9a-fA-F\]\{64\}\$/);
+  assert.match(voucher, /hasMatchingQuotes/);
   assert.doesNotMatch(voucher, /BADGE_CLAIM_SIGNER_PRIVATE_KEY/);
   assert.match(envExample, /^PRIVATE_KEY=0xYOUR_SERVER_ONLY_32_BYTE_PRIVATE_KEY$/m);
   assert.doesNotMatch(envExample, /BADGE_CLAIM_SIGNER_PRIVATE_KEY/);
