@@ -10,6 +10,7 @@ const migrationFiles = [
   "20260811173610_harden_legacy_activity_privileges.sql",
   "20260811202443_redefine_first_stroke_verified_creation.sql",
   "20260813163658_expand_verified_missions.sql",
+  "20260814130948_replace_curator_with_trade_missions.sql",
 ];
 
 test(
@@ -258,6 +259,7 @@ test(
       const catalog = await db.query(`
         select slug
         from public.mission_definitions
+        where is_active = true
         order by sort_order;
       `);
       assert.deepEqual(
@@ -265,12 +267,29 @@ test(
         [
           "first-stroke",
           "collector",
-          "curator",
           "creator-journey",
           "ecosystem-builder",
           "base-regular",
+          "active-trader",
+          "diverse-collector",
+          "round-trip",
+          "trader-veteran",
+          "market-regular",
+          "badge-hunter",
+          "badge-master",
         ]
       );
+      await db.exec("reset role");
+      const archivedCurator = await db.query(`
+        select is_active, badge_token_id
+        from public.mission_definitions
+        where slug = 'curator';
+      `);
+      assert.deepEqual(archivedCurator.rows[0], {
+        is_active: false,
+        badge_token_id: 3,
+      });
+      await db.exec("set role anon");
       await assert.rejects(() => db.query("select * from public.user_badges"));
 
       await db.exec(`

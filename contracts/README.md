@@ -32,7 +32,7 @@ Deploy with these constructor arguments:
 2. `initialClaimSigner`: the address derived from the server-side
    server-only `PRIVATE_KEY`.
 3. `initialBaseURI`: the HTTPS or IPFS directory containing `1.json` through
-   `6.json`. It must end with `/`; the contract appends `<tokenId>.json`.
+   `13.json`. It must end with `/`; the contract appends `<tokenId>.json`.
 
 The matching metadata files are included in `metadata/`. The production artwork
 and metadata are pinned to IPFS; the reproducible CIDs and gateway paths are in
@@ -50,6 +50,16 @@ deployment, update the contract with `setBaseURI` before enabling claims.
 | `4` | `creator-journey` | `metadata/4.json` |
 | `5` | `ecosystem-builder` | `metadata/5.json` |
 | `6` | `base-regular` | `metadata/6.json` |
+| `7` | `active-trader` | `metadata/7.json` |
+| `8` | `diverse-collector` | `metadata/8.json` |
+| `9` | `round-trip` | `metadata/9.json` |
+| `10` | `trader-veteran` | `metadata/10.json` |
+| `11` | `market-regular` | `metadata/11.json` |
+| `12` | `badge-hunter` | `metadata/12.json` |
+| `13` | `badge-master` | `metadata/13.json` |
+
+Token ID `3` is retained for historical Curator claims but its mission is no
+longer active. Token IDs are never reused.
 
 The contract itself accepts any non-zero token ID; this table is the mapping
 used by the DrawCoin mission catalog. The server must issue claim vouchers only
@@ -95,6 +105,6 @@ spend limits in addition to allowlisting only the badge contract and its
 `claim` function. Register `BASE_APP_URL` exactly as written in the Base
 Dashboard project.
 
-Before enabling production claims, verify that `uri(1)` through `uri(6)` each
+Before enabling production claims, verify that `uri(1)` through `uri(13)` each
 resolve to valid JSON and that every metadata `image` URL resolves to its
 matching badge artwork.

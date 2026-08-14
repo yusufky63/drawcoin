@@ -42,6 +42,16 @@ interface UserBadgeRow {
   claimed_at: string | null;
 }
 
+interface VerifiedTransactionRow {
+  type: string | null;
+  timestamp: string | null;
+  token_address: string | null;
+  coin:
+    | { creator_address: string | null }
+    | Array<{ creator_address: string | null }>
+    | null;
+}
+
 const TRANSACTION_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 export function normalizeMissionAddress(address: string): `0x${string}` {
@@ -81,7 +91,7 @@ async function getMissionDefinitions(
 }
 
 export async function getMissionCatalog(): Promise<MissionCatalog> {
-  const definitions = await getMissionDefinitions(false);
+  const definitions = await getMissionDefinitions(true);
   const claiming = getBadgeConfigurationStatus();
 
   return {
@@ -116,8 +126,7 @@ async function getMetricValues(
   verified: Record<MissionMetric, number>;
   legacy: Record<MissionMetric, number>;
 }> {
-  const [verifiedCreationsResult, transactionsResult, watchlistResult, legacyWatchlistResult] =
-    await Promise.all([
+  const [verifiedCreationsResult, transactionsResult] = await Promise.all([
       supabaseAdmin
         .from("drawcoins")
         .select("created_at")
@@ -125,19 +134,11 @@ async function getMetricValues(
         .not("verified_at", "is", null),
       supabaseAdmin
         .from("transactions")
-        .select("type, timestamp")
+        .select(
+          "type, timestamp, token_address, coin:drawcoins!transactions_token_address_fkey(creator_address)"
+        )
         .ilike("user_address", address)
         .not("verified_at", "is", null),
-      supabaseAdmin
-        .from("watchlists")
-        .select("id", { count: "exact", head: true })
-        .ilike("user_address", address)
-        .not("verified_at", "is", null),
-      supabaseAdmin
-        .from("watchlists")
-        .select("id", { count: "exact", head: true })
-        .ilike("user_address", address)
-        .is("verified_at", null),
     ]);
 
   assertNoQueryError(
@@ -148,32 +149,34 @@ async function getMetricValues(
     "Unable to load verified transactions",
     transactionsResult.error
   );
-  assertNoQueryError(
-    "Unable to count distinct watchlist tokens",
-    watchlistResult.error
-  );
-  assertNoQueryError(
-    "Unable to count legacy watchlist tokens",
-    legacyWatchlistResult.error
-  );
+  const transactions = (transactionsResult.data ?? []) as unknown as VerifiedTransactionRow[];
 
   return {
     verified: calculateMissionMetricValues({
+      walletAddress: address,
       verifiedCreationDates: (verifiedCreationsResult.data ?? []).map(
         (row) => row.created_at ?? null
       ),
-      verifiedTransactions: (transactionsResult.data ?? []).map((row) => ({
+      verifiedTransactions: transactions.map((row) => ({
         type: row.type ?? null,
         timestamp: row.timestamp ?? null,
+        tokenAddress: row.token_address ?? null,
+        creatorAddress: Array.isArray(row.coin)
+          ? row.coin[0]?.creator_address ?? null
+          : row.coin?.creator_address ?? null,
       })),
-      verifiedWatchlistCount: watchlistResult.count ?? 0,
     }),
     legacy: {
       verified_creation: 0,
       verified_buy: 0,
-      watchlist_token: legacyWatchlistResult.count ?? 0,
+      watchlist_token: 0,
       ecosystem_role: 0,
       verified_activity_day: 0,
+      verified_trade: 0,
+      distinct_collected_coin: 0,
+      round_trip_token: 0,
+      verified_trade_day: 0,
+      completed_standard_mission: 0,
     },
   };
 }
@@ -204,15 +207,11 @@ export async function evaluateMissions(
     existingProgress.map((row) => [row.mission_id, row])
   );
   const evaluatedAt = new Date().toISOString();
-  const hasMissionActivity = Object.values(metricValues.verified).some(
-    (value) => value > 0
-  );
-  const shouldPersistProgress =
-    existingProgress.length > 0 || hasMissionActivity;
-
-  const progressRows = definitions.map((mission) => {
+  const buildProgressRow = (
+    mission: MissionDefinitionRow,
+    measuredProgress: number
+  ) => {
     const previous = progressByMissionId.get(mission.id);
-    const measuredProgress = metricValues.verified[mission.metric];
     const completedAt =
       previous?.completed_at ??
       (measuredProgress >= mission.threshold ? evaluatedAt : null);
@@ -226,7 +225,37 @@ export async function evaluateMissions(
       completed_at: completedAt,
       updated_at: evaluatedAt,
     };
-  });
+  };
+
+  // Meta badges are evaluated after ordinary missions so they cannot count
+  // themselves or create a completion cycle.
+  const standardProgressRows = definitions
+    .filter((mission) => mission.metric !== "completed_standard_mission")
+    .map((mission) =>
+      buildProgressRow(mission, metricValues.verified[mission.metric])
+    );
+  metricValues.verified.completed_standard_mission = standardProgressRows.filter(
+    (row) => row.completed_at !== null
+  ).length;
+
+  const standardProgressByMissionId = new Map(
+    standardProgressRows.map((row) => [row.mission_id, row])
+  );
+  const progressRows = definitions.map((mission) =>
+    mission.metric === "completed_standard_mission"
+      ? buildProgressRow(
+          mission,
+          metricValues.verified.completed_standard_mission
+        )
+      : standardProgressByMissionId.get(mission.id) ??
+        buildProgressRow(mission, metricValues.verified[mission.metric])
+  );
+
+  const hasMissionActivity = Object.values(metricValues.verified).some(
+    (value) => value > 0
+  );
+  const shouldPersistProgress =
+    existingProgress.length > 0 || hasMissionActivity;
 
   if (shouldPersistProgress && progressRows.length > 0) {
     const upsertResult = await supabaseAdmin

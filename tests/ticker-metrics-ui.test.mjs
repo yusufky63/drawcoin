@@ -53,6 +53,10 @@ test("ticker visibly labels market cap and holders without price", () => {
   assert.match(tickerSource, /aria-label=.*accessibleMetrics/);
   assert.match(tickerSource, /h-10/);
   assert.match(tickerSource, /keepPreviousData: true/);
+  assert.match(tickerSource, /\{token\.name\}/);
+  assert.doesNotMatch(tickerSource, /\$\{token\.symbol\}/);
+  assert.match(tickerSource, /src=\{token\.imageUrl \|\| "\/icon\.png"\}/);
+  assert.doesNotMatch(tickerSource, /hidden h-5 w-5/);
 });
 
 test("home and collection headings use the project Poppins family", () => {

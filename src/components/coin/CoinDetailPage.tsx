@@ -7,7 +7,7 @@ import {
   usePublicClient,
   useSwitchChain,
 } from "wagmi";
-import { formatEther, erc20Abi } from "viem";
+import { erc20Abi } from "viem";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { Coin } from "../../lib/supabase";
@@ -22,12 +22,23 @@ import {
   isZoraTradeWalletSupported,
   ZORA_TRADE_EOA_ONLY_MESSAGE,
 } from "../../lib/zoraTradeSafety";
+import {
+  BASE_USDC_ADDRESS,
+  BASE_USDC_DECIMALS,
+  ETH_GAS_RESERVE_WEI,
+  formatTradeBalance,
+  parseTradeAmount,
+} from "../../lib/tradeAmount";
+import { getWalletActionErrorMessage } from "../../lib/walletActionError";
 
 // New Components
 import { CoinHeader } from "./details/CoinHeader";
 import { CoinVisuals } from "./details/CoinVisuals";
 import { CoinSummaryCard } from "./details/CoinSummaryCard";
-import { CoinTradeCard } from "./details/CoinTradeCard";
+import {
+  CoinTradeCard,
+  type BuyCurrency,
+} from "./details/CoinTradeCard";
 import { CoinInfoSection } from "./details/CoinInfoSection";
 
 interface CoinDetailPageProps {
@@ -50,8 +61,11 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const [amount, setAmount] = useState<string>("");
   const [slippage, setSlippage] = useState(0.05); // 5% default slippage
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
-  const [ethBalance, setEthBalance] = useState<string>("0");
-  const [tokenBalance, setTokenBalance] = useState<string>("0");
+  const [buyCurrency, setBuyCurrency] = useState<BuyCurrency>("ETH");
+  const [ethBalanceRaw, setEthBalanceRaw] = useState(BigInt(0));
+  const [usdcBalanceRaw, setUsdcBalanceRaw] = useState(BigInt(0));
+  const [tokenBalanceRaw, setTokenBalanceRaw] = useState(BigInt(0));
+  const [tokenDecimals, setTokenDecimals] = useState(18);
   const [ethPrice, setEthPrice] = useState<number>(0);
   const [marketData, setMarketData] = useState<any>(null);
   const [poolAddress, setPoolAddress] = useState<string | null>(null);
@@ -145,19 +159,39 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
     if (!address || !publicClient) return;
 
     try {
-      // ETH Balance
-      const ethBal = await publicClient.getBalance({ address });
-      setEthBalance(parseFloat(formatEther(ethBal)).toFixed(4));
+      const [ethBal, tokenBal, decimals, usdcBal] = await Promise.all([
+        publicClient.getBalance({ address }),
+        publicClient.readContract({
+          address: tokenContractAddress as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        }),
+        publicClient.readContract({
+          address: tokenContractAddress as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "decimals",
+        }),
+        publicClient.readContract({
+          address: BASE_USDC_ADDRESS,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        }),
+      ]);
+      const verifiedDecimals = Number(decimals);
+      if (
+        !Number.isInteger(verifiedDecimals) ||
+        verifiedDecimals < 0 ||
+        verifiedDecimals > 255
+      ) {
+        throw new Error("Token returned invalid decimals.");
+      }
 
-      // Token Balance
-      const tokenBal = await publicClient.readContract({
-        address: tokenContractAddress as `0x${string}`,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      });
-      setTokenBalance(formatEther(tokenBal as bigint));
-
+      setEthBalanceRaw(ethBal);
+      setTokenBalanceRaw(tokenBal as bigint);
+      setTokenDecimals(verifiedDecimals);
+      setUsdcBalanceRaw(usdcBal as bigint);
     } catch (error) {
       console.error("Error fetching balances:", error);
     }
@@ -171,6 +205,38 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
     }
   }, [isConnected, fetchBalances]);
 
+  useEffect(() => {
+    setAmount("");
+  }, [buyCurrency, tokenContractAddress, tradeType]);
+
+  const amountDecimals =
+    tradeType === "sell"
+      ? tokenDecimals
+      : buyCurrency === "USDC"
+        ? BASE_USDC_DECIMALS
+        : 18;
+  const selectedBalanceRaw =
+    tradeType === "sell"
+      ? tokenBalanceRaw
+      : buyCurrency === "USDC"
+        ? usdcBalanceRaw
+        : ethBalanceRaw;
+  const balanceReserveRaw =
+    tradeType === "buy" && buyCurrency === "ETH"
+      ? ETH_GAS_RESERVE_WEI
+      : BigInt(0);
+  const ethBalance = formatTradeBalance(ethBalanceRaw, 18, 6);
+  const usdcBalance = formatTradeBalance(
+    usdcBalanceRaw,
+    BASE_USDC_DECIMALS,
+    2
+  );
+  const tokenBalance = formatTradeBalance(
+    tokenBalanceRaw,
+    tokenDecimals,
+    8
+  );
+
   // Handle Trade
   const handleTrade = async () => {
     if (!isConnected) {
@@ -183,7 +249,8 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       return;
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    const rawAmount = parseTradeAmount(amount, amountDecimals);
+    if (rawAmount === null) {
       toast.error("Please enter a valid amount");
       return;
     }
@@ -195,7 +262,7 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
         toast.error("Wallet client not available");
         return;
       }
-      const chainId = await publicClient.getChainId();
+      const chainId = await walletClient.getChainId();
 
       // Check if we're on Base mainnet (8453)
       if (chainId !== 8453) {
@@ -208,12 +275,10 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
       }
 
       // Import trade execution function
-      const { executeTrade } = await import("../../services/sdk/getTradeCoin");
-
-      const tradeParams = {
-        direction: tradeType, // 'buy' or 'sell'
-        coinAddress: token.contract_address,
-        amountIn: amount, // Keep as string
+      const { executeERC20Trade, executeTrade } = await import(
+        "../../services/sdk/getTradeCoin"
+      );
+      const commonTradeParams = {
         recipient: address!,
         slippage,
         walletClient,
@@ -222,22 +287,30 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
         walletConnectorId: connector?.id ?? "",
         switchChain,
       };
-
-      console.log("Executing trade with params:", tradeParams);
-
-      const result = (await executeTrade(tradeParams)) as any;
+      const result = (await (tradeType === "buy" && buyCurrency === "USDC"
+        ? executeERC20Trade({
+            ...commonTradeParams,
+            sellTokenAddress: BASE_USDC_ADDRESS,
+            buyTokenAddress: token.contract_address,
+            amountIn: rawAmount,
+            direction: "buy",
+            targetCoinAddress: token.contract_address,
+          })
+        : executeTrade({
+            ...commonTradeParams,
+            direction: tradeType,
+            coinAddress: token.contract_address,
+            amountIn: amount,
+          }))) as { transactionHash?: string; hash?: string };
 
       // executeTrade returns transaction receipt, check for hash
-      if (result && (result.transactionHash || result.hash)) {
-        const txHash = result.transactionHash || result.hash;
+      const txHash = result.transactionHash ?? result.hash;
+      if (txHash) {
         toast.success(
           `${
             tradeType === "buy" ? "Purchase" : "Sale"
           } successful! Tx: ${txHash.substring(0, 10)}...`
         );
-
-        // Analytics is already handled in getTradeCoin.js executeUniversalTrade
-        console.log("✅ Trade completed, analytics handled by SDK");
 
         setShowSuccessModal(true);
         setAmount(""); // Clear amount
@@ -247,22 +320,19 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
           fetchBalances();
         }, 2000);
       } else {
-        console.error("Trade result:", result);
         toast.error("Trade failed - no transaction hash received");
       }
-    } catch (error: any) {
-      console.error("Trade error:", error);
-
-      // Handle specific error types
-      if (error.message?.includes("User rejected")) {
-        toast.error("Transaction cancelled by user");
-      } else if (error.message?.includes("insufficient funds")) {
-        toast.error("Insufficient balance for this trade");
-      } else if (error.message?.includes("slippage")) {
-        toast.error("Price moved too much. Try increasing slippage tolerance.");
-      } else {
-        toast.error(error.message || "Trade failed. Please try again.");
-      }
+    } catch (error: unknown) {
+      console.error(
+        "Trade failed",
+        error instanceof Error ? error.name : "UnknownError"
+      );
+      toast.error(
+        getWalletActionErrorMessage(error, {
+          rejected: "Transaction cancelled.",
+          fallback: "Trade failed. Check the amount and try again.",
+        })
+      );
     } finally {
       setLoading(false);
     }
@@ -272,12 +342,11 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
   const usdValue = amount
     ? parseFloat(amount) *
       (tradeType === "buy"
-        ? ethPrice
+        ? buyCurrency === "USDC"
+          ? 1
+          : ethPrice
         : parseFloat(marketData?.tokenPrice?.priceInUsdc || "0"))
     : 0;
-
-  const maxBalance =
-    tradeType === "buy" ? parseFloat(ethBalance) : parseFloat(tokenBalance);
 
   // Show skeleton on initial load
   if (initialLoading) {
@@ -454,13 +523,18 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
               showSlippageSettings={showSlippageSettings}
               setShowSlippageSettings={setShowSlippageSettings}
               ethBalance={ethBalance}
+              usdcBalance={usdcBalance}
               tokenBalance={tokenBalance}
               handleTrade={handleTrade}
               loading={loading}
               isConnected={isConnected}
               isTradeWalletSupported={isTradeWalletSupported}
               usdValue={usdValue}
-              maxBalance={maxBalance}
+              balanceRaw={selectedBalanceRaw}
+              balanceDecimals={amountDecimals}
+              balanceReserveRaw={balanceReserveRaw}
+              buyCurrency={buyCurrency}
+              setBuyCurrency={setBuyCurrency}
             />
           </div>
         </div>

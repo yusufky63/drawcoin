@@ -15,6 +15,7 @@ import { base, baseSepolia } from "wagmi/chains";
 import { isAddressEqual, type Address, type Hex } from "viem";
 
 import { getMissionClaimAction } from "@/lib/missions/claimUi";
+import { getWalletActionErrorMessage } from "@/lib/walletActionError";
 import type {
   MissionCatalog,
   MissionCatalogItem,
@@ -56,10 +57,16 @@ const fetchJson = async <T,>(url: string): Promise<T> => {
 const missionGlyphs: Record<string, string> = {
   "first-stroke": "✦",
   collector: "◇",
-  curator: "♡",
   "creator-journey": "✎",
   "ecosystem-builder": "↔",
   "base-regular": "◷",
+  "active-trader": "↗",
+  "diverse-collector": "◈",
+  "round-trip": "↺",
+  "trader-veteran": "★",
+  "market-regular": "◴",
+  "badge-hunter": "✧",
+  "badge-master": "♛",
 };
 
 const missionGoalLabels: Record<MissionMetric, string> = {
@@ -68,15 +75,26 @@ const missionGoalLabels: Record<MissionMetric, string> = {
   watchlist_token: "saved token",
   ecosystem_role: "community role",
   verified_activity_day: "active day",
+  verified_trade: "verified trade",
+  distinct_collected_coin: "different coin",
+  round_trip_token: "round trip",
+  verified_trade_day: "trade day",
+  completed_standard_mission: "completed badge",
 };
 
 const missionDescriptions: Record<string, string> = {
   "first-stroke": "Create your first DrawCoin on Base.",
   collector: "Collect your first DrawCoin on Base.",
-  curator: "Save five DrawCoins to your watchlist.",
   "creator-journey": "Create three DrawCoins on Base.",
   "ecosystem-builder": "Create a DrawCoin, then collect one.",
   "base-regular": "Take part on three different days.",
+  "active-trader": "Complete five verified trades on Base.",
+  "diverse-collector": "Collect five DrawCoins from other creators.",
+  "round-trip": "Buy and later sell the same DrawCoin.",
+  "trader-veteran": "Complete twenty-five verified trades.",
+  "market-regular": "Trade on seven different days.",
+  "badge-hunter": "Complete five DrawCoin missions.",
+  "badge-master": "Complete all ten standard missions.",
 };
 
 function MissionCard({
@@ -413,7 +431,10 @@ export default function MissionsPage() {
         setActionNotice(`${mission.badge.name} was claimed on Base.`);
       } catch (error) {
         setActionError(
-          error instanceof Error ? error.message : "Badge claim failed."
+          getWalletActionErrorMessage(error, {
+            rejected: "Badge claim cancelled.",
+            fallback: "Badge claim failed. Please try again.",
+          })
         );
       } finally {
         try {

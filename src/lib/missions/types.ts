@@ -3,7 +3,12 @@ export type MissionMetric =
   | "verified_buy"
   | "watchlist_token"
   | "ecosystem_role"
-  | "verified_activity_day";
+  | "verified_activity_day"
+  | "verified_trade"
+  | "distinct_collected_coin"
+  | "round_trip_token"
+  | "verified_trade_day"
+  | "completed_standard_mission";
 
 export type BadgeClaimStatus =
   | "unclaimed"

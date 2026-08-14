@@ -4,7 +4,7 @@
  */
 
 import { tradeCoin, setApiKey } from "@zoralabs/coins-sdk";
-import { parseEther, parseUnits } from "viem";
+import { getAddress, isAddressEqual, parseEther, parseUnits } from "viem";
 import { checkAndSwitchNetwork } from "../networkUtils";
 import {
   getZORATokenAddress,
@@ -125,6 +125,8 @@ export {
  * @param {string} params.walletConnectorId - Reviewed EOA connector ID
  * @param {Function} [params.switchChain] - Network switch function
  * @param {boolean} [params.validateTransaction] - Validate transaction (default: true)
+ * @param {string} [params.analyticsCoinAddress] - Verified DrawCoin recorded after success
+ * @param {"buy"|"sell"} [params.analyticsTradeType] - Direction recorded after success
  * @returns {Promise<Object>} Transaction receipt
  */
 export async function executeUniversalTrade({
@@ -140,16 +142,23 @@ export async function executeUniversalTrade({
   walletConnectorId,
   switchChain,
   validateTransaction = true,
+  analyticsCoinAddress,
+  analyticsTradeType,
 }) {
   const safeSlippage = assertSafeTradeSlippage(slippage);
   assertZoraTradeWalletSupported(walletConnectorId);
+  const normalizedSender = getAddress(sender);
+  const normalizedRecipient = getAddress(recipient || sender);
+  if (!isAddressEqual(normalizedSender, normalizedRecipient)) {
+    throw new Error("Trade output must be sent to the connected wallet.");
+  }
   const tradeParameters = {
     sell: sellToken,
     buy: buyToken,
     amountIn,
     slippage: safeSlippage,
-    sender,
-    recipient: recipient || sender,
+    sender: normalizedSender,
+    recipient: normalizedRecipient,
   };
 
   // Transient read/preflight failures are safe to retry because no transaction
@@ -220,11 +229,14 @@ export async function executeUniversalTrade({
       // Record analytics for trade
       try {
         // Determine trade direction and amounts
-        const isBuy = buyToken.type === "erc20" && sellToken.type === "eth";
-        const isSell = sellToken.type === "erc20" && buyToken.type === "eth";
+        const inferredBuy = buyToken.type === "erc20" && sellToken.type === "eth";
+        const inferredSell = sellToken.type === "erc20" && buyToken.type === "eth";
+        const isBuy = analyticsTradeType === "buy" || (!analyticsTradeType && inferredBuy);
+        const isSell = analyticsTradeType === "sell" || (!analyticsTradeType && inferredSell);
 
         if (isBuy || isSell) {
-          const tokenAddress = isBuy ? buyToken.address : sellToken.address;
+          const tokenAddress = analyticsCoinAddress ||
+            (isBuy ? buyToken.address : sellToken.address);
           const tradeType = isBuy ? "buy" : "sell";
 
           // Calculate actual amounts
@@ -233,7 +245,7 @@ export async function executeUniversalTrade({
 
           if (isBuy) {
             // For buy: user spent ETH
-            amountEth = Number(amountIn) / 1e18;
+            amountEth = sellToken.type === "eth" ? Number(amountIn) / 1e18 : 0;
 
             // Try to get token amount from result - try multiple sources
             if (result.buyAmount) {
@@ -257,7 +269,7 @@ export async function executeUniversalTrade({
                     // Check if this is a transfer TO the user (topic[2] = recipient)
                     const recipient = log.topics[2];
                     const userAddressPadded =
-                      "0x" + sender.slice(2).toLowerCase().padStart(64, "0");
+                      "0x" + normalizedSender.slice(2).toLowerCase().padStart(64, "0");
 
                     if (
                       recipient &&
@@ -377,7 +389,7 @@ export async function executeUniversalTrade({
 
           const transactionData = {
             tx_hash: txHash,
-            user_address: sender,
+            user_address: normalizedSender,
             token_address: tokenAddress,
             type: tradeType,
             amount_token: amountToken,
@@ -499,6 +511,8 @@ export async function executeTrade({
     account,
     walletConnectorId,
     switchChain,
+    analyticsCoinAddress: coinAddress,
+    analyticsTradeType: direction,
   });
 }
 
@@ -515,6 +529,8 @@ export async function executeTrade({
  * @param {Object} params.account - Account object
  * @param {string} params.walletConnectorId - Reviewed EOA connector ID
  * @param {Function} [params.switchChain] - Network switch function
+ * @param {"buy"|"sell"} params.direction - DrawCoin trade direction for verification
+ * @param {string} params.targetCoinAddress - DrawCoin address recorded after success
  * @returns {Promise<Object>} Transaction receipt
  */
 export async function executeERC20Trade({
@@ -528,7 +544,12 @@ export async function executeERC20Trade({
   account,
   walletConnectorId,
   switchChain,
+  direction,
+  targetCoinAddress,
 }) {
+  if (direction !== "buy" && direction !== "sell") {
+    throw new TypeError("Trade direction must be buy or sell.");
+  }
   const safeSlippage = assertSafeTradeSlippage(slippage);
   assertZoraTradeWalletSupported(walletConnectorId);
 
@@ -547,6 +568,8 @@ export async function executeERC20Trade({
     account,
     walletConnectorId,
     switchChain,
+    analyticsCoinAddress: targetCoinAddress,
+    analyticsTradeType: direction,
   });
 }
 

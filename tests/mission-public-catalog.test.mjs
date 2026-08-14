@@ -26,8 +26,8 @@ const [serviceSource, pageSource, catalogRouteSource, voucherSource, statusSourc
     ),
   ]);
 
-test("the public catalog lists every definition without requiring a wallet session", () => {
-  assert.match(serviceSource, /getMissionDefinitions\(false\)/);
+test("the public catalog lists every active definition without requiring a wallet session", () => {
+  assert.match(serviceSource, /getMissionDefinitions\(true\)/);
   assert.match(pageSource, /useSWR<MissionCatalog>\(\s*"\/api\/missions\/catalog"/);
   assert.doesNotMatch(catalogRouteSource, /requireWalletSession|evaluateMissions/);
 

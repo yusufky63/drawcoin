@@ -224,17 +224,17 @@ test("trade paths use real balances and contain no fabricated 10M creator lock",
   );
 });
 
-test("trade UIs are ETH-only and expose no unsafe quick slippage option", async () => {
+test("the detail trade UI supports native USDC buys without unsafe amount rounding", async () => {
   const sources = await Promise.all(
     tradeUiPaths.map((path) => readFile(path, "utf8")),
   );
 
+  assert.match(sources[0], /Buy with ETH or native USDC on Base\./);
+  assert.match(sources[0], /\["ETH", "USDC"\]/);
+  assert.match(sources[0], /amountForPercentage/);
+  assert.doesNotMatch(sources[0], /0\.999|toFixed\(4\)/);
+
   for (const source of sources) {
-    assert.match(source, /Buys currently use ETH on Base\./);
-    assert.doesNotMatch(
-      source,
-      /selectedCurrency|usdcBalance|showTokenSelect|USDC_ADDRESS/,
-    );
     assert.doesNotMatch(source, /automatically retry/i);
     assert.match(source, /max="10"/);
 
@@ -272,5 +272,15 @@ test("buy and sell parameters match the installed Zora trade contract", () => {
   assert.match(
     sdkSource,
     /tradeCoin\(\{[\s\S]*?tradeParameters,[\s\S]*?walletClient,[\s\S]*?publicClient,[\s\S]*?validateTransaction/,
+  );
+  assert.match(
+    sdkSource,
+    /Trade output must be sent to the connected wallet\./,
+    "recipient must stay bound to the connected wallet",
+  );
+  assert.match(
+    sdkSource,
+    /analyticsCoinAddress:\s*targetCoinAddress/,
+    "ERC20-to-ERC20 buys must record the DrawCoin rather than USDC",
   );
 });

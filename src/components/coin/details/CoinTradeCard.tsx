@@ -1,6 +1,13 @@
 import React from "react";
 import { Coin } from "../../../lib/supabase";
 import { ZORA_TRADE_EOA_ONLY_MESSAGE } from "../../../lib/zoraTradeSafety";
+import {
+  amountForPercentage,
+  parseTradeAmount,
+  percentageForAmount,
+} from "../../../lib/tradeAmount";
+
+export type BuyCurrency = "ETH" | "USDC";
 
 interface CoinTradeCardProps {
   token: Coin;
@@ -13,13 +20,18 @@ interface CoinTradeCardProps {
   showSlippageSettings: boolean;
   setShowSlippageSettings: (show: boolean) => void;
   ethBalance: string;
+  usdcBalance: string;
   tokenBalance: string;
   handleTrade: () => void;
   loading: boolean;
   isConnected: boolean;
   isTradeWalletSupported: boolean;
   usdValue: number;
-  maxBalance: number;
+  balanceRaw: bigint;
+  balanceDecimals: number;
+  balanceReserveRaw: bigint;
+  buyCurrency: BuyCurrency;
+  setBuyCurrency: (currency: BuyCurrency) => void;
 }
 
 export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
@@ -33,14 +45,37 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
   showSlippageSettings,
   setShowSlippageSettings,
   ethBalance,
+  usdcBalance,
   tokenBalance,
   handleTrade,
   loading,
   isConnected,
   isTradeWalletSupported,
   usdValue,
-  maxBalance,
+  balanceRaw,
+  balanceDecimals,
+  balanceReserveRaw,
+  buyCurrency,
+  setBuyCurrency,
 }) => {
+  const sliderPercentage = percentageForAmount(
+    amount,
+    balanceDecimals,
+    balanceRaw,
+    balanceReserveRaw
+  );
+  const hasValidAmount = parseTradeAmount(amount, balanceDecimals) !== null;
+  const setPercentage = (percentage: number) => {
+    setAmount(
+      amountForPercentage(
+        balanceRaw,
+        balanceDecimals,
+        percentage,
+        balanceReserveRaw
+      )
+    );
+  };
+
   return (
     <div>
       <div className="">
@@ -165,7 +200,9 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
             </label>
             <div className="text-xs text-art-gray-500">
               {tradeType === "buy"
-                ? `Your ETH: ${ethBalance} ETH`
+                ? `Your ${buyCurrency}: ${
+                    buyCurrency === "ETH" ? ethBalance : usdcBalance
+                  } ${buyCurrency}`
                 : `Your ${token.symbol}: ${tokenBalance} ${token.symbol}`}
             </div>
           </div>
@@ -178,19 +215,32 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
               placeholder="0.0"
               className="hand-drawn-input flex-1 p-2 font-mono text-lg"
             />
-            {/* This trade path currently settles buys with native ETH only. */}
             {tradeType === "buy" && (
-              <span
-                className="hand-drawn-btn text-sm font-bold py-2 px-3 flex-shrink-0 cursor-default"
-                aria-label="Buy currency: ETH only"
+              <div
+                className="inline-flex shrink-0 rounded-lg border-2 border-art-gray-900 bg-white p-0.5"
+                aria-label="Buy currency"
               >
-                ETH
-              </span>
+                {(["ETH", "USDC"] as const).map((currency) => (
+                  <button
+                    key={currency}
+                    type="button"
+                    onClick={() => setBuyCurrency(currency)}
+                    aria-pressed={buyCurrency === currency}
+                    className={`rounded-md px-2 py-1.5 text-xs font-bold transition-colors ${
+                      buyCurrency === currency
+                        ? "bg-[var(--base-blue)] text-white"
+                        : "text-art-gray-600 hover:bg-art-gray-100"
+                    }`}
+                  >
+                    {currency}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
           {tradeType === "buy" && (
             <p className="mt-2 text-xs font-medium text-art-gray-600">
-              Buys currently use ETH on Base.
+              Buy with ETH or native USDC on Base.
             </p>
           )}
           {amount && (
@@ -210,26 +260,14 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
             min="0"
             max="100"
             step="1"
-            value={(() => {
-              if (!amount || !maxBalance) return 0;
-              return (parseFloat(amount) / maxBalance) * 100;
-            })()}
-            onChange={(e) => {
-              const percentage = parseFloat(e.target.value) / 100;
-
-              // Apply safety buffer
-              const safetyFactor = percentage === 1 ? 0.999 : percentage;
-
-              const newAmount = (maxBalance * safetyFactor).toFixed(4);
-              setAmount(newAmount);
-            }}
+            value={sliderPercentage}
+            onChange={(e) => setPercentage(Number(e.target.value))}
             className="hand-drawn-input w-full h-3"
             style={{
               background: (() => {
-                if (!amount || !maxBalance)
+                if (!hasValidAmount || balanceRaw === BigInt(0))
                   return "linear-gradient(to right, #e2e8f0 0%, #e2e8f0 100%)";
-                const percentage = (parseFloat(amount) / maxBalance) * 100;
-                return `linear-gradient(to right, var(--base-blue) 0%, var(--base-blue) ${percentage}%, #e2e8f0 ${percentage}%, #e2e8f0 100%)`;
+                return `linear-gradient(to right, var(--base-blue) 0%, var(--base-blue) ${sliderPercentage}%, #e2e8f0 ${sliderPercentage}%, #e2e8f0 100%)`;
               })(),
             }}
           />
@@ -246,22 +284,18 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
             Quick Amount
           </label>
           <div className="grid grid-cols-4 gap-2">
-            {[0.25, 0.5, 0.75, 1].map((p, index) => (
+            {[25, 50, 75, 100].map((percentage, index) => (
               <button
-                key={p}
-                onClick={() => {
-                  const safetyFactor = p === 1 ? 0.999 : p;
-
-                  const newAmount = (maxBalance * safetyFactor).toFixed(4);
-                  setAmount(newAmount);
-                }}
+                key={percentage}
+                type="button"
+                onClick={() => setPercentage(percentage)}
                 className="hand-drawn-btn text-xs font-bold"
                 style={{
                   padding: "0.5rem 0.75rem",
                   transform: `rotate(${index % 2 === 0 ? "1deg" : "-1deg"})`,
                 }}
               >
-                {Math.round(p * 100)}%
+                {percentage}%
               </button>
             ))}
           </div>
@@ -275,8 +309,8 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
           >
             <div className="text-xs text-art-gray-600">
               {tradeType === "buy" ? "Buy" : "Sell"}{" "}
-              {parseFloat(amount).toFixed(4)}{" "}
-              {tradeType === "buy" ? "ETH" : token.symbol}
+              {amount}{" "}
+              {tradeType === "buy" ? buyCurrency : token.symbol}
               <span className="text-art-gray-500 ml-2">
                 ≈ ${usdValue?.toFixed(2) || "0.00"} USD
               </span>
@@ -320,8 +354,7 @@ export const CoinTradeCard: React.FC<CoinTradeCardProps> = ({
             onClick={handleTrade}
             disabled={
               loading ||
-              !amount ||
-              parseFloat(amount) <= 0 ||
+              !hasValidAmount ||
               !isTradeWalletSupported
             }
             className={`w-full hand-drawn-btn text-sm font-bold py-3 disabled:opacity-50 disabled:cursor-not-allowed ${

@@ -56,21 +56,21 @@ function tickerItems(tokens: TickerTokenDto[], copy: "primary" | "duplicate") {
         key={`${copy}-${token.address}`}
         href={`/coin/${token.address}`}
         tabIndex={copy === "duplicate" ? -1 : undefined}
-        aria-label={`${token.name} (${token.symbol})${accessibleMetrics.length ? `, ${accessibleMetrics.join(", ")}` : ""}`}
+        aria-label={`${token.name}${accessibleMetrics.length ? `, ${accessibleMetrics.join(", ")}` : ""}`}
         className="mx-2 inline-flex h-9 shrink-0 items-center gap-2 rounded-[12px_5px_10px_7px] border border-transparent px-2 text-[10px] text-art-gray-600 transition-colors hover:border-[#0052ff]/25 hover:bg-white hover:text-art-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0052ff] sm:mx-3 sm:text-[11px]"
       >
-        {token.imageUrl ? (
-          <SafeImage
-            src={token.imageUrl}
-            alt=""
-            width={20}
-            height={20}
-            fallbackText=""
-            fallbackIcon={<Camera aria-hidden="true" size={10} />}
-            className="hidden h-5 w-5 rounded-full border border-art-gray-300 object-cover sm:block [&_.text-retro-primary]:mb-0 [&_.text-retro-secondary]:hidden"
-          />
-        ) : null}
-        <span className="font-bold text-art-gray-900">${token.symbol}</span>
+        <SafeImage
+          src={token.imageUrl || "/icon.png"}
+          alt=""
+          width={20}
+          height={20}
+          fallbackText=""
+          fallbackIcon={<Camera aria-hidden="true" size={10} />}
+          className="h-5 w-5 rounded-full border border-art-gray-300 object-cover [&_.text-retro-primary]:mb-0 [&_.text-retro-secondary]:hidden"
+        />
+        <span className="max-w-28 truncate font-bold text-art-gray-900 sm:max-w-40">
+          {token.name}
+        </span>
         {activity ? (
           <span
             className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide ${
