@@ -218,13 +218,6 @@ function MissionCard({
               style={{ width: `${percentage}%` }}
             />
           </div>
-          {progressMission.legacyProgress > 0 ? (
-            <p className="mt-2 text-xs font-semibold text-amber-700">
-              {progressMission.legacyProgress} older item
-              {progressMission.legacyProgress === 1 ? "" : "s"} waiting for
-              confirmation
-            </p>
-          ) : null}
         </div>
       ) : (
         <div className="mt-4 flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2.5 text-xs font-bold text-blue-800 sm:mt-5">

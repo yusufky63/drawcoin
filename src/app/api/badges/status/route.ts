@@ -8,6 +8,7 @@ import {
 import { drawCoinMissionBadgesAbi } from "@/lib/badges/abi";
 import {
   BadgeConfigurationError,
+  BadgeRpcUnavailableError,
   getBadgeConfigurationStatus,
   getBadgeRuntimeConfig,
 } from "@/lib/badges/config";
@@ -88,6 +89,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: "Onchain badge claiming is not configured.", detail: error.message },
         { status: 503, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    if (error instanceof BadgeRpcUnavailableError) {
+      return NextResponse.json(
+        { error: "Badge status is temporarily unavailable." },
+        {
+          status: 503,
+          headers: { "Cache-Control": "no-store", "Retry-After": "3" },
+        }
       );
     }
     return NextResponse.json(
@@ -215,6 +225,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Onchain badge claiming is not configured.", detail: error.message },
         { status: 503, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    if (error instanceof BadgeRpcUnavailableError) {
+      return NextResponse.json(
+        { error: "Badge confirmation is temporarily unavailable." },
+        {
+          status: 503,
+          headers: { "Cache-Control": "no-store", "Retry-After": "3" },
+        }
       );
     }
     if (error instanceof SyntaxError) {

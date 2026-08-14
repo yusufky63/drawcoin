@@ -13,11 +13,13 @@ import type {
   MissionSnapshot,
 } from "@/lib/missions/types";
 
-import { drawCoinMissionBadgesAbi } from "./abi";
+import {
+  readBadgeClaimStates,
+  readBadgeReconciliationState,
+} from "./chainReads";
 import {
   getBadgeConfigurationStatus,
   getBadgeRuntimeConfig,
-  type BadgeRuntimeConfig,
 } from "./config";
 import {
   applyCanonicalBadgeClaim,
@@ -75,19 +77,6 @@ async function persistCanonicalClaim(input: {
   );
 }
 
-async function readClaimed(
-  config: BadgeRuntimeConfig,
-  address: `0x${string}`,
-  tokenId: number
-): Promise<boolean> {
-  return config.publicClient.readContract({
-    address: config.contractAddress,
-    abi: drawCoinMissionBadgesAbi,
-    functionName: "claimed",
-    args: [address, BigInt(tokenId)],
-  });
-}
-
 export async function reconcileOnchainBadgeClaim(input: {
   address: `0x${string}`;
   mission: CompletedMissionForClaim;
@@ -95,21 +84,11 @@ export async function reconcileOnchainBadgeClaim(input: {
 }) {
   const config = getBadgeRuntimeConfig();
   const tokenId = BigInt(input.mission.badge.tokenId);
-  const [claimed, balance, nonce] = await Promise.all([
-    readClaimed(config, input.address, input.mission.badge.tokenId),
-    config.publicClient.readContract({
-      address: config.contractAddress,
-      abi: drawCoinMissionBadgesAbi,
-      functionName: "balanceOf",
-      args: [input.address, tokenId],
-    }),
-    config.publicClient.readContract({
-      address: config.contractAddress,
-      abi: drawCoinMissionBadgesAbi,
-      functionName: "nonces",
-      args: [input.address],
-    }),
-  ]);
+  const { claimed, balance, nonce } = await readBadgeReconciliationState(
+    config,
+    input.address,
+    tokenId
+  );
   const reconciliation = await persistCanonicalClaim({
     ...input,
     onchainClaimed: claimed,
@@ -144,11 +123,19 @@ export async function reconcileMissionSnapshotOnchain(
   if (candidates.length === 0) return snapshot;
 
   const config = getBadgeRuntimeConfig();
-  const claimedStates = await Promise.all(
-    candidates.map((mission) =>
-      readClaimed(config, snapshot.address, mission.badge.tokenId)
-    )
-  );
+  let claimedStates: readonly boolean[];
+  try {
+    claimedStates = await readBadgeClaimStates(
+      config,
+      snapshot.address,
+      candidates.map((mission) => BigInt(mission.badge.tokenId))
+    );
+  } catch {
+    // Mission progress is canonical in Supabase. Onchain reconciliation is a
+    // recovery aid and must never make the whole mission catalog unavailable.
+    console.warn("Badge claim reconciliation deferred because Base RPC is unavailable.");
+    return snapshot;
+  }
   const claimedMissions = candidates.filter(
     (_mission, index) => claimedStates[index]
   );

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   BadgeConfigurationError,
+  BadgeRpcUnavailableError,
   getBadgeConfigurationStatus,
 } from "@/lib/badges/config";
 import {
@@ -116,6 +117,17 @@ export async function POST(request: NextRequest) {
           configuration: getBadgeConfigurationStatus(),
         },
         { status: 503, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+    if (error instanceof BadgeRpcUnavailableError) {
+      return NextResponse.json(
+        {
+          error: "Badge claiming is temporarily busy. Please try again shortly.",
+        },
+        {
+          status: 503,
+          headers: { "Cache-Control": "no-store", "Retry-After": "3" },
+        }
       );
     }
     if (error instanceof SyntaxError) {

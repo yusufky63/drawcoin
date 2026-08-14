@@ -21,6 +21,7 @@ import {
   BadgeConfigurationError,
   getBadgeRuntimeConfig,
 } from "@/lib/badges/config";
+import { readBadgeVoucherState } from "@/lib/badges/chainReads";
 import {
   issuePaymasterGrant,
   type PaymasterGrantRecord,
@@ -147,34 +148,11 @@ export async function createBadgeClaimVoucher(
   const account = getAddress(accountAddress);
   const signer = getClaimSigner();
 
-  const contractCode = await config.publicClient.getBytecode({
-    address: config.contractAddress,
-  });
-  if (!contractCode || contractCode === "0x") {
-    throw new BadgeConfigurationError(
-      "BADGE_CONTRACT_ADDRESS does not contain deployed contract code on the configured chain."
-    );
-  }
-
-  const [contractSigner, nonce, wasClaimed] = await Promise.all([
-    config.publicClient.readContract({
-      address: config.contractAddress,
-      abi: drawCoinMissionBadgesAbi,
-      functionName: "claimSigner",
-    }),
-    config.publicClient.readContract({
-      address: config.contractAddress,
-      abi: drawCoinMissionBadgesAbi,
-      functionName: "nonces",
-      args: [account],
-    }),
-    config.publicClient.readContract({
-      address: config.contractAddress,
-      abi: drawCoinMissionBadgesAbi,
-      functionName: "claimed",
-      args: [account, tokenId],
-    }),
-  ]);
+  const {
+    claimSigner: contractSigner,
+    nonce,
+    claimed: wasClaimed,
+  } = await readBadgeVoucherState(config, account, tokenId);
 
   if (getAddress(contractSigner) !== signer.address) {
     throw new BadgeConfigurationError(

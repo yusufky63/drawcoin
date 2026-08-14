@@ -18,6 +18,13 @@ export class BadgeConfigurationError extends Error {
   }
 }
 
+export class BadgeRpcUnavailableError extends Error {
+  constructor() {
+    super("Base RPC is temporarily unavailable.");
+    this.name = "BadgeRpcUnavailableError";
+  }
+}
+
 export type BadgeRuntimeConfig = ReturnType<typeof getBadgeRuntimeConfig>;
 
 function parseChainId(): (typeof SUPPORTED_BADGE_CHAIN_IDS)[number] {
@@ -80,7 +87,11 @@ export function getBadgeRuntimeConfig() {
     contractAddress: parseContractAddress(),
     publicClient: createPublicClient({
       chain,
-      transport: http(rpcUrl),
+      transport: http(rpcUrl, {
+        timeout: 5_000,
+        retryCount: 1,
+        retryDelay: 250,
+      }),
     }),
     voucherTtlSeconds: parseVoucherTtl(),
   };
