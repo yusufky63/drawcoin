@@ -494,17 +494,11 @@ export default function MissionsPage() {
 
         {hasConnectedWallet ? (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 sm:mt-6">
-            <div>
-              <p className="text-sm font-bold text-art-gray-900">
-                {snapshot
-                  ? `${completedMissionCount} of ${missionCount} missions completed`
-                  : "Loading your progress…"}
-              </p>
-              <p className="mt-1 hidden text-xs text-art-gray-500 sm:block">
-                {snapshot?.address.slice(0, 6) || address?.slice(0, 6)}…
-                {snapshot?.address.slice(-4) || address?.slice(-4)}
-              </p>
-            </div>
+            <p className="text-sm font-bold text-art-gray-900">
+              {snapshot
+                ? `${completedMissionCount} of ${missionCount} missions completed`
+                : "Loading your progress…"}
+            </p>
           </div>
         ) : (
           <div className="mt-4 rounded-xl border-2 border-dashed border-art-gray-300 bg-white px-3 py-3 sm:mt-5 sm:px-4">
@@ -533,6 +527,23 @@ export default function MissionsPage() {
             </div>
           </div>
         )}
+
+        {actionError ? (
+          <div
+            className="mt-4 rounded-xl border-2 border-red-700 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800"
+            role="alert"
+          >
+            {actionError}
+          </div>
+        ) : null}
+        {actionNotice ? (
+          <div
+            className="mt-4 rounded-xl border-2 border-green-700 bg-green-50 px-4 py-3 text-sm font-semibold text-green-800"
+            role="status"
+          >
+            {actionNotice}
+          </div>
+        ) : null}
 
         {hasConnectedWallet && missionsError && visibleMissions ? (
           <div
@@ -580,22 +591,6 @@ export default function MissionsPage() {
           </div>
         )}
 
-        {actionError ? (
-          <div
-            className="mx-auto mt-6 max-w-2xl rounded-lg border-2 border-red-700 bg-red-50 px-4 py-3 text-center text-sm font-semibold text-red-800"
-            role="alert"
-          >
-            {actionError}
-          </div>
-        ) : null}
-        {actionNotice ? (
-          <div
-            className="mx-auto mt-6 max-w-2xl rounded-lg border-2 border-green-700 bg-green-50 px-4 py-3 text-center text-sm font-semibold text-green-800"
-            role="status"
-          >
-            {actionNotice}
-          </div>
-        ) : null}
       </section>
     </div>
   );
