@@ -9,10 +9,13 @@ import {
   ChartNoAxesCombined,
   BriefcaseBusiness,
   ChevronDown,
+  CircleHelp,
   Compass,
   Heart,
   LogOut,
+  Menu as MenuIcon,
   Plus,
+  Trophy,
   WalletCards,
   X,
 } from "lucide-react";
@@ -63,11 +66,26 @@ const mobileNavigation = [
     label: "Portfolio",
     Icon: BriefcaseBusiness,
   },
+] as const;
+
+const mobileMenuNavigation = [
   {
     href: "/missions",
     id: "missions",
     label: "Missions",
     Icon: BadgeCheck,
+  },
+  {
+    href: "/leaderboard",
+    id: "leaderboard",
+    label: "Leaderboard",
+    Icon: Trophy,
+  },
+  {
+    href: "/how-it-works",
+    id: "info",
+    label: "How it works",
+    Icon: CircleHelp,
   },
 ] as const;
 
@@ -80,12 +98,16 @@ export default function ArtHeader({
   const [userInfo, setUserInfo] = useState<UserInfo>({});
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const walletModalRef = useRef<HTMLDivElement>(null);
   const walletModalCloseRef = useRef<HTMLButtonElement>(null);
   const walletModalOpenerRef = useRef<HTMLButtonElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountMenuButtonRef = useRef<HTMLButtonElement>(null);
   const accountMenuFirstItemRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuFirstItemRef = useRef<HTMLAnchorElement>(null);
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
@@ -108,6 +130,7 @@ export default function ArtHeader({
   // Update currentTab based on pathname
   useEffect(() => {
     setShowAccountMenu(false);
+    setShowMobileMenu(false);
 
     if (pathname === "/") {
       setCurrentTab("explore");
@@ -314,6 +337,43 @@ export default function ArtHeader({
       document.removeEventListener("keydown", handleAccountMenuKeyDown);
     };
   }, [showAccountMenu]);
+
+  useEffect(() => {
+    if (!showMobileMenu) return;
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      mobileMenuFirstItemRef.current?.focus();
+    });
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+
+      if (
+        !mobileMenuRef.current?.contains(target) &&
+        !mobileMenuButtonRef.current?.contains(target)
+      ) {
+        setShowMobileMenu(false);
+      }
+    };
+
+    const handleMobileMenuKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      setShowMobileMenu(false);
+      window.requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleMobileMenuKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleMobileMenuKeyDown);
+    };
+  }, [showMobileMenu]);
 
   return (
     <>
@@ -697,8 +757,123 @@ export default function ArtHeader({
               </Link>
             );
           })}
+
+          <button
+            ref={mobileMenuButtonRef}
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={showMobileMenu}
+            aria-controls="mobile-more-menu"
+            onClick={() => setShowMobileMenu((isOpen) => !isOpen)}
+            className={`relative mx-1 my-2 flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--base-blue)] focus-visible:ring-offset-2 ${
+              showMobileMenu ||
+              ["missions", "leaderboard", "watchlist", "info"].includes(
+                currentTab
+              )
+                ? "bg-[var(--base-blue-soft)] text-[var(--base-blue)]"
+                : "text-art-gray-500 hover:bg-art-gray-50 hover:text-art-gray-900"
+            }`}
+          >
+            {(showMobileMenu ||
+              ["missions", "leaderboard", "watchlist", "info"].includes(
+                currentTab
+              )) && (
+              <span
+                aria-hidden="true"
+                className="absolute -top-2 h-[3px] w-8 rounded-b-full bg-[var(--base-blue)]"
+              />
+            )}
+            <MenuIcon aria-hidden="true" className="h-5 w-5" />
+            <span className="max-w-full truncate text-[10px] font-semibold">
+              Menu
+            </span>
+          </button>
         </div>
       </nav>
+
+      {showMobileMenu && (
+        <div
+          ref={mobileMenuRef}
+          id="mobile-more-menu"
+          role="menu"
+          aria-label="More pages"
+          onKeyDown={(event) => {
+            if (
+              event.key !== "ArrowDown" &&
+              event.key !== "ArrowUp" &&
+              event.key !== "Home" &&
+              event.key !== "End"
+            ) {
+              return;
+            }
+
+            const menuItems = Array.from(
+              event.currentTarget.querySelectorAll<HTMLElement>(
+                '[role="menuitem"]'
+              )
+            );
+            if (menuItems.length === 0) return;
+
+            event.preventDefault();
+            const currentIndex = menuItems.indexOf(
+              document.activeElement as HTMLElement
+            );
+            let nextIndex = 0;
+
+            if (event.key === "End") {
+              nextIndex = menuItems.length - 1;
+            } else if (event.key === "ArrowDown") {
+              nextIndex = (currentIndex + 1) % menuItems.length;
+            } else if (event.key === "ArrowUp") {
+              nextIndex =
+                (currentIndex - 1 + menuItems.length) % menuItems.length;
+            }
+
+            menuItems[nextIndex]?.focus();
+          }}
+          className="fixed inset-x-3 bottom-[calc(68px+env(safe-area-inset-bottom)+0.75rem)] z-[60] mx-auto grid max-w-sm grid-cols-2 gap-2 rounded-[18px_8px_15px_11px] border-2 border-[#2d3748] bg-white p-2.5 shadow-[4px_5px_0_#2d3748] lg:hidden"
+        >
+          {mobileMenuNavigation.map(({ href, id, label, Icon }, index) => {
+            const isActive = currentTab === id;
+
+            return (
+              <Link
+                key={id}
+                ref={index === 0 ? mobileMenuFirstItemRef : undefined}
+                href={href}
+                role="menuitem"
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => setShowMobileMenu(false)}
+                className={`flex min-h-12 items-center gap-2.5 rounded-xl border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--base-blue)] ${
+                  isActive
+                    ? "border-[#9ab7ff] bg-[var(--base-blue-soft)] text-[var(--base-blue)]"
+                    : "border-art-gray-200 bg-white text-art-gray-800 hover:border-art-gray-400 hover:bg-art-gray-50"
+                }`}
+              >
+                <Icon aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+                <span className="truncate">{label}</span>
+              </Link>
+            );
+          })}
+
+          {isConnected && address && (
+            <Link
+              href="/watchlist"
+              role="menuitem"
+              aria-current={currentTab === "watchlist" ? "page" : undefined}
+              onClick={() => setShowMobileMenu(false)}
+              className={`flex min-h-12 items-center gap-2.5 rounded-xl border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--base-blue)] ${
+                currentTab === "watchlist"
+                  ? "border-[#9ab7ff] bg-[var(--base-blue-soft)] text-[var(--base-blue)]"
+                  : "border-art-gray-200 bg-white text-art-gray-800 hover:border-art-gray-400 hover:bg-art-gray-50"
+              }`}
+            >
+              <Heart aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+              <span>Watchlist</span>
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Wallet Selection Modal */}
       {showWalletModal && (

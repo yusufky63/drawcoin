@@ -724,22 +724,6 @@ body {
   animation: marquee 30s linear infinite;
 }
 
-@media (hover: none) and (pointer: coarse) {
-  .token-card-shell {
-    padding-bottom: 5.5rem;
-  }
-
-  .token-card-actions {
-    inset: auto 0.75rem 0.75rem;
-    justify-content: flex-end;
-    overflow: visible;
-    background: transparent;
-    opacity: 1;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   html:focus-within {
     scroll-behavior: auto;
