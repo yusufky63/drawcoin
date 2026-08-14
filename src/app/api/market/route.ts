@@ -35,11 +35,16 @@ export async function GET(request: Request) {
     return jsonError("The market query is invalid.", 400);
   }
 
-  const { creationType, limit, page, search, sort } = query;
+  const { activity, creationType, limit, minHolders, page, search, sort } = query;
   const offset = (page - 1) * limit;
 
   try {
-    const filters = { search, creation_type: creationType };
+    const filters = {
+      activity,
+      min_holders: minHolders,
+      search,
+      creation_type: creationType,
+    };
     const { coins: dbCoins, total } = await CoinService.getCoinsPage(
       { ...filters, limit, offset, sort },
       { throwOnError: true }

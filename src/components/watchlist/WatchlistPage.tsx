@@ -1,9 +1,8 @@
 "use client";
-import React, { useState } from "react";
+import React from "react";
 import { useRouter } from "next/navigation";
 import { useWatchlist } from "../../hooks/useWatchlist";
 import type { SupabaseCoinSnapshot } from "../../lib/market/coinSnapshot";
-import { useAccount } from "wagmi";
 import { resolveImageUrl } from "../../utils/ipfs";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
@@ -18,15 +17,9 @@ export default function WatchlistPage() {
   const {
     watchlistItems,
     loading: watchlistLoading,
-    requiresSignIn,
-    verifyWallet,
     toggleWatchlist,
   } = useWatchlist();
   const router = useRouter();
-  const [verificationError, setVerificationError] = useState<string | null>(
-    null
-  );
-  const { isConnected } = useAccount();
   const tokens = watchlistItems.flatMap<WatchlistTokenData>((item) =>
     item.coin
       ? [
@@ -75,58 +68,6 @@ export default function WatchlistPage() {
     if (value >= 1000) return `$${(value / 1000).toFixed(2)}K`;
     return `$${value.toFixed(2)}`;
   };
-
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen bg-art-gray-50 flex items-center justify-center p-4">
-        <div className="hand-drawn-card max-w-md w-full text-center">
-          <div className="hand-drawn-header justify-center mb-4">
-            <h2 className="text-xl">Watchlist</h2>
-          </div>
-          <p className="text-art-gray-600 mb-6">
-            Connect your wallet to view your favorite tokens.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (requiresSignIn) {
-    return (
-      <div className="min-h-screen bg-art-gray-50 flex items-center justify-center p-4">
-        <div className="hand-drawn-card max-w-md w-full text-center">
-          <div className="hand-drawn-header justify-center mb-4">
-            <h2 className="text-xl">Verify your wallet</h2>
-          </div>
-          <p className="text-art-gray-600 mb-6">
-            Sign one gas-free message to open your private watchlist in Base
-            App.
-          </p>
-          <button
-            type="button"
-            className="hand-drawn-btn px-6 py-2 font-bold"
-            onClick={() => {
-              setVerificationError(null);
-              void verifyWallet().catch((error) =>
-                setVerificationError(
-                  error instanceof Error
-                    ? error.message
-                    : "Wallet verification failed."
-                )
-              );
-            }}
-          >
-            Verify wallet
-          </button>
-          {verificationError ? (
-            <p className="mt-4 text-sm font-semibold text-red-700" role="alert">
-              {verificationError}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-art-gray-50 p-4">

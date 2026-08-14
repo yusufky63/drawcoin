@@ -3,7 +3,7 @@ import { getAddress } from "viem";
 const EVM_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
 
 export const MAX_CREATOR_IDENTITY_BATCH = 100;
-export const MAX_CREATOR_BASENAME_RPC_FALLBACK = 25;
+export const MAX_CREATOR_BASENAME_RPC_BATCH = 50;
 
 export type CreatorIdentityInput = {
   address?: string | null;

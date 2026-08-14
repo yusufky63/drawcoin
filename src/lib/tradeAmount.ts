@@ -4,6 +4,9 @@ export const BASE_USDC_ADDRESS =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
 export const BASE_USDC_DECIMALS = 6;
 export const ETH_GAS_RESERVE_WEI = parseEther("0.0005");
+export const TOKEN_SELL_MAX_BASIS_POINTS = BigInt(9_800);
+
+const BASIS_POINTS = BigInt(10_000);
 
 const DECIMAL_INPUT_PATTERN = /^(?:\d+\.?\d*|\.\d+)$/;
 
@@ -32,6 +35,18 @@ export function spendableTradeBalance(
   if (balance <= BigInt(0)) return BigInt(0);
   if (reserve <= BigInt(0)) return balance;
   return balance > reserve ? balance - reserve : BigInt(0);
+}
+
+/**
+ * Zora exact-input quotes can reject a wallet's entire token balance when the
+ * pool cannot consume the final edge of the route. Keep Max deterministic and
+ * raw-integer safe while still allowing users to type a larger custom amount.
+ */
+export function tokenSellQuoteReserve(balance: bigint): bigint {
+  if (balance <= BigInt(0)) return BigInt(0);
+  const maximumQuotedAmount =
+    (balance * TOKEN_SELL_MAX_BASIS_POINTS) / BASIS_POINTS;
+  return balance - maximumQuotedAmount;
 }
 
 export function amountForPercentage(

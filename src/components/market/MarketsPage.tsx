@@ -5,10 +5,12 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import {
+  Activity,
   Clock3,
   Heart,
   LayoutGrid,
   Search,
+  SlidersHorizontal,
   Table2,
   TrendingUp,
   X,
@@ -18,8 +20,13 @@ import {
   createCreatorAddressBatch,
   getCreatorDisplayLabel,
   MAX_CREATOR_IDENTITY_BATCH,
+  normalizeBasename,
   normalizeCreatorAddress,
 } from "@/lib/creatorIdentity";
+import {
+  fetchCreatorBasenames,
+  type BasenamesResponse,
+} from "@/lib/creatorIdentityClient";
 import {
   formatCoinAge,
   formatCompactUsd,
@@ -33,8 +40,28 @@ import { useWatchlist } from "@/hooks/useWatchlist";
 const PAGE_SIZE = 40;
 const VISIBLE_CREATOR_BATCH_SIZE = 100;
 
-type MarketsSort = "newest" | "market-cap";
+type MarketsSort =
+  | "newest"
+  | "market-cap"
+  | "recently-traded"
+  | "most-traded"
+  | "most-holders"
+  | "most-watched"
+  | "volume-high";
 type MarketsView = "table" | "gallery";
+type MarketsCreationType = "all" | "hand-drawn" | "ai";
+type MarketsActivity = "all" | "traded";
+type MarketsMinimumHolders = 0 | 2 | 5;
+
+const VALID_MARKETS_SORTS = new Set<MarketsSort>([
+  "newest",
+  "market-cap",
+  "recently-traded",
+  "most-traded",
+  "most-holders",
+  "most-watched",
+  "volume-high",
+]);
 
 type MarketMeta = {
   limit: number;
@@ -47,10 +74,6 @@ type MarketResponse = {
   data: SupabaseCoinSnapshot[];
   meta: MarketMeta;
   source: "supabase";
-};
-
-type BasenamesResponse = {
-  basenames: Record<string, string | null>;
 };
 
 class MarketsApiError extends Error {
@@ -84,18 +107,6 @@ async function fetchMarkets(url: string): Promise<MarketResponse> {
     throw new MarketsApiError("Markets returned an invalid response.", 502);
   }
   return payload;
-}
-
-async function fetchBasenames(url: string): Promise<BasenamesResponse> {
-  const response = await fetch(url, {
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(5_000),
-  });
-  if (!response.ok) {
-    throw new MarketsApiError("Creator names unavailable.", response.status);
-  }
-  return (await response.json()) as BasenamesResponse;
 }
 
 function uniqueCoins(pages?: MarketResponse[]) {
@@ -212,6 +223,12 @@ const MarketGalleryCard = memo(function MarketGalleryCard({
           {creatorLabel ? `by ${creatorLabel}` : "Creator unavailable"}
         </p>
 
+        {coin.last_trade_at ? (
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--base-blue-hover)]">
+            Last {coin.last_trade_type ?? "trade"} · {formatCoinAge(coin.last_trade_at)} ago
+          </p>
+        ) : null}
+
         <dl className="mt-3 grid grid-cols-3 gap-1.5 text-left">
           <div className="rounded-lg border border-art-gray-200 bg-art-gray-50 px-2.5 py-2">
             <dt className="text-[9px] font-bold uppercase tracking-[0.1em] text-art-gray-400">Market cap</dt>
@@ -271,6 +288,10 @@ export default function MarketsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [view, setView] = useState<MarketsView>("table");
+  const [creationType, setCreationType] = useState<MarketsCreationType>("all");
+  const [activity, setActivity] = useState<MarketsActivity>("all");
+  const [minHolders, setMinHolders] = useState<MarketsMinimumHolders>(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [urlReady, setUrlReady] = useState(false);
   const [watchlistBusy, setWatchlistBusy] = useState<string | null>(null);
   const { watchlist, toggleWatchlist } = useWatchlist();
@@ -280,8 +301,20 @@ export default function MarketsPage() {
     const requestedSort = params.get("sort");
     const requestedView = params.get("view");
     const requestedSearch = (params.get("q") ?? "").slice(0, 100);
-    setSort(requestedSort === "market-cap" ? "market-cap" : "newest");
+    const requestedType = params.get("type") as MarketsCreationType | null;
+    const requestedActivity = params.get("activity") as MarketsActivity | null;
+    const requestedHolders = Number(params.get("holders") ?? 0) as MarketsMinimumHolders;
+    setSort(
+      requestedSort && VALID_MARKETS_SORTS.has(requestedSort as MarketsSort)
+        ? (requestedSort as MarketsSort)
+        : "newest"
+    );
     setView(requestedView === "gallery" ? "gallery" : "table");
+    if (requestedType && ["all", "hand-drawn", "ai"].includes(requestedType)) {
+      setCreationType(requestedType);
+    }
+    if (requestedActivity === "traded") setActivity("traded");
+    if ([0, 2, 5].includes(requestedHolders)) setMinHolders(requestedHolders);
     setSearch(requestedSearch);
     setDebouncedSearch(requestedSearch.trim());
     setUrlReady(true);
@@ -297,9 +330,12 @@ export default function MarketsPage() {
         sort,
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
+      if (creationType !== "all") params.set("creationType", creationType);
+      if (activity === "traded") params.set("activity", "traded");
+      if (minHolders > 0) params.set("minHolders", String(minHolders));
       return `/api/market?${params.toString()}`;
     },
-    [debouncedSearch, sort, urlReady]
+    [activity, creationType, debouncedSearch, minHolders, sort, urlReady]
   );
 
   const {
@@ -332,15 +368,20 @@ export default function MarketsPage() {
     if (sort !== "newest") params.set("sort", sort);
     if (view !== "table") params.set("view", view);
     if (search.trim()) params.set("q", search.trim());
+    if (creationType !== "all") params.set("type", creationType);
+    if (activity === "traded") params.set("activity", "traded");
+    if (minHolders > 0) params.set("holders", String(minHolders));
     const query = params.toString();
     window.history.replaceState(null, "", `/markets${query ? `?${query}` : ""}`);
-  }, [search, sort, urlReady, view]);
+  }, [activity, creationType, minHolders, search, sort, urlReady, view]);
 
   const coins = useMemo(() => uniqueCoins(pages), [pages]);
   const creatorAddressKey = useMemo(
     () =>
       createCreatorAddressBatch(
-        coins.map((coin) => coin.creator_address),
+        coins
+          .filter((coin) => !normalizeBasename(coin.creator_name))
+          .map((coin) => coin.creator_address),
         Math.min(MAX_CREATOR_IDENTITY_BATCH, VISIBLE_CREATOR_BATCH_SIZE)
       ).join(","),
     [coins]
@@ -349,7 +390,7 @@ export default function MarketsPage() {
     creatorAddressKey
       ? `/api/basenames?addresses=${encodeURIComponent(creatorAddressKey)}`
       : null,
-    fetchBasenames,
+    fetchCreatorBasenames,
     {
       dedupingInterval: 30 * 60 * 1000,
       errorRetryCount: 0,
@@ -441,6 +482,7 @@ export default function MarketsPage() {
               {([
                 ["newest", "New", Clock3],
                 ["market-cap", "Market Cap", TrendingUp],
+                ["recently-traded", "Recent trades", Activity],
               ] as const).map(([value, label, Icon]) => (
                 <button
                   key={value}
@@ -455,6 +497,46 @@ export default function MarketsPage() {
                 </button>
               ))}
             </div>
+
+            <label className="shrink-0">
+              <span className="sr-only">More market sorting</span>
+              <select
+                aria-label="More market sorting"
+                value={
+                  ["most-traded", "most-holders", "most-watched", "volume-high"].includes(sort)
+                    ? sort
+                    : ""
+                }
+                onChange={(event) => {
+                  if (event.target.value) changeSort(event.target.value as MarketsSort);
+                }}
+                className="h-11 rounded-xl border-2 border-[#2d3748] bg-white px-2.5 text-xs font-bold text-art-gray-700 shadow-[2px_2px_0_#2d3748] outline-none focus:border-[var(--base-blue)]"
+              >
+                <option value="">More sorting</option>
+                <option value="most-traded">Most traded</option>
+                <option value="most-holders">Most holders</option>
+                <option value="most-watched">Most watched</option>
+                <option value="volume-high">24h volume</option>
+              </select>
+            </label>
+
+            <button
+              type="button"
+              aria-expanded={filtersOpen}
+              aria-controls="markets-filter-panel"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className={`flex h-11 shrink-0 items-center gap-1.5 rounded-xl border-2 border-[#2d3748] px-3 text-xs font-bold shadow-[2px_2px_0_#2d3748] transition ${
+                creationType !== "all" || activity === "traded" || minHolders > 0
+                  ? "bg-[var(--base-blue-soft)] text-[var(--base-blue-hover)]"
+                  : "bg-white text-art-gray-700 hover:bg-art-gray-100"
+              }`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+              Filters
+              {Number(creationType !== "all") + Number(activity === "traded") + Number(minHolders > 0) > 0
+                ? ` ${Number(creationType !== "all") + Number(activity === "traded") + Number(minHolders > 0)}`
+                : ""}
+            </button>
 
             <div
               className="flex h-11 shrink-0 rounded-xl border-2 border-[#2d3748] bg-white p-0.5 shadow-[2px_2px_0_#2d3748]"
@@ -484,6 +566,72 @@ export default function MarketsPage() {
             </div>
           </div>
         </header>
+
+        {filtersOpen ? (
+          <section
+            id="markets-filter-panel"
+            aria-label="Market filters"
+            className="mb-4 grid gap-3 rounded-2xl border-2 border-[#2d3748] bg-white p-3 shadow-[3px_3px_0_#2d3748] sm:grid-cols-3"
+          >
+            <div>
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-art-gray-500">Artwork</p>
+              <div className="flex gap-1" role="group" aria-label="Artwork type">
+                {(["all", "hand-drawn", "ai"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={creationType === value}
+                    onClick={() => {
+                      setCreationType(value);
+                      void setSize(1);
+                    }}
+                    className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${creationType === value ? "bg-art-gray-900 text-white" : "bg-art-off-white text-art-gray-600 hover:bg-art-gray-100"}`}
+                  >
+                    {value === "all" ? "All" : value === "hand-drawn" ? "Hand drawn" : "AI archive"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-art-gray-500">Activity</p>
+              <div className="flex gap-1" role="group" aria-label="Trading activity">
+                {(["all", "traded"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={activity === value}
+                    onClick={() => {
+                      setActivity(value);
+                      void setSize(1);
+                    }}
+                    className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${activity === value ? "bg-art-gray-900 text-white" : "bg-art-off-white text-art-gray-600 hover:bg-art-gray-100"}`}
+                  >
+                    {value === "all" ? "All activity" : "Has trades"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-art-gray-500">Minimum holders</p>
+              <div className="flex gap-1" role="group" aria-label="Minimum holder count">
+                {([0, 2, 5] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={minHolders === value}
+                    onClick={() => {
+                      setMinHolders(value);
+                      void setSize(1);
+                    }}
+                    className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${minHolders === value ? "bg-art-gray-900 text-white" : "bg-art-off-white text-art-gray-600 hover:bg-art-gray-100"}`}
+                  >
+                    {value === 0 ? "Any" : `${value}+`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {!urlReady || (isLoading && coins.length === 0) ? (
           <MarketsSkeleton />
@@ -518,7 +666,7 @@ export default function MarketsPage() {
             ) : (
               <div className="overflow-hidden rounded-2xl border-2 border-[#2d3748] bg-white shadow-[3px_3px_0_#2d3748]">
                 <div className="no-scrollbar max-w-full overflow-x-auto" role="region" aria-label="DrawCoin market table" tabIndex={0}>
-                  <table className="w-full min-w-[980px] border-collapse text-left">
+                  <table className="w-full min-w-[1080px] border-collapse text-left">
                   <thead className="sticky top-0 z-10 bg-art-gray-50 text-[10px] font-bold uppercase tracking-[0.12em] text-art-gray-500">
                     <tr className="border-b-2 border-[#2d3748]">
                       <th className="w-12 px-3 py-3 text-center">#</th>
@@ -528,6 +676,7 @@ export default function MarketsPage() {
                       <th className="px-3 py-3 text-right">24h volume</th>
                       <th className="px-3 py-3 text-right">Holders</th>
                       <th className="px-3 py-3 text-right">Watchlists</th>
+                      <th className="px-3 py-3 text-right">Last trade</th>
                       <th className="px-3 py-3 text-right">Age</th>
                       <th className="w-28 px-3 py-3 text-right">Watchlist</th>
                     </tr>
@@ -562,6 +711,9 @@ export default function MarketsPage() {
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-600">{formatCompactUsd(coin.volume24h)}</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-600">{formatInteger(coin.holders)}</td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-600">{formatInteger(coin.watchlist_count)}</td>
+                          <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-600" title={coin.last_trade_at ?? undefined}>
+                            {coin.last_trade_at ? `${formatCoinAge(coin.last_trade_at)} · ${coin.last_trade_type ?? "trade"}` : "—"}
+                          </td>
                           <td className="px-3 py-2.5 text-right text-xs font-semibold text-art-gray-500" title={coin.created_at ?? undefined}>{formatCoinAge(coin.created_at)}</td>
                           <td className="px-3 py-2.5 text-right">
                             <button

@@ -8,9 +8,11 @@ export type { Coin };
 export const COIN_CARD_COLUMNS = COIN_SNAPSHOT_COLUMNS;
 
 export type CoinQueryParams = {
+  activity?: string;
   category?: string;
   creator_address?: string;
   limit?: number;
+  min_holders?: number;
   offset?: number;
   search?: string;
   sort?: string;
@@ -19,7 +21,12 @@ export type CoinQueryParams = {
 
 type CoinCountParams = Pick<
   CoinQueryParams,
-  "category" | "creator_address" | "search" | "creation_type"
+  | "activity"
+  | "category"
+  | "creator_address"
+  | "min_holders"
+  | "search"
+  | "creation_type"
 >;
 
 export interface CreateCoinData {
@@ -102,6 +109,31 @@ export class CoinService {
             .order("created_at", { ascending: false, nullsFirst: false })
             .order("id", { ascending: false });
           break;
+        case "recently-traded":
+          query = query
+            .order("last_trade_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "most-traded":
+          query = query
+            .order("verified_trade_count", { ascending: false })
+            .order("last_trade_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "most-holders":
+          query = query
+            .order("holders", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "volume-high":
+          query = query
+            .order("volume_24h", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
         case "oldest":
           query = query
             .order("created_at", { ascending: true, nullsFirst: false })
@@ -135,6 +167,14 @@ export class CoinService {
 
       if (params?.creation_type) {
         query = query.eq("creation_type", params.creation_type);
+      }
+
+      if (params?.activity === "traded") {
+        query = query.gt("verified_trade_count", 0);
+      }
+
+      if (params?.min_holders) {
+        query = query.gte("holders", params.min_holders);
       }
 
       if (params?.search) {
@@ -182,6 +222,31 @@ export class CoinService {
             .order("created_at", { ascending: false, nullsFirst: false })
             .order("id", { ascending: false });
           break;
+        case "recently-traded":
+          query = query
+            .order("last_trade_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "most-traded":
+          query = query
+            .order("verified_trade_count", { ascending: false })
+            .order("last_trade_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "most-holders":
+          query = query
+            .order("holders", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
+        case "volume-high":
+          query = query
+            .order("volume_24h", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false });
+          break;
         case "oldest":
           query = query
             .order("created_at", { ascending: true, nullsFirst: false })
@@ -210,6 +275,12 @@ export class CoinService {
       }
       if (params.creation_type) {
         query = query.eq("creation_type", params.creation_type);
+      }
+      if (params.activity === "traded") {
+        query = query.gt("verified_trade_count", 0);
+      }
+      if (params.min_holders) {
+        query = query.gte("holders", params.min_holders);
       }
       if (params.search) {
         query = query.or(buildPostgrestCoinSearchFilter(params.search, true));
@@ -458,6 +529,12 @@ export class CoinService {
       }
       if (params?.creation_type) {
         query = query.eq("creation_type", params.creation_type);
+      }
+      if (params?.activity === "traded") {
+        query = query.gt("verified_trade_count", 0);
+      }
+      if (params?.min_holders) {
+        query = query.gte("holders", params.min_holders);
       }
       if (params?.search) {
         query = query.or(buildPostgrestCoinSearchFilter(params.search, true));

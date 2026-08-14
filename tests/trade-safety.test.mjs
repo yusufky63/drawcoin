@@ -229,7 +229,7 @@ test("the detail trade UI supports native USDC buys without unsafe amount roundi
     tradeUiPaths.map((path) => readFile(path, "utf8")),
   );
 
-  assert.match(sources[0], /Buy with ETH or native USDC on Base\./);
+  assert.match(sources[0], /Buy with ETH or USDC on Base\./);
   assert.match(sources[0], /\["ETH", "USDC"\]/);
   assert.match(sources[0], /amountForPercentage/);
   assert.doesNotMatch(sources[0], /0\.999|toFixed\(4\)/);

@@ -3,12 +3,20 @@ import {
   getCoinAddressFromReceipt,
   CreateConstants,
 } from "../../services/sdk/getCreateCoin.js";
-import { createPublicClient, getAddress, http, isAddress } from "viem";
+import {
+  createPublicClient,
+  getAddress,
+  http,
+  isAddress,
+  type Address,
+  type Hex,
+} from "viem";
 import { base } from "viem/chains";
 import { showCreateMessages } from "../../utils/toastUtils";
 import { toast } from "react-hot-toast";
 import {
   BASE_CHAIN_ID,
+  syncFreshCreation,
   syncCreatedToken,
   type CoinCreationCurrency,
   type CoinCreationRecordPayload,
@@ -59,6 +67,16 @@ type CreationWalletClient = {
   getChainId: () => Promise<number>;
 };
 
+export type PreparedCreateCall = {
+  to: Address;
+  data: Hex;
+  value: bigint;
+};
+
+export type SendPreparedCreateCall = (
+  call: PreparedCreateCall
+) => Promise<Hex>;
+
 export type SwitchToBaseAsync = (args: {
   chainId: typeof BASE_CHAIN_ID;
 }) => Promise<unknown>;
@@ -108,7 +126,8 @@ export const createToken = async (
   walletClient: CreationWalletClient,
   publicClient: unknown,
   walletAddress: string,
-  switchChainAsync?: SwitchToBaseAsync
+  switchChainAsync?: SwitchToBaseAsync,
+  sendPreparedCreateCall?: SendPreparedCreateCall
 ): Promise<CreateTokenResult> => {
   try {
     if (!isAddress(walletAddress) || !isAddress(tokenData.platformReferrer)) {
@@ -166,6 +185,13 @@ export const createToken = async (
     // Use a Base-bound public client even when React has not yet re-rendered
     // the publicClient prop after the wallet switch.
     const baseClient = selectBasePublicClient(publicClient);
+    if (!sendPreparedCreateCall) {
+      throw new CreateTokenError(
+        "TOKEN_CREATION_FAILED",
+        "This wallet cannot submit a Base creation transaction.",
+        false
+      );
+    }
     const sdkResult = (await createZoraCoin(
       {
         name: tokenData.name,
@@ -181,7 +207,8 @@ export const createToken = async (
             : undefined,
       },
       walletClient,
-      baseClient
+      baseClient,
+      sendPreparedCreateCall
     )) as {
       hash?: string;
       address?: string;
@@ -229,7 +256,9 @@ export const createToken = async (
     };
 
     toast.loading("Syncing token with DrawCoin...", { id: "save-toast" });
-    const recordResult = await syncCreatedToken(recoveryPayload);
+    // This only repeats the idempotent server record step. It never resends
+    // the wallet transaction or mints a second token.
+    const recordResult = await syncFreshCreation(recoveryPayload);
 
     if (recordResult.status === "recorded") {
       toast.success("Token synced with DrawCoin.", { id: "save-toast" });

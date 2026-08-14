@@ -28,6 +28,7 @@ import {
   ETH_GAS_RESERVE_WEI,
   formatTradeBalance,
   parseTradeAmount,
+  tokenSellQuoteReserve,
 } from "../../lib/tradeAmount";
 import { getWalletActionErrorMessage } from "../../lib/walletActionError";
 
@@ -222,9 +223,11 @@ export default function CoinDetailPage({ token, onBack }: CoinDetailPageProps) {
         ? usdcBalanceRaw
         : ethBalanceRaw;
   const balanceReserveRaw =
-    tradeType === "buy" && buyCurrency === "ETH"
-      ? ETH_GAS_RESERVE_WEI
-      : BigInt(0);
+    tradeType === "sell"
+      ? tokenSellQuoteReserve(tokenBalanceRaw)
+      : buyCurrency === "ETH"
+        ? ETH_GAS_RESERVE_WEI
+        : BigInt(0);
   const ethBalance = formatTradeBalance(ethBalanceRaw, 18, 6);
   const usdcBalance = formatTradeBalance(
     usdcBalanceRaw,

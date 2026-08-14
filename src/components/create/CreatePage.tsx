@@ -1,15 +1,21 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
+import { waitForCallsStatus } from "@wagmi/core";
 import {
   useAccount,
+  useConfig,
   useWalletClient,
   usePublicClient,
+  useSendCalls,
   useSwitchChain,
 } from "wagmi";
+import { base } from "wagmi/chains";
+import type { Hex } from "viem";
 import {
   createToken,
   syncCreatedToken,
   type CoinRecordStatus,
+  type PreparedCreateCall,
 } from "../../lib/functions/createToken";
 import {
   showCreateMessages,
@@ -46,8 +52,45 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const wagmiConfig = useConfig();
+  const { sendCallsAsync } = useSendCalls();
   const { switchChainAsync } = useSwitchChain();
   const customCanvasRef = React.useRef<CustomCanvasRef>(null);
+
+  const sendPreparedCreateCall = useCallback(
+    async (call: PreparedCreateCall): Promise<Hex> => {
+      if (!address) {
+        throw new Error("Connect your wallet before creating a token.");
+      }
+
+      // Base Account receives the canonical wallet_sendCalls request. Wallets
+      // without EIP-5792 support use Wagmi's eth_sendTransaction fallback. In
+      // both cases the configured ERC-8021 suffix is added before final wallet
+      // estimation, instead of reusing the SDK's pre-suffix gas estimate.
+      const callResult = await sendCallsAsync({
+        account: address,
+        chainId: base.id,
+        calls: [call],
+        experimental_fallback: true,
+      });
+      const callStatus = await waitForCallsStatus(wagmiConfig, {
+        id: callResult.id,
+        pollingInterval: 1_500,
+        throwOnFailure: true,
+        timeout: 120_000,
+      });
+      const transactionHash = callStatus.receipts?.[0]?.transactionHash;
+
+      if (!transactionHash) {
+        throw new Error(
+          "The wallet did not return a token creation transaction hash."
+        );
+      }
+
+      return transactionHash;
+    },
+    [address, sendCallsAsync, wagmiConfig]
+  );
 
   // Form state
   const [formData, setFormData] = useState({
@@ -382,7 +425,8 @@ export default function CreatePage({ onSuccess }: CreatePageProps) {
         walletClient,
         publicClient,
         address,
-        switchChainAsync
+        switchChainAsync,
+        sendPreparedCreateCall
       );
 
       const tokenAddress =

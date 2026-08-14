@@ -17,11 +17,17 @@ test("markets uses only DrawCoin's Supabase market and identity routes", () => {
   assert.doesNotMatch(source, /\/api\/zora|zoraService|getCoinsTop|getCoinsNew/);
 });
 
-test("markets exposes URL-backed New and Market Cap ordering", () => {
-  assert.match(source, /type MarketsSort = "newest" \| "market-cap"/);
+test("markets exposes URL-backed discovery and activity ordering", () => {
+  assert.match(source, /type MarketsSort =/);
+  assert.match(source, /"recently-traded"/);
+  assert.match(source, /"most-traded"/);
+  assert.match(source, /"most-holders"/);
+  assert.match(source, /"most-watched"/);
+  assert.match(source, /"volume-high"/);
   assert.match(source, /window\.history\.replaceState\(null, "", `\/markets/);
   assert.match(source, /\["newest", "New", Clock3\]/);
   assert.match(source, /\["market-cap", "Market Cap", TrendingUp\]/);
+  assert.match(source, /\["recently-traded", "Recent trades", Activity\]/);
 });
 
 test("markets removes technical copy and keeps the view in URL state", () => {
@@ -47,7 +53,7 @@ test("gallery reuses loaded pages in a memoized stable-frame masonry", () => {
   assert.match(source, /<CreationTypeBadge/);
   assert.match(source, /!bg-\[#ffd166\]/);
   assert.doesNotMatch(source, /gradient/);
-  assert.match(source, /\[debouncedSearch, sort, urlReady\]/);
+  assert.match(source, /activity, creationType, debouncedSearch, minHolders, sort, urlReady/);
 });
 
 test("gallery reserves artwork space before images load", () => {
@@ -84,8 +90,8 @@ test("gallery and table expose watchlist actions without redundant View buttons"
 
 test("only the table region owns horizontal overflow on narrow screens", () => {
   assert.match(source, /no-scrollbar max-w-full overflow-x-auto/);
-  assert.match(source, /table className="w-full min-w-\[980px\]/);
-  assert.doesNotMatch(source, /min-w-\[980px\].*overflow-x-auto/);
+  assert.match(source, /table className="w-full min-w-\[1080px\]/);
+  assert.doesNotMatch(source, /min-w-\[1080px\].*overflow-x-auto/);
   assert.equal(source.match(/overflow-x-auto/g)?.length, 1);
 });
 
@@ -96,6 +102,7 @@ test("markets renders every requested persisted metric honestly", () => {
     "24h volume",
     "Holders",
     "Watchlists",
+    "Last trade",
     "Age",
   ]) {
     assert.match(source, new RegExp(label));

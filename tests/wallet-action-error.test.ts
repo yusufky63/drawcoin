@@ -38,3 +38,20 @@ test("nested wallet causes are sanitized into short actionable messages", () => 
     "Insufficient balance for this transaction."
   );
 });
+
+test("Zora quote failures produce a short amount-specific recovery message", () => {
+  const error = {
+    message: "Trade failed",
+    cause: {
+      details: "SwapError: Failed to get quote",
+    },
+  };
+
+  assert.equal(
+    getWalletActionErrorMessage(error, {
+      rejected: "Transaction cancelled.",
+      fallback: "Trade failed.",
+    }),
+    "No quote is available for that amount. Try Max or a smaller amount."
+  );
+});

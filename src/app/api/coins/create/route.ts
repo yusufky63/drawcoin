@@ -277,12 +277,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const bytecode = await basePublicClient.getCode({ address: eventCoin });
+    // Read at the receipt block instead of an unrelated provider's moving
+    // latest head. Some RPC backends briefly expose the receipt before their
+    // latest-state cache includes the deployed bytecode.
+    const bytecode = await basePublicClient.getCode({
+      address: eventCoin,
+      blockNumber: receipt.blockNumber,
+    });
     if (!bytecode || bytecode === "0x") {
       return jsonError(
-        "The created coin contract is not deployed on Base.",
-        422,
-        "ONCHAIN_CREATION_MISMATCH"
+        "Base has confirmed the creation but contract state is still propagating.",
+        503,
+        "BASE_STATE_PENDING"
       );
     }
 

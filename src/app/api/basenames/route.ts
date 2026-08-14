@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAddress, isAddress, toCoinType } from "viem";
-import { base } from "viem/chains";
+import { getAddress, isAddress, type Address } from "viem";
 
 import { ApiInputError, parseAddressList } from "@/lib/api/requestValidation";
+import { resolveBasenamesOnBase } from "@/lib/baseBasename";
 import {
-  MAX_CREATOR_BASENAME_RPC_FALLBACK,
+  MAX_CREATOR_BASENAME_RPC_BATCH,
   MAX_CREATOR_IDENTITY_BATCH,
   normalizeBasename,
 } from "@/lib/creatorIdentity";
-import {
-  getEthereumPublicClient,
-  isEthereumPublicClientConfigured,
-} from "@/lib/ethereumPublicClient";
-import { supabase } from "@/lib/supabase";
 import { BoundedTtlCache } from "@/lib/server/boundedTtlCache";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +19,15 @@ type PublicUser = {
   address: string;
   username: string | null;
 };
+
+type CachedIdentity = {
+  address: string;
+  basename: string | null;
+  expires_at: string;
+};
+
+const RESOLVED_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const EMPTY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, {
@@ -45,7 +50,7 @@ async function readPersistedBasenames(addresses: string[]) {
     address,
     getAddress(address),
   ]);
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("users")
     .select("address, username")
     .in("address", candidates);
@@ -65,6 +70,52 @@ async function readPersistedBasenames(addresses: string[]) {
   return result;
 }
 
+async function readIdentityCache(addresses: string[]) {
+  const result = new Map<string, string | null>();
+  if (addresses.length === 0) return result;
+
+  const { data, error } = await supabaseAdmin
+    .from("creator_identity_cache")
+    .select("address, basename, expires_at")
+    .in("address", addresses)
+    .gt("expires_at", new Date().toISOString());
+
+  if (error) {
+    console.warn("Persisted Base Name cache is temporarily unavailable");
+    return result;
+  }
+
+  for (const row of (data ?? []) as CachedIdentity[]) {
+    const address = row.address?.toLowerCase();
+    if (!address) continue;
+    result.set(address, normalizeBasename(row.basename));
+  }
+  return result;
+}
+
+async function persistIdentities(
+  values: ReadonlyArray<{
+    address: string;
+    basename: string | null;
+    source: "profile" | "base-l2" | "none";
+  }>
+) {
+  if (values.length === 0) return;
+  const now = Date.now();
+  const rows = values.map((value) => ({
+    ...value,
+    checked_at: new Date(now).toISOString(),
+    expires_at: new Date(
+      now + (value.basename ? RESOLVED_CACHE_TTL_MS : EMPTY_CACHE_TTL_MS)
+    ).toISOString(),
+    updated_at: new Date(now).toISOString(),
+  }));
+  const { error } = await supabaseAdmin
+    .from("creator_identity_cache")
+    .upsert(rows, { onConflict: "address" });
+  if (error) console.warn("Base Name cache update was skipped");
+}
+
 async function resolveBasenames(addresses: string[]) {
   const result: Record<string, string | null> = {};
   const uncached: string[] = [];
@@ -77,57 +128,52 @@ async function resolveBasenames(addresses: string[]) {
 
   if (uncached.length === 0) return result;
 
-  const persisted = await readPersistedBasenames(uncached);
-  const rpcFallback: string[] = [];
+  const [persisted, databaseCache] = await Promise.all([
+    readPersistedBasenames(uncached),
+    readIdentityCache(uncached),
+  ]);
+  const rpcCandidates: string[] = [];
+  const cacheWrites: Array<{
+    address: string;
+    basename: string | null;
+    source: "profile" | "base-l2" | "none";
+  }> = [];
   for (const address of uncached) {
     const basename = persisted.get(address);
     if (basename) {
       basenameCache.set(address, basename);
       result[address] = basename;
+      cacheWrites.push({ address, basename, source: "profile" });
+    } else if (databaseCache.has(address)) {
+      const cached = databaseCache.get(address) ?? null;
+      basenameCache.set(address, cached);
+      result[address] = cached;
     } else {
-      rpcFallback.push(address);
+      rpcCandidates.push(address);
     }
   }
 
-  if (!isEthereumPublicClientConfigured()) {
-    for (const address of rpcFallback) {
-      basenameCache.set(address, null);
-      result[address] = null;
-    }
-    return result;
-  }
-
-  const rpcCandidates = rpcFallback.slice(
-    0,
-    MAX_CREATOR_BASENAME_RPC_FALLBACK
-  );
-  const deferredFallback = rpcFallback.slice(
-    MAX_CREATOR_BASENAME_RPC_FALLBACK
-  );
+  const rpcBatch = rpcCandidates.slice(0, MAX_CREATOR_BASENAME_RPC_BATCH);
+  const deferredFallback = rpcCandidates.slice(MAX_CREATOR_BASENAME_RPC_BATCH);
   for (const address of deferredFallback) result[address] = null;
 
-  // The shared transport has a 2.5 second timeout with retries disabled. The
-  // RPC subset is capped independently from the Supabase batch so arbitrary
-  // public requests cannot fan out into an unbounded number of RPC calls.
-  const publicClient = getEthereumPublicClient();
-  const resolutions = await Promise.allSettled(
-    rpcCandidates.map((address) =>
-      publicClient.getEnsName({
-        address: getAddress(address),
-        coinType: toCoinType(base.id),
-      })
-    )
+  // The official Base L2 resolver is read with one multicall for the whole
+  // visible page. This replaces up to 50 independent ENSIP-19 RPC requests.
+  const resolutions = await resolveBasenamesOnBase(
+    rpcBatch.map((address) => getAddress(address) as Address)
   );
-
-  resolutions.forEach((resolution, index) => {
-    const address = rpcCandidates[index];
-    const basename =
-      resolution.status === "fulfilled"
-        ? normalizeBasename(resolution.value)
-        : null;
+  for (const address of rpcBatch) {
+    const basename = resolutions.get(address) ?? null;
     basenameCache.set(address, basename);
     result[address] = basename;
-  });
+    cacheWrites.push({
+      address,
+      basename,
+      source: basename ? "base-l2" : "none",
+    });
+  }
+
+  await persistIdentities(cacheWrites);
 
   return result;
 }

@@ -61,11 +61,17 @@ function writeDeviceWatchlist(addresses: string[]) {
 
 export function useWatchlist() {
   const { address } = useAccount();
-  const { session, status: sessionStatus, signIn } = useWalletSession();
+  const { session, status: sessionStatus } = useWalletSession();
   const [serverWatchlist, setServerWatchlist] = useState<string[]>([]);
   const [deviceWatchlist, setDeviceWatchlist] = useState<string[]>([]);
-  const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([]);
+  const [serverWatchlistItems, setServerWatchlistItems] = useState<
+    WatchlistItem[]
+  >([]);
+  const [deviceWatchlistItems, setDeviceWatchlistItems] = useState<
+    WatchlistItem[]
+  >([]);
   const [loading, setLoading] = useState(true);
+  const [deviceLoading, setDeviceLoading] = useState(false);
 
   useEffect(() => {
     setDeviceWatchlist(readDeviceWatchlist());
@@ -79,6 +85,19 @@ export function useWatchlist() {
     return Array.from(combined.values());
   }, [deviceWatchlist, serverWatchlist]);
 
+  const watchlistItems = useMemo(() => {
+    const combined = new Map<string, WatchlistItem>();
+    for (const item of deviceWatchlistItems) {
+      combined.set(item.token_address.toLowerCase(), item);
+    }
+    // Server-backed rows carry the original save timestamp and price snapshot,
+    // so they take precedence when the same token also exists on this device.
+    for (const item of serverWatchlistItems) {
+      combined.set(item.token_address.toLowerCase(), item);
+    }
+    return Array.from(combined.values());
+  }, [deviceWatchlistItems, serverWatchlistItems]);
+
   const updateDeviceWatchlist = (
     updater: (current: string[]) => string[]
   ) => {
@@ -90,9 +109,44 @@ export function useWatchlist() {
   };
 
   useEffect(() => {
+    if (deviceWatchlist.length === 0) {
+      setDeviceWatchlistItems([]);
+      setDeviceLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadDeviceCoins = async () => {
+      setDeviceLoading(true);
+      try {
+        const query = encodeURIComponent(deviceWatchlist.join(","));
+        const response = await fetch(`/api/watchlist/coins?addresses=${query}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const body = (await response.json()) as {
+          items?: WatchlistItem[];
+          error?: string;
+        };
+        if (!response.ok) throw new Error(body.error || "Watchlist unavailable");
+        setDeviceWatchlistItems(body.items ?? []);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Error loading device watchlist:", error);
+        }
+      } finally {
+        if (!controller.signal.aborted) setDeviceLoading(false);
+      }
+    };
+
+    void loadDeviceCoins();
+    return () => controller.abort();
+  }, [deviceWatchlist]);
+
+  useEffect(() => {
     if (!address || sessionStatus !== "authenticated" || !session) {
       setServerWatchlist([]);
-      setWatchlistItems([]);
+      setServerWatchlistItems([]);
       setLoading(Boolean(address) && sessionStatus === "loading");
       return;
     }
@@ -110,8 +164,19 @@ export function useWatchlist() {
         if (!response.ok) throw new Error(body.error || "Watchlist unavailable");
 
         const items = body.items || [];
-        setWatchlistItems(items);
+        setServerWatchlistItems(items);
         setServerWatchlist(items.map((item) => item.token_address));
+        setDeviceWatchlist((current) => {
+          const combined = new Map(
+            current.map((tokenAddress) => [tokenAddress.toLowerCase(), tokenAddress])
+          );
+          for (const item of items) {
+            combined.set(item.token_address.toLowerCase(), item.token_address);
+          }
+          const next = Array.from(combined.values());
+          writeDeviceWatchlist(next);
+          return next;
+        });
       } catch (error) {
         console.error("Error fetching watchlist:", error);
       } finally {
@@ -139,7 +204,7 @@ export function useWatchlist() {
 
     try {
       const previousWatchlist = serverWatchlist;
-      const previousItems = watchlistItems;
+      const previousItems = serverWatchlistItems;
       const insertedAt = new Date().toISOString();
       const snapshot = buildPriceSnapshot(priceHint);
       const optimisticItem: WatchlistItem = {
@@ -156,7 +221,7 @@ export function useWatchlist() {
           ? prev
           : [...prev, tokenAddress]
       );
-      setWatchlistItems((prev) =>
+      setServerWatchlistItems((prev) =>
         prev.some(
           (item) => item.token_address.toLowerCase() === normalizedAddress
         )
@@ -179,13 +244,18 @@ export function useWatchlist() {
       if (!response.ok) {
         // Revert on error
         setServerWatchlist(previousWatchlist);
-        setWatchlistItems(previousItems);
+        setServerWatchlistItems(previousItems);
         const body = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
         throw new Error(body?.error || "Failed to add watchlist item");
       }
 
+      updateDeviceWatchlist((current) =>
+        current.some((item) => item.toLowerCase() === normalizedAddress)
+          ? current
+          : [...current, tokenAddress]
+      );
       toast.success("Added to watchlist");
       return true;
     } catch (error) {
@@ -218,12 +288,12 @@ export function useWatchlist() {
 
     try {
       const previousWatchlist = serverWatchlist;
-      const previousItems = watchlistItems;
+      const previousItems = serverWatchlistItems;
       // Optimistic update
       setServerWatchlist((prev) =>
         prev.filter((id) => id.toLowerCase() !== normalizedAddress)
       );
-      setWatchlistItems((prev) =>
+      setServerWatchlistItems((prev) =>
         prev.filter(
           (item) => item.token_address.toLowerCase() !== normalizedAddress
         )
@@ -239,7 +309,7 @@ export function useWatchlist() {
       if (!response.ok) {
         // Revert on error
         setServerWatchlist(previousWatchlist);
-        setWatchlistItems(previousItems);
+        setServerWatchlistItems(previousItems);
         const body = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
@@ -268,10 +338,7 @@ export function useWatchlist() {
   return {
     watchlist,
     watchlistItems,
-    loading,
-    requiresSignIn:
-      Boolean(address) && sessionStatus === "unauthenticated",
-    verifyWallet: signIn,
+    loading: loading || deviceLoading,
     addToWatchlist,
     removeFromWatchlist,
     isWatchlisted,

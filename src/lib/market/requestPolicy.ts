@@ -3,23 +3,32 @@ export const MAX_MARKET_PAGE = 1_000;
 export const MAX_MARKET_SEARCH_LENGTH = 100;
 
 const MARKET_QUERY_PARAMETERS = new Set([
+  "activity",
   "creationType",
   "limit",
+  "minHolders",
   "page",
   "search",
   "sort",
 ]);
 const MARKET_SORT_VALUES = new Set([
   "market-cap",
+  "most-holders",
+  "most-traded",
   "most-watched",
   "newest",
   "oldest",
+  "recently-traded",
+  "volume-high",
 ]);
 const MARKET_CREATION_TYPES = new Set(["", "ai", "hand-drawn"]);
+const MARKET_ACTIVITY_VALUES = new Set(["", "traded"]);
 
 export type MarketQuery = {
+  activity: string;
   creationType: string;
   limit: number;
+  minHolders: number;
   page: number;
   search: string;
   sort: string;
@@ -106,7 +115,19 @@ export function parseMarketQuery(searchParams: URLSearchParams): MarketQuery {
     throw new MarketQueryError("The creationType parameter is invalid.");
   }
 
-  return { creationType, limit, page, search, sort };
+  const activity = singleValue(searchParams, "activity") ?? "";
+  if (!MARKET_ACTIVITY_VALUES.has(activity)) {
+    throw new MarketQueryError("The activity parameter is invalid.");
+  }
+
+  const minHolders = positiveInteger(
+    singleValue(searchParams, "minHolders"),
+    0,
+    1_000_000_000,
+    "minHolders"
+  );
+
+  return { activity, creationType, limit, minHolders, page, search, sort };
 }
 
 export function buildMarketMeta(

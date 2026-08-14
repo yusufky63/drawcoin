@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import TokenTicker from "./market/TokenTicker";
+import { resolveCreatorBasenames } from "@/lib/creatorIdentityClient";
 
 interface HeaderProps {
   activeTab?: string;
@@ -186,13 +187,9 @@ export default function ArtHeader({
         // These are optional labels, not navigation prerequisites. Resolve
         // them concurrently so a slow ENS RPC cannot delay social fallback.
         const [basenameData, socialData] = await Promise.all([
-          fetch(`/api/basenames?address=${encodeURIComponent(address)}`, {
-            signal: controller.signal,
-          }).then(async (response) =>
-            response.ok
-              ? ((await response.json()) as { basename?: string | null })
-              : null
-          ),
+          resolveCreatorBasenames([address]).then((basenames) => ({
+            basename: basenames[address.toLowerCase()] ?? null,
+          })),
           fetch(`/api/farcaster/user?address=${encodeURIComponent(address)}`, {
             signal: controller.signal,
           }).then(async (response) =>

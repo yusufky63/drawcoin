@@ -97,6 +97,15 @@ test("the recovery API returns stable public error codes without database detail
   );
 });
 
+test("temporary Base bytecode propagation is retryable instead of a false mismatch", () => {
+  assert.match(routeSource, /blockNumber: receipt\.blockNumber/);
+  assert.match(routeSource, /"BASE_STATE_PENDING"/);
+  assert.match(
+    routeSource,
+    /!bytecode \|\| bytecode === "0x"[\s\S]*?503,[\s\S]*?"BASE_STATE_PENDING"/
+  );
+});
+
 test("minting confirms Base after one async switch and never retries the transaction", () => {
   assert.match(
     createTokenSource,

@@ -34,6 +34,7 @@ export type CoinRecordErrorCode =
   | "CREATOR_MISMATCH"
   | "PLATFORM_REFERRER_MISMATCH"
   | "TRANSACTION_NOT_CONFIRMED"
+  | "BASE_STATE_PENDING"
   | "ONCHAIN_CREATION_MISMATCH"
   | "RECORD_CONFLICT"
   | "VERIFICATION_UNAVAILABLE"
@@ -76,6 +77,10 @@ const ERROR_DETAILS: Record<
   },
   TRANSACTION_NOT_CONFIRMED: {
     message: "The Base transaction is not confirmed as successful.",
+    retryable: true,
+  },
+  BASE_STATE_PENDING: {
+    message: "Base is still finalizing this token. DrawCoin will try again.",
     retryable: true,
   },
   ONCHAIN_CREATION_MISMATCH: {
@@ -195,4 +200,34 @@ export async function syncCreatedToken(
     recoveryPayload: payload,
     error: createRecordError(getResponseCode(body, response.status)),
   };
+}
+
+const INITIAL_SYNC_RETRY_DELAYS_MS = [700, 1_400] as const;
+
+/**
+ * Gives a freshly mined Base deployment a brief chance to propagate between
+ * RPC backends. Only the idempotent DrawCoin record request is repeated; this
+ * helper never touches the wallet or submits another transaction.
+ */
+export async function syncFreshCreation(
+  payload: CoinCreationRecordPayload,
+  options: {
+    fetcher?: Fetcher;
+    signal?: AbortSignal;
+    sleep?: (milliseconds: number) => Promise<void>;
+  } = {}
+) {
+  const sleep =
+    options.sleep ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  let result = await syncCreatedToken(payload, options);
+
+  for (const delay of INITIAL_SYNC_RETRY_DELAYS_MS) {
+    if (result.status === "recorded" || !result.error?.retryable) break;
+    await sleep(delay);
+    result = await syncCreatedToken(payload, options);
+  }
+
+  return result;
 }
