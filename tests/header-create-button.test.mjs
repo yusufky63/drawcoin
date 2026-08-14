@@ -12,7 +12,16 @@ test("Create uses the primary blue treatment only on the active route", () => {
 
   assert.match(
     headerSource,
-    /isCreate\s*\?\s*isActive\s*\?\s*`\$\{desktopPrimaryButton\}/,
+    /href="\/create"\s+aria-label="Create a DrawCoin"[\s\S]*currentTab === "create"\s*\?\s*`\$\{desktopPrimaryButton\}/,
+  );
+  assert.match(headerSource, /href: "\/watchlist", id: "watchlist"/);
+  assert.match(headerSource, /item\.id === "watchlist" && !isConnected/);
+  assert.doesNotMatch(
+    headerSource.slice(
+      headerSource.indexOf("const desktopNavigation"),
+      headerSource.indexOf("] as const;", headerSource.indexOf("const desktopNavigation")),
+    ),
+    /href: "\/create"/,
   );
 
   const mobileCreateStart = headerSource.indexOf("if (isCreate)");

@@ -12,7 +12,6 @@ export type CoinQueryParams = {
   category?: string;
   creator_address?: string;
   limit?: number;
-  min_holders?: number;
   offset?: number;
   search?: string;
   sort?: string;
@@ -24,7 +23,6 @@ type CoinCountParams = Pick<
   | "activity"
   | "category"
   | "creator_address"
-  | "min_holders"
   | "search"
   | "creation_type"
 >;
@@ -173,10 +171,6 @@ export class CoinService {
         query = query.gt("verified_trade_count", 0);
       }
 
-      if (params?.min_holders) {
-        query = query.gte("holders", params.min_holders);
-      }
-
       if (params?.search) {
         query = query.or(buildPostgrestCoinSearchFilter(params.search, true));
       }
@@ -278,9 +272,6 @@ export class CoinService {
       }
       if (params.activity === "traded") {
         query = query.gt("verified_trade_count", 0);
-      }
-      if (params.min_holders) {
-        query = query.gte("holders", params.min_holders);
       }
       if (params.search) {
         query = query.or(buildPostgrestCoinSearchFilter(params.search, true));
@@ -532,9 +523,6 @@ export class CoinService {
       }
       if (params?.activity === "traded") {
         query = query.gt("verified_trade_count", 0);
-      }
-      if (params?.min_holders) {
-        query = query.gte("holders", params.min_holders);
       }
       if (params?.search) {
         query = query.or(buildPostgrestCoinSearchFilter(params.search, true));

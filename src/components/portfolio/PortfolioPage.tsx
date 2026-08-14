@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import {
   AnalyticsService,
   PortfolioItem,
 } from "../../services/analyticsService";
-import { getUserProfile } from "../../services/portfolioService";
 import { TransactionHistory } from "./TransactionHistory";
 import { formatNumber } from "../../utils/format";
-import { supabase } from "../../lib/supabase";
+import { supabase, type Coin } from "../../lib/supabase";
+import { COIN_SNAPSHOT_COLUMNS } from "../../lib/market/coinSnapshot";
+import { resolveCreatorBasenames } from "../../lib/creatorIdentityClient";
 import ShareModal from "./ShareModal";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
@@ -23,10 +24,11 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
   const { address, isConnected } = useAccount();
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [userStats, setUserStats] = useState<any>(null);
-  const [zoraProfile, setZoraProfile] = useState<any>(null);
+  const [profileBasename, setProfileBasename] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [createdTokens, setCreatedTokens] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const requestSequenceRef = useRef(0);
   const [activeTab, setActiveTab] = useState<
     "portfolio" | "transactions" | "created"
   >("portfolio");
@@ -57,7 +59,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
     }));
   };
 
-  const getSortedPortfolio = () => {
+  const sortedPortfolio = useMemo(() => {
     const sorted = [...portfolio].sort((a, b) => {
       const tokenA = (a as any).token_details;
       const tokenB = (b as any).token_details;
@@ -111,9 +113,9 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
       return 0;
     });
     return sorted;
-  };
+  }, [portfolio, portfolioSort]);
 
-  const getSortedCreatedTokens = () => {
+  const sortedCreatedTokens = useMemo(() => {
     const sorted = [...createdTokens].sort((a, b) => {
       let aVal: any, bVal: any;
 
@@ -165,7 +167,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
       return 0;
     });
     return sorted;
-  };
+  }, [createdSort, createdTokens]);
 
   const SortIcon = ({
     active,
@@ -198,108 +200,92 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
   );
 
   useEffect(() => {
-    const fetchPortfolio = async () => {
-      if (!address) {
-        setLoading(false);
-        return;
-      }
+    const requestSequence = ++requestSequenceRef.current;
+    if (!address) {
+      setPortfolio([]);
+      setUserStats(null);
+      setTransactions([]);
+      setCreatedTokens([]);
+      setProfileBasename(null);
+      setLoading(false);
+      return;
+    }
 
+    setLoading(true);
+    setPortfolio([]);
+    setUserStats(null);
+    setTransactions([]);
+    setCreatedTokens([]);
+    setProfileBasename(null);
+
+    // The primary holdings view is independent from optional identity and
+    // created-token data, so those requests never extend the main loader.
+    void (async () => {
       try {
-        setLoading(true);
         const [portfolioData, stats, txHistory] = await Promise.all([
-          AnalyticsService.getPortfolio(address),
+          AnalyticsService.getPortfolio(address, { throwOnError: true }),
           AnalyticsService.getUserStats(address),
           AnalyticsService.getTransactionHistory(address, 20),
         ]);
-
+        if (requestSequence !== requestSequenceRef.current) return;
         setPortfolio(portfolioData);
         setUserStats(stats);
         setTransactions(txHistory);
+      } catch (error) {
+        if (requestSequence === requestSequenceRef.current) {
+          console.error("Failed to fetch portfolio:", error);
+        }
+      } finally {
+        if (requestSequence === requestSequenceRef.current) setLoading(false);
+      }
+    })();
 
-        // Fetch created tokens from Supabase and enrich with Zora API data
-        try {
-          // 1. Get tokens created by this user from Supabase
-          const { data: platformTokens, error: dbError } = await supabase
-            .from("drawcoins")
-            .select("*")
-            .ilike("creator_address", address);
-
-          if (dbError) {
-            console.error("Error fetching created tokens from DB:", dbError);
-            setCreatedTokens([]);
-          } else if (!platformTokens || platformTokens.length === 0) {
-            setCreatedTokens([]);
-          } else {
-            // 2. Fetch Zora data for each token to get live stats
-            const { getUserCreatedCoins } = await import(
-              "../../services/portfolioService"
-            );
-            const { coins: zoraCoins } = await getUserCreatedCoins(
-              address,
-              100
-            );
-
-            // Create a map of Zora data by contract address
-            const zoraDataMap = new Map(
-              (zoraCoins || []).map((coin) => [
-                coin.address?.toLowerCase(),
-                coin,
-              ])
-            );
-
-            // 3. Merge Supabase tokens with Zora live data
-            const enrichedTokens = platformTokens.map((token) => {
-              const zoraData = zoraDataMap.get(
-                token.contract_address.toLowerCase()
-              );
-
-              return {
-                ...token,
-                // Use Zora's CDN-optimized images (same as holdings)
-                image_url:
-                  zoraData?.mediaContent?.previewImage?.medium ||
-                  zoraData?.mediaContent?.previewImage?.small ||
-                  token.image_url,
-                // Live USD-denominated market data from Zora
-                current_price:
-                  zoraData?.tokenPrice?.priceInUsdc ||
-                  zoraData?.tokenPrice?.priceInUsd ||
-                  token.current_price,
-                volume_24h:
-                  zoraData?.volume24h ||
-                  zoraData?.totalVolume ||
-                  token.volume_24h,
-                holders: zoraData?.uniqueHolders || token.holders,
-                marketCap: zoraData?.marketCap,
-                change24h: zoraData?.marketCapDelta24h,
-                // Keep full Zora data for reference
-                zora_data: zoraData,
-              };
-            });
-
-            setCreatedTokens(enrichedTokens);
-          }
-        } catch (createdError) {
-          console.warn("Could not fetch created tokens:", createdError);
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("drawcoins")
+          .select(COIN_SNAPSHOT_COLUMNS)
+          .ilike("creator_address", address);
+        if (error) throw error;
+        if (requestSequence !== requestSequenceRef.current) return;
+        setCreatedTokens(
+          ((data ?? []) as unknown as Coin[]).map((token) => ({
+            ...token,
+            marketCap: token.market_cap ?? null,
+            change24h: null,
+          }))
+        );
+      } catch (error) {
+        if (requestSequence === requestSequenceRef.current) {
+          console.warn("Created tokens are temporarily unavailable", error);
           setCreatedTokens([]);
         }
+      }
+    })();
 
-        // Fetch Zora profile data
-        try {
-          const profile = await getUserProfile(address);
-          setZoraProfile(profile);
-        } catch (profileError) {
-          console.warn("Could not fetch Zora profile:", profileError);
-        }
-      } catch (error) {
-        console.error("Failed to fetch portfolio:", error);
-      } finally {
-        setLoading(false);
+    void resolveCreatorBasenames([address]).then(
+      (basenames) => {
+        if (requestSequence !== requestSequenceRef.current) return;
+        setProfileBasename(basenames[address.toLowerCase()] ?? null);
+      },
+      () => {
+        // Identity enrichment is optional; the wallet label remains visible.
+      }
+    );
+
+    return () => {
+      if (requestSequence === requestSequenceRef.current) {
+        requestSequenceRef.current += 1;
       }
     };
-
-    fetchPortfolio();
   }, [address]);
+
+  const walletLabel = address
+    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    : "Wallet";
+  const profileName =
+    userStats?.username?.trim() || profileBasename || walletLabel;
+  const profileAvatar = userStats?.avatar_url?.trim() || null;
 
   if (!isConnected) {
     return (
@@ -356,13 +342,13 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
   return (
     <div className="min-h-screen bg-art-gray-50 p-4">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Profile Card with Zora Data */}
+        {/* Profile Card */}
         <div className="hand-drawn-card">
           <div className="flex items-center space-x-4">
-            {zoraProfile?.avatar?.medium ? (
+            {profileAvatar ? (
               <img
-                src={zoraProfile.avatar.medium}
-                alt="Profile"
+                src={profileAvatar}
+                alt={profileName}
                 className="w-16 h-16 rounded-full border-2 border-art-gray-200"
               />
             ) : (
@@ -382,59 +368,13 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                 </svg>
               </div>
             )}
-            <div className="flex-1">
-              <div className="flex items-center space-x-2">
-                <h3 className="text-lg font-semibold text-art-gray-900">
-                  {zoraProfile?.displayName ||
-                    zoraProfile?.handle ||
-                    "Anonymous"}
-                </h3>
-                {zoraProfile?.verified && (
-                  <svg
-                    className="w-5 h-5 text-blue-500"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                )}
-              </div>
-              {zoraProfile?.handle && (
-                <p className="text-sm text-art-gray-600">
-                  @{zoraProfile.handle}
-                </p>
-              )}
-              <div className="flex items-center space-x-2 mt-1">
-                {zoraProfile?.twitterUsername && (
-                  <a
-                    href={`https://twitter.com/${zoraProfile.twitterUsername}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-blue-600 hover:underline"
-                  >
-                    🐦 Twitter
-                  </a>
-                )}
-                {zoraProfile?.website && (
-                  <a
-                    href={
-                      zoraProfile.website.startsWith("http://") ||
-                      zoraProfile.website.startsWith("https://")
-                        ? zoraProfile.website
-                        : `https://${zoraProfile.website}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-blue-600 hover:underline"
-                  >
-                    🌐 Website
-                  </a>
-                )}
-              </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="truncate text-lg font-bold text-art-gray-900">
+                {profileName}
+              </h3>
+              <p className="text-sm font-medium text-art-gray-600">
+                {walletLabel}
+              </p>
             </div>
             <div className="flex gap-2">
               <button
@@ -465,7 +405,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
               <button
                 onClick={() =>
                   window.open(
-                    `https://zora.co/@${zoraProfile?.handle || "drawcoin"}`,
+                    `https://zora.co/${address}`,
                     "_blank"
                   )
                 }
@@ -672,7 +612,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {getSortedPortfolio().map((item) => {
+                    {sortedPortfolio.map((item) => {
                       const token = (item as any).token_details;
                       const zoraData = token?.zora_data;
                       const price = parseFloat(
@@ -898,7 +838,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {getSortedCreatedTokens().map((token) => {
+                    {sortedCreatedTokens.map((token) => {
                       return (
                         <tr
                           key={token.contract_address}
@@ -1032,7 +972,7 @@ export default function PortfolioPage({ onView }: PortfolioPageProps) {
         }, 0)}
         totalPnL={userStats?.total_pnl_usd || 0}
         tokenCount={portfolio.length}
-        userName={zoraProfile?.displayName || zoraProfile?.handle}
+        userName={profileName}
         userAddress={address}
       />
     </div>

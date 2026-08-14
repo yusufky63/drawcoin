@@ -10,7 +10,6 @@ export type MarketSort =
   | "recently-traded"
   | "most-holders";
 export type MarketActivity = "all" | "traded";
-export type MinimumHolders = 0 | 2 | 5;
 
 interface TokenFiltersProps {
   searchTerm: string;
@@ -23,8 +22,6 @@ interface TokenFiltersProps {
   onCreationTypeChange: (type: CreationType) => void;
   activity: MarketActivity;
   onActivityChange: (activity: MarketActivity) => void;
-  minHolders: MinimumHolders;
-  onMinHoldersChange: (minimum: MinimumHolders) => void;
 }
 
 const sortOptions: ReadonlyArray<{ value: MarketSort; label: string }> = [
@@ -47,11 +44,9 @@ export default function TokenFilters({
   onCreationTypeChange,
   activity,
   onActivityChange,
-  minHolders,
-  onMinHoldersChange,
 }: TokenFiltersProps) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const extraFilterCount = Number(activity === "traded") + Number(minHolders > 0);
+  const extraFilterCount = Number(activity === "traded");
 
   return (
     <section aria-label="Explore controls" className="mb-3 sm:mb-4">
@@ -154,7 +149,7 @@ export default function TokenFilters({
           {moreOpen ? (
             <div
               id="explore-extra-filters"
-              className="grid gap-2 rounded-xl border border-art-gray-200 bg-art-off-white p-2 sm:grid-cols-2"
+              className="rounded-xl border border-art-gray-200 bg-art-off-white p-2"
             >
               <div>
                 <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-art-gray-500">Activity</p>
@@ -168,22 +163,6 @@ export default function TokenFilters({
                       className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${activity === value ? "bg-art-gray-900 text-white" : "bg-white text-art-gray-600 hover:bg-art-gray-100"}`}
                     >
                       {value === "all" ? "All activity" : "Has trades"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-art-gray-500">Minimum holders</p>
-                <div className="flex gap-1" role="group" aria-label="Minimum holder count">
-                  {([0, 2, 5] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={minHolders === value}
-                      onClick={() => onMinHoldersChange(value)}
-                      className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${minHolders === value ? "bg-art-gray-900 text-white" : "bg-white text-art-gray-600 hover:bg-art-gray-100"}`}
-                    >
-                      {value === 0 ? "Any" : `${value}+`}
                     </button>
                   ))}
                 </div>

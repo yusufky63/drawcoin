@@ -19,7 +19,6 @@ import TokenFilters, {
   type CreationType,
   type MarketActivity,
   type MarketSort,
-  type MinimumHolders,
 } from "./TokenFilters";
 import TokenGrid from "./TokenGrid";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
@@ -35,7 +34,6 @@ const validSorts = new Set<MarketSort>([
 ]);
 const validCreationTypes = new Set<CreationType>(["all", "ai", "hand-drawn"]);
 const validActivities = new Set<MarketActivity>(["all", "traded"]);
-const validMinimumHolders = new Set<MinimumHolders>([0, 2, 5]);
 
 interface MarketMeta {
   limit: number;
@@ -105,7 +103,6 @@ export default function MarketPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [creationType, setCreationType] = useState<CreationType>("all");
   const [activity, setActivity] = useState<MarketActivity>("all");
-  const [minHolders, setMinHolders] = useState<MinimumHolders>(0);
   const [selectedCreator, setSelectedCreator] = useState<string | null>(null);
   const [filtersReady, setFiltersReady] = useState(false);
   const marketTopRef = useRef<HTMLDivElement | null>(null);
@@ -116,7 +113,6 @@ export default function MarketPage() {
     const requestedSort = params.get("sort") as MarketSort | null;
     const requestedType = params.get("type") as CreationType | null;
     const requestedActivity = params.get("activity") as MarketActivity | null;
-    const requestedMinHolders = Number(params.get("holders") ?? 0) as MinimumHolders;
     const creator = params.get("creator")?.trim().toLowerCase() ?? "";
 
     setSearchTerm(query);
@@ -127,9 +123,6 @@ export default function MarketPage() {
     }
     if (requestedActivity && validActivities.has(requestedActivity)) {
       setActivity(requestedActivity);
-    }
-    if (validMinimumHolders.has(requestedMinHolders)) {
-      setMinHolders(requestedMinHolders);
     }
     if (/^0x[a-f0-9]{40}$/.test(creator)) setSelectedCreator(creator);
     setFiltersReady(true);
@@ -149,10 +142,9 @@ export default function MarketPage() {
       if (apiSearch) params.set("search", apiSearch);
       if (creationType !== "all") params.set("creationType", creationType);
       if (activity === "traded") params.set("activity", "traded");
-      if (minHolders > 0) params.set("minHolders", String(minHolders));
       return `/api/market?${params.toString()}`;
     },
-    [activity, apiSearch, creationType, filtersReady, minHolders, sortBy]
+    [activity, apiSearch, creationType, filtersReady, sortBy]
   );
 
   const {
@@ -192,8 +184,7 @@ export default function MarketPage() {
     else params.delete("type");
     if (activity === "traded") params.set("activity", "traded");
     else params.delete("activity");
-    if (minHolders > 0) params.set("holders", String(minHolders));
-    else params.delete("holders");
+    params.delete("holders");
     if (selectedCreator) params.set("creator", selectedCreator);
     else params.delete("creator");
 
@@ -203,7 +194,7 @@ export default function MarketPage() {
       "",
       `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
     );
-  }, [activity, creationType, filtersReady, minHolders, searchTerm, selectedCreator, sortBy]);
+  }, [activity, creationType, filtersReady, searchTerm, selectedCreator, sortBy]);
 
   const tokens = useMemo(() => uniqueCoins(pages), [pages]);
   const creatorAddressKey = useMemo(
@@ -452,11 +443,6 @@ export default function MarketPage() {
           activity={activity}
           onActivityChange={(value) => {
             setActivity(value);
-            resetToFirstPage();
-          }}
-          minHolders={minHolders}
-          onMinHoldersChange={(value) => {
-            setMinHolders(value);
             resetToFirstPage();
           }}
         />

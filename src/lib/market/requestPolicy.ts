@@ -6,7 +6,6 @@ const MARKET_QUERY_PARAMETERS = new Set([
   "activity",
   "creationType",
   "limit",
-  "minHolders",
   "page",
   "search",
   "sort",
@@ -28,7 +27,6 @@ export type MarketQuery = {
   activity: string;
   creationType: string;
   limit: number;
-  minHolders: number;
   page: number;
   search: string;
   sort: string;
@@ -120,14 +118,7 @@ export function parseMarketQuery(searchParams: URLSearchParams): MarketQuery {
     throw new MarketQueryError("The activity parameter is invalid.");
   }
 
-  const minHolders = positiveInteger(
-    singleValue(searchParams, "minHolders"),
-    0,
-    1_000_000_000,
-    "minHolders"
-  );
-
-  return { activity, creationType, limit, minHolders, page, search, sort };
+  return { activity, creationType, limit, page, search, sort };
 }
 
 export function buildMarketMeta(

@@ -1,5 +1,7 @@
 import { supabase } from "../lib/supabase";
 import { COIN_CARD_COLUMNS, type Coin } from "./coinService";
+import { getAddress, isAddress } from "viem";
+import { mapWithConcurrency } from "../lib/market/requestPolicy";
 
 export interface TransactionData {
   tx_hash: string;
@@ -97,7 +99,10 @@ export class AnalyticsService {
    * Get User Portfolio (from Zora SDK + Our Database)
    * Fetches real on-chain balances and filters for tokens created on our platform
    */
-  static async getPortfolio(address: string): Promise<PortfolioItem[]> {
+  static async getPortfolio(
+    address: string,
+    options?: { throwOnError?: boolean }
+  ): Promise<PortfolioItem[]> {
     try {
       // 1. Fetch Zora balances page-by-page with bounded, cursor-safe pagination.
       const zoraBalancesModule = await import("../services/portfolioService");
@@ -171,15 +176,35 @@ export class AnalyticsService {
         return [];
       }
 
-      // 2. Get all token addresses from our platform (drawcoins)
-      const { data: platformTokens, error: tokensError } = await supabase
-        .from("drawcoins")
-        .select("contract_address, name, symbol, image_url, creator_address");
-
-      if (tokensError) {
-        console.error("Error fetching platform tokens:", tokensError);
-        return [];
+      // 2. Query only the balances the wallet actually owns. Address variants
+      // keep matching robust while each bounded request stays below URL limits.
+      const addressGroups = zoraBalances.flatMap((balance) => {
+        const value = balance.coin?.address;
+        if (!value || !isAddress(value)) return [];
+        return [[value, value.toLowerCase(), getAddress(value)]];
+      });
+      const addressBatches: string[][] = [];
+      for (let index = 0; index < addressGroups.length; index += 50) {
+        addressBatches.push(
+          Array.from(new Set(addressGroups.slice(index, index + 50).flat()))
+        );
       }
+
+      const platformTokenPages = await mapWithConcurrency(
+        addressBatches,
+        4,
+        async (addressBatch) => {
+          const { data, error } = await supabase
+            .from("drawcoins")
+            .select(
+              "contract_address, name, symbol, image_url, creator_address, current_price, market_cap, volume_24h, holders"
+            )
+            .in("contract_address", addressBatch);
+          if (error) throw error;
+          return data ?? [];
+        }
+      );
+      const platformTokens = platformTokenPages.flat();
 
       // Create a map for quick lookup
       const platformTokensMap = new Map(
@@ -284,6 +309,7 @@ export class AnalyticsService {
         }
       );
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error("❌ Failed to get portfolio:", error);
       return [];
     }

@@ -38,7 +38,7 @@ interface UserInfo {
 const desktopNavigation = [
   { href: "/", id: "explore", label: "Explore" },
   { href: "/markets", id: "markets", label: "Markets" },
-  { href: "/create", id: "create", label: "Create" },
+  { href: "/watchlist", id: "watchlist", label: "Watchlist" },
   { href: "/leaderboard", id: "leaderboard", label: "Leaderboard" },
   { href: "/missions", id: "missions", label: "Missions" },
 ] as const;
@@ -401,9 +401,10 @@ export default function ArtHeader({
                   className="flex min-w-0 items-center gap-1.5 xl:gap-2.5"
                 >
                   {desktopNavigation.map((item) => {
+                    if (item.id === "watchlist" && !isConnected) return null;
+
                     const isActive = currentTab === item.id;
                     const isMissions = item.id === "missions";
-                    const isCreate = item.id === "create";
 
                     return (
                       <Link
@@ -411,17 +412,13 @@ export default function ArtHeader({
                         href={item.href}
                         aria-current={isActive ? "page" : undefined}
                         className={`${desktopButtonBase} ${
-                          isCreate
-                            ? isActive
-                              ? `${desktopPrimaryButton} ring-2 ring-[#9ab7ff] ring-offset-2`
-                              : desktopButtonInactive
-                            : isActive
+                          isActive
                             ? desktopButtonActive
                             : desktopButtonInactive
                         } ${isMissions ? "hidden xl:inline-flex" : ""}`}
                       >
-                        {isCreate ? (
-                          <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
+                        {item.id === "watchlist" ? (
+                          <Heart aria-hidden="true" className="mr-1 h-4 w-4" />
                         ) : null}
                         {item.label}
                       </Link>
@@ -431,25 +428,22 @@ export default function ArtHeader({
               </div>
 
               <div className="flex shrink-0 items-center gap-2 xl:gap-3">
+                <Link
+                  href="/create"
+                  aria-label="Create a DrawCoin"
+                  aria-current={currentTab === "create" ? "page" : undefined}
+                  className={`${desktopButtonBase} gap-1.5 ${
+                    currentTab === "create"
+                      ? `${desktopPrimaryButton} ring-2 ring-[#9ab7ff] ring-offset-2`
+                      : desktopButtonInactive
+                  }`}
+                >
+                  <Plus aria-hidden="true" className="h-4 w-4" />
+                  Create
+                </Link>
+
                 {isConnected && address ? (
                   <>
-                    <Link
-                      href="/watchlist"
-                      aria-label="Watchlist"
-                      title="Watchlist"
-                      aria-current={
-                        currentTab === "watchlist" ? "page" : undefined
-                      }
-                      className={`${desktopButtonBase} gap-2 px-3 ${
-                        currentTab === "watchlist"
-                          ? desktopButtonActive
-                          : desktopButtonInactive
-                      }`}
-                    >
-                      <Heart aria-hidden="true" className="h-4 w-4" />
-                      <span className="hidden xl:inline">Watchlist</span>
-                    </Link>
-
                     <div
                       className="relative"
                       onBlur={(event) => {

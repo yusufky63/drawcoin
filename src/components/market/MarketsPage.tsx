@@ -51,7 +51,6 @@ type MarketsSort =
 type MarketsView = "table" | "gallery";
 type MarketsCreationType = "all" | "hand-drawn" | "ai";
 type MarketsActivity = "all" | "traded";
-type MarketsMinimumHolders = 0 | 2 | 5;
 
 const VALID_MARKETS_SORTS = new Set<MarketsSort>([
   "newest",
@@ -290,7 +289,6 @@ export default function MarketsPage() {
   const [view, setView] = useState<MarketsView>("table");
   const [creationType, setCreationType] = useState<MarketsCreationType>("all");
   const [activity, setActivity] = useState<MarketsActivity>("all");
-  const [minHolders, setMinHolders] = useState<MarketsMinimumHolders>(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [urlReady, setUrlReady] = useState(false);
   const [watchlistBusy, setWatchlistBusy] = useState<string | null>(null);
@@ -303,7 +301,6 @@ export default function MarketsPage() {
     const requestedSearch = (params.get("q") ?? "").slice(0, 100);
     const requestedType = params.get("type") as MarketsCreationType | null;
     const requestedActivity = params.get("activity") as MarketsActivity | null;
-    const requestedHolders = Number(params.get("holders") ?? 0) as MarketsMinimumHolders;
     setSort(
       requestedSort && VALID_MARKETS_SORTS.has(requestedSort as MarketsSort)
         ? (requestedSort as MarketsSort)
@@ -314,7 +311,6 @@ export default function MarketsPage() {
       setCreationType(requestedType);
     }
     if (requestedActivity === "traded") setActivity("traded");
-    if ([0, 2, 5].includes(requestedHolders)) setMinHolders(requestedHolders);
     setSearch(requestedSearch);
     setDebouncedSearch(requestedSearch.trim());
     setUrlReady(true);
@@ -332,10 +328,9 @@ export default function MarketsPage() {
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (creationType !== "all") params.set("creationType", creationType);
       if (activity === "traded") params.set("activity", "traded");
-      if (minHolders > 0) params.set("minHolders", String(minHolders));
       return `/api/market?${params.toString()}`;
     },
-    [activity, creationType, debouncedSearch, minHolders, sort, urlReady]
+    [activity, creationType, debouncedSearch, sort, urlReady]
   );
 
   const {
@@ -370,10 +365,9 @@ export default function MarketsPage() {
     if (search.trim()) params.set("q", search.trim());
     if (creationType !== "all") params.set("type", creationType);
     if (activity === "traded") params.set("activity", "traded");
-    if (minHolders > 0) params.set("holders", String(minHolders));
     const query = params.toString();
     window.history.replaceState(null, "", `/markets${query ? `?${query}` : ""}`);
-  }, [activity, creationType, minHolders, search, sort, urlReady, view]);
+  }, [activity, creationType, search, sort, urlReady, view]);
 
   const coins = useMemo(() => uniqueCoins(pages), [pages]);
   const creatorAddressKey = useMemo(
@@ -526,15 +520,15 @@ export default function MarketsPage() {
               aria-controls="markets-filter-panel"
               onClick={() => setFiltersOpen((open) => !open)}
               className={`flex h-11 shrink-0 items-center gap-1.5 rounded-xl border-2 border-[#2d3748] px-3 text-xs font-bold shadow-[2px_2px_0_#2d3748] transition ${
-                creationType !== "all" || activity === "traded" || minHolders > 0
+                creationType !== "all" || activity === "traded"
                   ? "bg-[var(--base-blue-soft)] text-[var(--base-blue-hover)]"
                   : "bg-white text-art-gray-700 hover:bg-art-gray-100"
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
               Filters
-              {Number(creationType !== "all") + Number(activity === "traded") + Number(minHolders > 0) > 0
-                ? ` ${Number(creationType !== "all") + Number(activity === "traded") + Number(minHolders > 0)}`
+              {Number(creationType !== "all") + Number(activity === "traded") > 0
+                ? ` ${Number(creationType !== "all") + Number(activity === "traded")}`
                 : ""}
             </button>
 
@@ -571,7 +565,7 @@ export default function MarketsPage() {
           <section
             id="markets-filter-panel"
             aria-label="Market filters"
-            className="mb-4 grid gap-3 rounded-2xl border-2 border-[#2d3748] bg-white p-3 shadow-[3px_3px_0_#2d3748] sm:grid-cols-3"
+            className="mb-4 grid gap-3 rounded-2xl border-2 border-[#2d3748] bg-white p-3 shadow-[3px_3px_0_#2d3748] sm:grid-cols-2"
           >
             <div>
               <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-art-gray-500">Artwork</p>
@@ -607,25 +601,6 @@ export default function MarketsPage() {
                     className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${activity === value ? "bg-art-gray-900 text-white" : "bg-art-off-white text-art-gray-600 hover:bg-art-gray-100"}`}
                   >
                     {value === "all" ? "All activity" : "Has trades"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-art-gray-500">Minimum holders</p>
-              <div className="flex gap-1" role="group" aria-label="Minimum holder count">
-                {([0, 2, 5] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={minHolders === value}
-                    onClick={() => {
-                      setMinHolders(value);
-                      void setSize(1);
-                    }}
-                    className={`h-9 flex-1 rounded-lg px-2 text-xs font-bold ${minHolders === value ? "bg-art-gray-900 text-white" : "bg-art-off-white text-art-gray-600 hover:bg-art-gray-100"}`}
-                  >
-                    {value === 0 ? "Any" : `${value}+`}
                   </button>
                 ))}
               </div>

@@ -33,6 +33,9 @@ test("Supabase leaderboard rows include persisted profile fields", () => {
   assert.match(leaderboardSource, /user\.username\?\.trim\(\)/);
   assert.match(leaderboardSource, /user\.avatar_url\?\.trim\(\)/);
   assert.match(analyticsSource, /total_volume_usd: user\.total_buy_volume/);
+  assert.match(leaderboardSource, /resolveCreatorBasenames/);
+  assert.match(leaderboardSource, /addMissingBasenames/);
+  assert.match(leaderboardSource, /if \(user\.username\?\.trim\(\)\) return user/);
 });
 
 test("activity cards use the users join already returned by Supabase", () => {

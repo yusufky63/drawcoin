@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { formatNumber } from "../../utils/format";
+import { resolveCreatorBasenames } from "../../lib/creatorIdentityClient";
 import HandDrawnSkeleton from "../ui/HandDrawnSkeleton";
 
 interface LeaderboardUser {
@@ -28,6 +29,17 @@ function formatUsdVolume(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? `$${formatNumber(parsed)}` : "—";
 }
 
+function addMissingBasenames(
+  users: LeaderboardUser[],
+  basenames: Record<string, string | null>
+) {
+  return users.map((user) => {
+    if (user.username?.trim()) return user;
+    const basename = basenames[user.address.toLowerCase()] ?? null;
+    return basename ? { ...user, username: basename } : user;
+  });
+}
+
 export default function LeaderboardPage() {
   const [activeTab, setActiveTab] = useState<"creators" | "buyers">("creators");
   const [creators, setCreators] = useState<LeaderboardUser[]>([]);
@@ -35,8 +47,10 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const requestSequenceRef = useRef(0);
 
   const fetchData = useCallback(async (isRefresh = false) => {
+    const requestSequence = ++requestSequenceRef.current;
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
 
@@ -53,24 +67,51 @@ export default function LeaderboardPage() {
 
       const creatorsData = (await creatorsRes.json()) as LeaderboardResponse;
       const buyersData = (await buyersRes.json()) as LeaderboardResponse;
+      if (requestSequence !== requestSequenceRef.current) return;
 
-      setCreators(creatorsData.data || []);
-      setBuyers(buyersData.data || []);
+      const creatorRows = creatorsData.data || [];
+      const buyerRows = buyersData.data || [];
+
+      setCreators(creatorRows);
+      setBuyers(buyerRows);
 
       // Use the latest timestamp
       setLastUpdated(
         Math.max(creatorsData.lastUpdated || 0, buyersData.lastUpdated || 0)
       );
+
+      // Render Supabase rows immediately, then fill only missing names through
+      // the same address-keyed cache used by Header, Explore and Markets.
+      void resolveCreatorBasenames([
+        ...creatorRows.map((user) => user.address),
+        ...buyerRows.map((user) => user.address),
+      ]).then(
+        (basenames) => {
+          if (requestSequence !== requestSequenceRef.current) return;
+          setCreators((current) => addMissingBasenames(current, basenames));
+          setBuyers((current) => addMissingBasenames(current, basenames));
+        },
+        () => {
+          // Basenames are optional; the shortened address remains available.
+        }
+      );
     } catch (error) {
-      console.error("Failed to fetch leaderboard:", error);
+      if (requestSequence === requestSequenceRef.current) {
+        console.error("Failed to fetch leaderboard:", error);
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestSequence === requestSequenceRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void fetchData();
+    return () => {
+      requestSequenceRef.current += 1;
+    };
   }, [fetchData]);
   const renderTable = (
     data: LeaderboardUser[],

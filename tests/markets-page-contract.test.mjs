@@ -53,7 +53,8 @@ test("gallery reuses loaded pages in a memoized stable-frame masonry", () => {
   assert.match(source, /<CreationTypeBadge/);
   assert.match(source, /!bg-\[#ffd166\]/);
   assert.doesNotMatch(source, /gradient/);
-  assert.match(source, /activity, creationType, debouncedSearch, minHolders, sort, urlReady/);
+  assert.match(source, /activity, creationType, debouncedSearch, sort, urlReady/);
+  assert.doesNotMatch(source, /Minimum holders|minHolders/);
 });
 
 test("gallery reserves artwork space before images load", () => {
